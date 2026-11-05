@@ -59,7 +59,8 @@ def java_str(s):
 print("== код мода")
 dst = JAVA / "org/startegs"
 dst.mkdir(parents=True, exist_ok=True)
-shutil.copy(CLIENT / "src/org/startegs/StarMod.java", dst / "StarMod.java")
+for src in sorted((CLIENT / "src/org/startegs").glob("*.java")):
+    shutil.copy(src, dst / src.name)
 
 services = []
 for i in range(1, 20):
@@ -83,7 +84,7 @@ for i in range(1, 20):
     + "    };\n}\n",
     encoding="utf-8",
 )
-print(f"  ✓ org/startegs/StarMod.java, StarModConfig.java ({len(services)} сервисов)")
+print(f"  ✓ org/startegs/*.java ({len(list(dst.glob('*.java')))} файлов), {len(services)} сервисов")
 
 print("== сохранение удалённых сообщений")
 MC = "TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java"
@@ -203,6 +204,51 @@ patch(SA,
         switch (item.id) {
             case 1:
                 presentSettingFragment(new UserInfoActivity());""")
+
+print("== приватность")
+patch(MC,
+      """    public boolean sendTyping(long dialogId, long threadMsgId, int action, String emojicon, int classGuid) {
+        if (action < 0 || action >= sendingTypings.length || dialogId == 0) {""",
+      """    public boolean sendTyping(long dialogId, long threadMsgId, int action, String emojicon, int classGuid) {
+        if (org.startegs.StarMod.ghostTyping()) {
+            return false;
+        }
+        if (action < 0 || action >= sendingTypings.length || dialogId == 0) {""")
+patch(MC,
+      """    private void completeReadTask(ReadTask task) {
+        if (task.replyId != 0 && task.monoForumPeerId == 0) {""",
+      """    private void completeReadTask(ReadTask task) {
+        if (org.startegs.StarMod.ghostRead() && task.replyId == 0 && DialogObject.isUserDialog(task.dialogId)) {
+            return; // «прочитано» в личных чатах не отправляем
+        }
+        if (task.replyId != 0 && task.monoForumPeerId == 0) {""")
+
+print("== интерфейс")
+patch("TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java",
+      """            newVisibility = !onlySelfStories && getStoriesController().hasStories();
+            onlySelfStories = getStoriesController().hasOnlySelfStories();""",
+      """            newVisibility = !org.startegs.StarMod.hideStories() && !onlySelfStories && getStoriesController().hasStories();
+            onlySelfStories = !org.startegs.StarMod.hideStories() && getStoriesController().hasOnlySelfStories();""")
+patch(SA,
+      """        if (!getMessagesController().premiumFeaturesBlocked()) {
+            items.add(SettingCell.Factory.of(11,""",
+      """        if (!org.startegs.StarMod.hidePromo() && !getMessagesController().premiumFeaturesBlocked()) {
+            items.add(SettingCell.Factory.of(11,""")
+patch(SA,
+      """        if (!getMessagesController().premiumFeaturesBlocked()) {
+            items.add(SettingCell.Factory.of(15,""",
+      """        if (!org.startegs.StarMod.hidePromo() && !getMessagesController().premiumFeaturesBlocked()) {
+            items.add(SettingCell.Factory.of(15,""")
+patch(SA,
+      """        if (!getMessagesController().premiumPurchaseBlocked()) {
+            items.add(SettingCell.Factory.of(16,""",
+      """        if (!org.startegs.StarMod.hidePromo() && !getMessagesController().premiumPurchaseBlocked()) {
+            items.add(SettingCell.Factory.of(16,""")
+
+print("== фирменная тема")
+sys.path.insert(0, str(HERE))
+import brand_theme
+brand_theme.main(TG / "TMessagesProj/src/main/assets", TG / "TMessagesProj/src/main/assets")
 
 print("== ребрендинг")
 patch("gradle.properties", "APP_PACKAGE=org.telegram.messenger", f"APP_PACKAGE={PACKAGE}")

@@ -59,8 +59,32 @@ public final class StarMod {
         return prefs().getBoolean("save_edits", true);
     }
 
-    private static void toggle(String key) {
-        prefs().edit().putBoolean(key, !prefs().getBoolean(key, true)).apply();
+    public static boolean showSeconds() {
+        return prefs().getBoolean("show_seconds", false);
+    }
+
+    /** Не отправлять «печатает…». */
+    public static boolean ghostTyping() {
+        return prefs().getBoolean("ghost_typing", false);
+    }
+
+    /** Не отправлять отметку о прочтении в личных чатах. */
+    public static boolean ghostRead() {
+        return prefs().getBoolean("ghost_read", false);
+    }
+
+    public static boolean hideStories() {
+        return prefs().getBoolean("hide_stories", false);
+    }
+
+    /** Скрыть Premium, Business и подарки в настройках. */
+    public static boolean hidePromo() {
+        return prefs().getBoolean("hide_promo", false);
+    }
+
+    /** Переключает настройку; def — значение по умолчанию, если её ещё не меняли. */
+    public static void toggle(String key, boolean def) {
+        prefs().edit().putBoolean(key, !prefs().getBoolean(key, def)).apply();
     }
 
     // ---------------------------------------------------------------- своя база мода
@@ -168,14 +192,27 @@ public final class StarMod {
         }
     }
 
-    /** Подпись к времени сообщения: «🗑 удалено», «✏️» если есть сохранённая история. */
+    /** Подпись к времени сообщения: секунды (если включены) и «🗑 удалено». */
     public static CharSequence decorateTime(int account, MessageObject m, CharSequence time) {
         try {
+            if (time != null && m != null && m.messageOwner != null && showSeconds() && m.messageOwner.date > 0) {
+                time = withSeconds(time, m.messageOwner.date);
+            }
             if (isDeleted(account, m)) return TextUtils.concat("🗑 удалено  ", time);
         } catch (Exception e) {
             FileLog.e(e);
         }
         return time;
+    }
+
+    /** 12:30 → 12:30:07 (и 3:15 PM → 3:15:07 PM), не трогая остальную подпись. */
+    private static CharSequence withSeconds(CharSequence time, int date) {
+        String hm = LocaleController.getInstance().getFormatterDay().format((long) date * 1000);
+        int at = TextUtils.indexOf(time, hm);
+        if (at < 0) return time;
+        String sec = String.format(Locale.US, "%02d", date % 60);
+        String hms = hm.replaceFirst("(\\d{1,2}[:.]\\d{2})", "$1:" + sec);
+        return TextUtils.concat(time.subSequence(0, at), hms, time.subSequence(at + hm.length(), time.length()));
     }
 
     // ---------------------------------------------------------------- история изменений
@@ -267,7 +304,7 @@ public final class StarMod {
     // ---------------------------------------------------------------- раздел «StarTegs» в настройках
 
     private static final int ID_BASE = 9100;
-    private static final int ID_MOD_SETTINGS = ID_BASE + 99;
+    private static final int ID_HUB = ID_BASE + 99;
 
     /** Добавляет раздел в начало экрана настроек (вызывается из SettingsActivity.fillItems). */
     public static void fillSettings(ArrayList<UItem> items) {
@@ -275,15 +312,18 @@ public final class StarMod {
         for (int i = 0; i < StarModConfig.SERVICES.length; i++) {
             String[] s = StarModConfig.SERVICES[i];
             if (TextUtils.isEmpty(s[2])) continue; // бот не указан в startegs.properties
-            items.add(SettingsActivity.SettingCell.Factory.of(ID_BASE + i, (int) Long.parseLong(s[3], 16), (int) Long.parseLong(s[4], 16),
-                    iconFor(s[5]), s[0], s[1]));
+            items.add(SettingsActivity.SettingCell.Factory.of(ID_BASE + i, color(s[3]), color(s[4]), iconFor(s[5]), s[0], s[1]));
         }
-        items.add(SettingsActivity.SettingCell.Factory.of(ID_MOD_SETTINGS, 0xFF9B6BFF, 0xFF5A7BFF, R.drawable.settings_features,
-                "Настройки мода", (saveDeleted() ? "🗑 удалённые ✓" : "🗑 удалённые ✗") + "   " + (saveEdits() ? "✏️ правки ✓" : "✏️ правки ✗")));
+        items.add(SettingsActivity.SettingCell.Factory.of(ID_HUB, 0xFF9B6BFF, 0xFF5A7BFF, R.drawable.settings_features,
+                "Оформление и настройки StarTegs", StarTheme.isActive() ? "Фирменный дизайн включён" : "Дизайн, приватность, сохранение сообщений"));
         items.add(UItem.asShadow(null));
     }
 
-    private static int iconFor(String name) {
+    static int color(String hex) {
+        return (int) Long.parseLong(hex, 16);
+    }
+
+    static int iconFor(String name) {
         switch (name) {
             case "stars": return R.drawable.settings_stars;
             case "shop": return R.drawable.settings_gift;
@@ -294,46 +334,27 @@ public final class StarMod {
         }
     }
 
-    /** Обработка нажатий в нашем разделе. true — нажатие наше. */
+    /** Обработка нажатий в нашем разделе настроек. true — нажатие наше. */
     public static boolean onSettingsClick(BaseFragment fragment, int id, Runnable refresh) {
-        if (id == ID_MOD_SETTINGS) {
-            showModSettings(fragment, refresh);
+        if (id == ID_HUB) {
+            fragment.presentFragment(new StarHubActivity());
             return true;
         }
         int i = id - ID_BASE;
         if (i < 0 || i >= StarModConfig.SERVICES.length) return false;
-        String[] s = StarModConfig.SERVICES[i];
-        // ?startapp открывает главное мини-приложение бота, если оно настроено в @BotFather,
-        // иначе Telegram просто откроет чат с ботом (там кнопка меню с мини-приложением).
-        String url = "https://t.me/" + s[2] + ("app".equals(s[6]) ? "?startapp" : "");
-        Browser.openUrl(fragment.getParentActivity(), url);
+        openService(fragment, i);
         return true;
     }
 
-    private static void showModSettings(BaseFragment fragment, Runnable refresh) {
-        if (fragment.getParentActivity() == null) return;
-        CharSequence[] items = new CharSequence[]{
-                (saveDeleted() ? "✅ " : "⬜ ") + "Сохранять удалённые сообщения",
-                (saveEdits() ? "✅ " : "⬜ ") + "Сохранять историю изменений",
-                "🧹 Очистить сохранённое модом",
-                "ℹ️ О моде StarTegs",
-        };
-        new AlertDialog.Builder(fragment.getParentActivity())
-                .setTitle("Настройки StarTegs")
-                .setItems(items, (dialog, which) -> {
-                    if (which == 0) toggle("save_deleted");
-                    else if (which == 1) toggle("save_edits");
-                    else if (which == 2) clearAll(fragment);
-                    else if (which == 3) about(fragment);
-                    if (which <= 1) {
-                        if (refresh != null) refresh.run();
-                        AndroidUtilities.runOnUIThread(() -> showModSettings(fragment, refresh), 150);
-                    }
-                })
-                .show();
+    /** Открывает бота сервиса: ?startapp — сразу его главное мини-приложение (если включено в @BotFather). */
+    static void openService(BaseFragment fragment, int index) {
+        String[] s = StarModConfig.SERVICES[index];
+        if (TextUtils.isEmpty(s[2]) || fragment.getParentActivity() == null) return;
+        Browser.openUrl(fragment.getParentActivity(), "https://t.me/" + s[2] + ("app".equals(s[6]) ? "?startapp" : ""));
     }
 
-    private static void clearAll(BaseFragment fragment) {
+    static void confirmClear(BaseFragment fragment) {
+        if (fragment.getParentActivity() == null) return;
         new AlertDialog.Builder(fragment.getParentActivity())
                 .setTitle("Очистить?")
                 .setMessage("Пометки об удалённых сообщениях и сохранённые старые версии правок будут стёрты. Сами сообщения останутся в кэше, пока Telegram его не обновит.")
@@ -354,7 +375,8 @@ public final class StarMod {
                 .show();
     }
 
-    private static void about(BaseFragment fragment) {
+    static void showStats(BaseFragment fragment) {
+        if (fragment.getParentActivity() == null) return;
         int deleted = 0, edits = 0;
         try (Cursor c = sql().rawQuery("SELECT (SELECT COUNT(*) FROM deleted), (SELECT COUNT(*) FROM edits)", null)) {
             if (c.moveToFirst()) {
@@ -367,8 +389,7 @@ public final class StarMod {
         new AlertDialog.Builder(fragment.getParentActivity())
                 .setTitle("⭐ StarTegs " + StarModConfig.MOD_VERSION)
                 .setMessage(String.format(Locale.US,
-                        "Неофициальный клиент на основе исходного кода Telegram для Android.\n\n"
-                                + "Сохранено удалённых сообщений: %d\nСохранено старых версий правок: %d\n\n"
+                        "Сохранено удалённых сообщений: %d\nСохранено старых версий правок: %d\n\n"
                                 + "Всё хранится только на этом телефоне.", deleted, edits))
                 .setPositiveButton("OK", null)
                 .show();
