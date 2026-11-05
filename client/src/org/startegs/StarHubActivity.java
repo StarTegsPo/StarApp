@@ -6,7 +6,9 @@ package org.startegs;
 
 import android.view.View;
 
+import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
+import org.telegram.messenger.SharedConfig;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
@@ -24,6 +26,16 @@ public class StarHubActivity extends UniversalFragment {
     private static final int ID_CHECK_UPDATE = 701;
     private static final int ID_GHOST_ONLINE = 402;
     private static final int ID_GHOST_STORIES = 403;
+    private static final int ID_DELETED_LIST = 302;
+    private static final int ID_FILTER = 800;
+    private static final int ID_FILTER_WORDS = 801;
+    private static final int ID_FILTER_USERS_CLEAR = 802;
+    private static final int ID_LOCK_PIN = 900;
+    private static final int ID_LOCK_CLEAR = 901;
+    private static final int ID_CHATS_BUTTON = 502;
+    private static final int ID_THREE_LINES = 503;
+    private static final int ID_APP_ICON = 504;
+    private static final int ID_SHAPE = 510;          // 510..512 — форма аватарок
     private static final int ID_TG_THEMES = 201;
     private static final int ID_SECONDS = 202;
     private static final int ID_SAVE_DELETED = 300;
@@ -72,6 +84,7 @@ public class StarHubActivity extends UniversalFragment {
         items.add(UItem.asHeader("Сообщения"));
         items.add(UItem.asCheck(ID_SAVE_DELETED, "Сохранять удалённые сообщения").setChecked(StarMod.saveDeleted()));
         items.add(UItem.asCheck(ID_SAVE_EDITS, "Сохранять историю изменений").setChecked(StarMod.saveEdits()));
+        items.add(UItem.asButton(ID_DELETED_LIST, R.drawable.msg_delete, "Все удалённые сообщения"));
         items.add(UItem.asShadow("Удалённые остаются в чате с пометкой «🗑 удалено», старые версии правок — в меню сообщения."));
 
         items.add(UItem.asHeader("Приватность"));
@@ -82,10 +95,36 @@ public class StarHubActivity extends UniversalFragment {
         items.add(UItem.asShadow("Собеседник не увидит «печатает…», две галочки и вас в сети, а автор истории — вас среди просмотревших. "
                 + "Чаты без «прочитано» останутся непрочитанными на других ваших устройствах."));
 
+        items.add(UItem.asHeader("Фильтр"));
+        items.add(UItem.asCheck(ID_FILTER, "Скрывать сообщения по фильтру").setChecked(StarMod.filterEnabled()));
+        int words = StarMod.filterWordsText().isEmpty() ? 0 : StarMod.filterWordsText().split("[\\n,]").length;
+        items.add(UItem.asButton(ID_FILTER_WORDS, R.drawable.msg_edit, "Слова для фильтра", words > 0 ? String.valueOf(words) : "нет"));
+        if (StarMod.filteredUsersCount() > 0) {
+            items.add(UItem.asButton(ID_FILTER_USERS_CLEAR, R.drawable.msg_delete, "Снова показывать скрытых людей", String.valueOf(StarMod.filteredUsersCount())));
+        }
+        items.add(UItem.asShadow("Текст подходящих сообщений заменяется пометкой «скрыто фильтром». Скрыть все сообщения человека — профиль → ⋮ → «Скрывать его сообщения»."));
+
+        items.add(UItem.asHeader("Закрытые чаты"));
+        items.add(UItem.asButton(ID_LOCK_PIN, R.drawable.msg_permissions, StarLock.hasPin() ? "Сменить PIN-код" : "Задать PIN-код"));
+        if (StarLock.lockedCount() > 0) {
+            items.add(UItem.asButton(ID_LOCK_CLEAR, R.drawable.msg_delete, "Снять все замки", String.valueOf(StarLock.lockedCount())));
+        }
+        items.add(UItem.asShadow("Закрыть чат: профиль чата → ⋮ → «Закрыть чат PIN-кодом». После ввода PIN чат открыт 5 минут."));
+
         items.add(UItem.asHeader("Интерфейс"));
+        items.add(UItem.asCheck(ID_CHATS_BUTTON, "Кнопка ⭐ StarTegs над списком чатов").setChecked(StarMod.showChatsButton()));
+        items.add(UItem.asCheck(ID_THREE_LINES, "Подробный список чатов (3 строки)").setChecked(SharedConfig.useThreeLinesLayout));
         items.add(UItem.asCheck(ID_HIDE_STORIES, "Скрыть истории над списком чатов").setChecked(StarMod.hideStories()));
         items.add(UItem.asCheck(ID_HIDE_PROMO, "Скрыть Premium, Business и подарки в настройках").setChecked(StarMod.hidePromo()));
-        items.add(UItem.asShadow(null));
+        items.add(UItem.asButton(ID_APP_ICON, R.drawable.msg_theme, "Иконка приложения"));
+        items.add(UItem.asShadow("Иконки StarTegs выбираются в разделе «Темы» → «Иконка приложения»."));
+
+        items.add(UItem.asHeader("Форма аватарок"));
+        String[] shapes = {"Круг", "Скруглённый квадрат", "Квадрат"};
+        for (int i = 0; i < shapes.length; i++) {
+            items.add(UItem.asRadio(ID_SHAPE + i, shapes[i]).setChecked(StarMod.avatarShape() == i));
+        }
+        items.add(UItem.asShadow("Меняет аватарки в списке чатов и в группах. Новые строки сразу, остальные — после перезапуска приложения."));
 
         items.add(UItem.asButton(ID_STATS, R.drawable.msg_stats, "Что сохранил мод"));
         items.add(UItem.asButton(ID_CHECK_UPDATE, R.drawable.msg_download, "Проверить обновления"));
@@ -106,7 +145,43 @@ public class StarHubActivity extends UniversalFragment {
             if (listView != null) listView.adapter.update(true);
             return;
         }
+        if (id >= ID_SHAPE && id < ID_SHAPE + 3) {
+            StarMod.setAvatarShape(id - ID_SHAPE);
+            NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.dialogsNeedReload, true);
+            if (listView != null) listView.adapter.update(true);
+            return;
+        }
+        Runnable refresh = () -> {
+            if (listView != null) listView.adapter.update(true);
+        };
         switch (id) {
+            case ID_DELETED_LIST:
+                presentFragment(new StarDeletedActivity());
+                return;
+            case ID_FILTER:
+                StarMod.toggle("filter_enabled", false);
+                break;
+            case ID_FILTER_WORDS:
+                StarMod.editFilterWords(this, refresh);
+                return;
+            case ID_FILTER_USERS_CLEAR:
+                StarMod.clearUserFilter();
+                break;
+            case ID_LOCK_PIN:
+                StarLock.setupPin(this, refresh);
+                return;
+            case ID_LOCK_CLEAR:
+                StarLock.unlockAll(this, refresh);
+                return;
+            case ID_CHATS_BUTTON:
+                StarMod.toggle("chats_button", true);
+                break;
+            case ID_THREE_LINES:
+                SharedConfig.setUseThreeLinesLayout(!SharedConfig.useThreeLinesLayout);
+                break;
+            case ID_APP_ICON:
+                presentFragment(new ThemeActivity(ThemeActivity.THEME_TYPE_BASIC));
+                return;
             case ID_UPDATE:
                 StarMod.offerUpdate(this);
                 return;

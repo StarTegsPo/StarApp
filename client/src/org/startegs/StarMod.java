@@ -51,6 +51,7 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.HashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Locale;
 
@@ -64,6 +65,11 @@ public final class StarMod {
     public static final int OPTION_ASK_AI = 9002;
     /** Пункт меню профиля «ID и дата регистрации». */
     public static final int MENU_PEER_INFO = 9301;
+    /** Пункты меню профиля: замок и фильтр пользователя. */
+    public static final int MENU_LOCK = 9302;
+    public static final int MENU_FILTER_USER = 9303;
+    /** Кнопка StarTegs в списке чатов. */
+    public static final int MENU_HUB = 9400;
 
     // ---------------------------------------------------------------- настройки
 
@@ -600,6 +606,161 @@ public final class StarMod {
                     }
                 })
                 .setNegativeButton("Позже", null)
+                .show();
+    }
+
+    // ---------------------------------------------------------------- список удалённых
+
+    /** Последние удалённые сообщения аккаунта: пары {scope, mid}, новые сверху. */
+    static List<long[]> deletedKeys(int account, int limit) {
+        ArrayList<long[]> out = new ArrayList<>();
+        try (Cursor c = sql().rawQuery("SELECT dialog, mid FROM deleted WHERE account = ? ORDER BY date DESC, mid DESC LIMIT " + limit,
+                new String[]{String.valueOf(account)})) {
+            while (c.moveToNext()) out.add(new long[]{c.getLong(0), c.getLong(1)});
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+        return out;
+    }
+
+    // ---------------------------------------------------------------- кнопка StarTegs в чатах
+
+    public static boolean showChatsButton() {
+        return prefs().getBoolean("chats_button", true);
+    }
+
+    // ---------------------------------------------------------------- форма аватарок
+
+    /** 0 — круг, 1 — скруглённый квадрат, 2 — квадрат. */
+    public static int avatarShape() {
+        return prefs().getInt("avatar_shape", 0);
+    }
+
+    static void setAvatarShape(int shape) {
+        prefs().edit().putInt("avatar_shape", shape).apply();
+    }
+
+    /** Радиус скругления аватарки: меняем только обычные круглые аватарки (radius == circleRadius). */
+    public static int avatarRadius(int radius, int circleRadius) {
+        int shape = avatarShape();
+        if (shape == 0 || radius != circleRadius) return radius;
+        return shape == 1 ? Math.max(2, Math.round(circleRadius * 0.45f)) : Math.max(2, Math.round(circleRadius * 0.12f));
+    }
+
+    /** То же для заглушки с буквами (AvatarDrawable): -1 — рисовать кругом. */
+    public static int avatarDrawableRadius(int radius, int circleRadius) {
+        int r = avatarRadius(radius, circleRadius);
+        return r == radius ? -1 : r;
+    }
+
+    // ---------------------------------------------------------------- фильтр слов и людей
+
+    private static volatile String[] filterWords;
+    private static volatile Set<Long> filterUsers;
+
+    public static boolean filterEnabled() {
+        return prefs().getBoolean("filter_enabled", false);
+    }
+
+    static String filterWordsText() {
+        return prefs().getString("filter_words", "");
+    }
+
+    static void setFilterWords(String text) {
+        prefs().edit().putString("filter_words", text == null ? "" : text.trim()).apply();
+        filterWords = null;
+    }
+
+    private static String[] words() {
+        String[] w = filterWords;
+        if (w == null) {
+            ArrayList<String> list = new ArrayList<>();
+            for (String line : filterWordsText().split("[\\n,]")) {
+                String t = line.trim().toLowerCase(Locale.ROOT);
+                if (!t.isEmpty()) list.add(t);
+            }
+            w = filterWords = list.toArray(new String[0]);
+        }
+        return w;
+    }
+
+    private static Set<Long> users() {
+        Set<Long> u = filterUsers;
+        if (u == null) {
+            u = new HashSet<>();
+            for (String id : prefs().getStringSet("filter_users", new HashSet<>())) {
+                try {
+                    u.add(Long.parseLong(id));
+                } catch (NumberFormatException ignore) {
+                }
+            }
+            filterUsers = u;
+        }
+        return u;
+    }
+
+    public static boolean isUserFiltered(long userId) {
+        return users().contains(userId);
+    }
+
+    public static int filteredUsersCount() {
+        return users().size();
+    }
+
+    public static void toggleUserFilter(BaseFragment fragment, long userId) {
+        Set<String> s = new HashSet<>(prefs().getStringSet("filter_users", new HashSet<>()));
+        boolean add = !s.remove(String.valueOf(userId));
+        if (add) s.add(String.valueOf(userId));
+        prefs().edit().putStringSet("filter_users", s).putBoolean("filter_enabled", add || filterEnabled()).apply();
+        filterUsers = null;
+        if (fragment != null && fragment.getParentActivity() != null) {
+            Toast.makeText(fragment.getParentActivity(), add ? "Сообщения этого человека будут скрыты" : "Сообщения снова видны", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    static void clearUserFilter() {
+        prefs().edit().remove("filter_users").apply();
+        filterUsers = null;
+    }
+
+    /**
+     * Вызывается из конструктора MessageObject до построения разметки. true — текст
+     * сообщения нужно заменить пометкой «скрыто фильтром».
+     */
+    public static boolean filterMessage(MessageObject m) {
+        try {
+            if (!filterEnabled() || m == null || m.messageOwner == null || m.messageOwner.out) return false;
+            if (m.type != MessageObject.TYPE_TEXT) return false;
+            if (!users().isEmpty() && users().contains(m.getFromChatId())) return true;
+            String text = m.messageOwner.message;
+            if (TextUtils.isEmpty(text)) return false;
+            String low = text.toLowerCase(Locale.ROOT);
+            for (String w : words()) if (low.contains(w)) return true;
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+        return false;
+    }
+
+    static void editFilterWords(BaseFragment fragment, Runnable done) {
+        if (fragment.getParentActivity() == null) return;
+        android.widget.EditText input = new android.widget.EditText(fragment.getParentActivity());
+        input.setText(filterWordsText());
+        input.setMinLines(3);
+        input.setHint("каждое слово с новой строки");
+        android.widget.FrameLayout box = new android.widget.FrameLayout(fragment.getParentActivity());
+        int pad = AndroidUtilities.dp(24);
+        box.setPadding(pad, 0, pad, 0);
+        box.addView(input);
+        new AlertDialog.Builder(fragment.getParentActivity())
+                .setTitle("🚫 Слова для фильтра")
+                .setMessage("Сообщения, в которых есть эти слова, будут скрыты (кроме ваших). Регистр не важен.")
+                .setView(box)
+                .setPositiveButton("Сохранить", (d, w) -> {
+                    setFilterWords(input.getText().toString());
+                    if (done != null) done.run();
+                })
+                .setNegativeButton("Отмена", null)
                 .show();
     }
 }

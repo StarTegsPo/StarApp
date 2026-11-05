@@ -283,6 +283,96 @@ patch(PA,
                     org.startegs.StarMod.showPeerInfo(ProfileActivity.this, getDialogId());
                 } else if (id == share) {""")
 
+print("== 1.3: замок, фильтр, аватарки, кнопка, иконки")
+patch(CA,
+      """        final int encId = arguments.getInt("enc_id", 0);
+""",
+      """        final int encId = arguments.getInt("enc_id", 0);
+        if (!org.startegs.StarLock.allowOpen(this, chatId != 0 ? -chatId : userId != 0 ? userId : encId != 0 ? DialogObject.makeEncryptedDialogId(encId) : 0)) {
+            return false;
+        }
+""")
+patch("TMessagesProj/src/main/java/org/telegram/messenger/MessageObject.java",
+      """        updateMessageText(users, chats, sUsers, sChats);
+        setType();
+        if (generateLayout) {
+            updateTranslation(false);
+        }
+        measureInlineBotButtons();
+""",
+      """        updateMessageText(users, chats, sUsers, sChats);
+        setType();
+        if (org.startegs.StarMod.filterMessage(this)) {
+            messageText = "🚫 Скрыто фильтром StarTegs";
+        }
+        if (generateLayout) {
+            updateTranslation(false);
+        }
+        measureInlineBotButtons();
+""")
+patch("TMessagesProj/src/main/java/org/telegram/ui/Cells/DialogCell.java",
+      """            avatarImage.setRoundRadius(avatarRadius);
+""",
+      """            avatarImage.setRoundRadius(org.startegs.StarMod.avatarRadius(avatarRadius, dp(28)));
+            avatarDrawable.setRoundRadius(org.startegs.StarMod.avatarDrawableRadius(avatarRadius, dp(28)));
+""")
+patch(CELL,
+      """        avatarImage.setRoundRadius(dp(21));
+        avatarDrawable = new AvatarDrawable();
+""",
+      """        avatarImage.setRoundRadius(org.startegs.StarMod.avatarRadius(dp(21), dp(21)));
+        avatarDrawable = new AvatarDrawable();
+        avatarDrawable.setRoundRadius(org.startegs.StarMod.avatarDrawableRadius(dp(21), dp(21)));
+""")
+DA = "TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java"
+patch(DA,
+      """            passcodeItem = menu.addItem(1, R.drawable.outline_header_lock_24);""",
+      """            if (org.startegs.StarMod.showChatsButton()) {
+                menu.addItem(org.startegs.StarMod.MENU_HUB, R.drawable.msg_fave).setContentDescription("StarTegs");
+            }
+            passcodeItem = menu.addItem(1, R.drawable.outline_header_lock_24);""")
+patch(DA,
+      """            public void onItemClick(int id) {
+                if ((id == SearchViewPager.forwardItemId""",
+      """            public void onItemClick(int id) {
+                if (id == org.startegs.StarMod.MENU_HUB) {
+                    DialogsActivity.this.presentFragment(new org.startegs.StarHubActivity());
+                    return;
+                }
+                if ((id == SearchViewPager.forwardItemId""")
+patch(PA,
+      """            otherItem.addSubItem(org.startegs.StarMod.MENU_PEER_INFO, R.drawable.msg_info, "ID и дата регистрации");
+""",
+      """            otherItem.addSubItem(org.startegs.StarMod.MENU_PEER_INFO, R.drawable.msg_info, "ID и дата регистрации");
+            otherItem.addSubItem(org.startegs.StarMod.MENU_LOCK, R.drawable.msg_permissions,
+                    org.startegs.StarLock.isLocked(getDialogId()) ? "Снять замок с чата" : "Закрыть чат PIN-кодом");
+            if (userId != 0 && userId != getUserConfig().getClientUserId()) {
+                otherItem.addSubItem(org.startegs.StarMod.MENU_FILTER_USER, R.drawable.msg_block,
+                        org.startegs.StarMod.isUserFiltered(userId) ? "Снова показывать его сообщения" : "Скрывать его сообщения");
+            }
+""")
+patch(PA,
+      """                } else if (id == org.startegs.StarMod.MENU_PEER_INFO) {""",
+      """                } else if (id == org.startegs.StarMod.MENU_LOCK) {
+                    org.startegs.StarLock.toggleLock(ProfileActivity.this, getDialogId());
+                } else if (id == org.startegs.StarMod.MENU_FILTER_USER) {
+                    org.startegs.StarMod.toggleUserFilter(ProfileActivity.this, userId);
+                } else if (id == org.startegs.StarMod.MENU_PEER_INFO) {""")
+LIC = "TMessagesProj/src/main/java/org/telegram/ui/LauncherIconController.java"
+for t in ("AppIconPremium", "AppIconTurbo", "AppIconNox"):
+    patch(LIC, f"R.string.{t}, true)", f"R.string.{t}, false)")  # иконки StarTegs доступны всем
+STR = "TMessagesProj/src/main/res/values/strings.xml"
+for key, old, new in [("AppIconDefault", "Default", "StarTegs"), ("AppIconVintage", "Vintage", "Золото"), ("AppIconAqua", "Aqua", "Изумруд"),
+                      ("AppIconPremium", "Premium", "Неон"), ("AppIconTurbo", "Turbo", "Закат"), ("AppIconNox", "Nox", "Ночь")]:
+    patch(STR, f'<string name="{key}">{old}</string>', f'<string name="{key}">{new}</string>')
+res_main = CLIENT / "res-main"
+for f in res_main.rglob("*"):
+    if f.is_file():
+        target = TG / "TMessagesProj/src/main/res" / f.relative_to(res_main)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(f, target)
+print(f"  ✓ иконки: {sum(1 for f in res_main.rglob('*') if f.is_file())} файлов")
+
 print("== интерфейс")
 patch("TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java",
       """            newVisibility = !onlySelfStories && getStoriesController().hasStories();
