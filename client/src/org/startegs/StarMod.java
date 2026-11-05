@@ -70,6 +70,8 @@ public final class StarMod {
     public static final int MENU_FILTER_USER = 9303;
     /** Кнопка StarTegs в списке чатов. */
     public static final int MENU_HUB = 9400;
+    /** Пункт меню профиля: скрыть чат из списка. */
+    public static final int MENU_HIDE = 9304;
 
     // ---------------------------------------------------------------- настройки
 
@@ -91,22 +93,22 @@ public final class StarMod {
 
     /** Не отправлять «печатает…». */
     public static boolean ghostTyping() {
-        return prefs().getBoolean("ghost_typing", false);
+        return prefs().getBoolean("ghost_typing", false) && isPro();
     }
 
     /** Не отправлять отметку о прочтении в личных чатах. */
     public static boolean ghostRead() {
-        return prefs().getBoolean("ghost_read", false);
+        return prefs().getBoolean("ghost_read", false) && isPro();
     }
 
     /** Не показывать «в сети»: клиент сообщает серверу, что он офлайн. */
     public static boolean ghostOnline() {
-        return prefs().getBoolean("ghost_online", false);
+        return prefs().getBoolean("ghost_online", false) && isPro();
     }
 
     /** Смотреть истории, не попадая в список просмотревших. */
     public static boolean ghostStories() {
-        return prefs().getBoolean("ghost_stories", false);
+        return prefs().getBoolean("ghost_stories", false) && isPro();
     }
 
     public static boolean hideStories() {
@@ -118,6 +120,43 @@ public final class StarMod {
         return prefs().getBoolean("hide_promo", false);
     }
 
+    // ---------------------------------------------------------------- Premium мода (тариф в боте StarTegs)
+
+    /** Есть ли у пользователя Premium или VIP в боте StarTegs. Без указанного бота всё бесплатно. */
+    public static boolean isPro() {
+        return TextUtils.isEmpty(StarModConfig.ECO_BOT) || !"free".equals(StarCloud.tier());
+    }
+
+    static String tierTitle() {
+        switch (StarCloud.tier()) {
+            case "vip": return "VIP 👑";
+            case "pro": return "Premium ⭐";
+            default: return "Free";
+        }
+    }
+
+    /** true — можно; иначе предлагает оформить Premium в боте и возвращает false. */
+    public static boolean requirePro(BaseFragment fragment, String feature) {
+        if (isPro()) return true;
+        if (fragment == null || fragment.getParentActivity() == null) return false;
+        new AlertDialog.Builder(fragment.getParentActivity())
+                .setTitle("⭐ " + feature + " — Premium")
+                .setMessage("Эта функция мода доступна с Premium или VIP в @" + StarModConfig.ECO_BOT + ". "
+                        + "Оформите подписку в боте за Telegram Stars, затем нажмите «Проверить».")
+                .setPositiveButton("Оформить", (d, w) -> Browser.openUrl(fragment.getParentActivity(), "https://t.me/" + StarModConfig.ECO_BOT + "?start=premium"))
+                .setNeutralButton("Проверить", (d, w) -> StarCloud.refreshTier(fragment, true, null))
+                .setNegativeButton("Закрыть", null)
+                .show();
+        return false;
+    }
+
+    /** Вызывается из LauncherIconController.setIcon: иконки, кроме стандартной, — для Premium. */
+    public static boolean allowIcon(int ordinal) {
+        if (ordinal == 0 || isPro()) return true;
+        AndroidUtilities.runOnUIThread(() -> requirePro(org.telegram.ui.LaunchActivity.getLastFragment(), "Иконки StarTegs"));
+        return false;
+    }
+
     /** Переключает настройку; def — значение по умолчанию, если её ещё не меняли. */
     public static void toggle(String key, boolean def) {
         prefs().edit().putBoolean(key, !prefs().getBoolean(key, def)).apply();
@@ -127,18 +166,20 @@ public final class StarMod {
 
     private static final class Db extends SQLiteOpenHelper {
         Db(Context c) {
-            super(c, "startegs_mod.db", null, 1);
+            super(c, "startegs_mod.db", null, 2);
         }
 
         @Override
         public void onCreate(SQLiteDatabase db) {
-            db.execSQL("CREATE TABLE deleted (account INTEGER, dialog INTEGER, mid INTEGER, date INTEGER, PRIMARY KEY (account, dialog, mid))");
+            db.execSQL("CREATE TABLE deleted (account INTEGER, dialog INTEGER, mid INTEGER, date INTEGER, synced INTEGER DEFAULT 0, PRIMARY KEY (account, dialog, mid))");
             db.execSQL("CREATE TABLE edits (id INTEGER PRIMARY KEY AUTOINCREMENT, account INTEGER, dialog INTEGER, mid INTEGER, date INTEGER, text TEXT)");
             db.execSQL("CREATE INDEX edits_idx ON edits (account, dialog, mid)");
         }
 
         @Override
-        public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {}
+        public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+            if (oldVersion < 2) db.execSQL("ALTER TABLE deleted ADD COLUMN synced INTEGER DEFAULT 0");
+        }
     }
 
     private static Db db;
@@ -762,5 +803,35 @@ public final class StarMod {
                 })
                 .setNegativeButton("Отмена", null)
                 .show();
+    }
+
+    // ---------------------------------------------------------------- облачный архив: что уже отправлено
+
+    static List<long[]> unsyncedDeleted(int account, int limit) {
+        ArrayList<long[]> out = new ArrayList<>();
+        try (Cursor c = sql().rawQuery("SELECT dialog, mid FROM deleted WHERE account = ? AND synced = 0 ORDER BY date LIMIT " + limit,
+                new String[]{String.valueOf(account)})) {
+            while (c.moveToNext()) out.add(new long[]{c.getLong(0), c.getLong(1)});
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+        return out;
+    }
+
+    static void markSynced(int account, List<long[]> keys) {
+        try {
+            SQLiteDatabase s = sql();
+            s.beginTransaction();
+            try {
+                for (long[] k : keys) {
+                    s.execSQL("UPDATE deleted SET synced = 1 WHERE account = ? AND dialog = ? AND mid = ?", new Object[]{account, k[0], k[1]});
+                }
+                s.setTransactionSuccessful();
+            } finally {
+                s.endTransaction();
+            }
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
     }
 }

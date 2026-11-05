@@ -9,6 +9,7 @@ import android.view.View;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
+import org.telegram.messenger.browser.Browser;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
@@ -26,6 +27,11 @@ public class StarHubActivity extends UniversalFragment {
     private static final int ID_CHECK_UPDATE = 701;
     private static final int ID_GHOST_ONLINE = 402;
     private static final int ID_GHOST_STORIES = 403;
+    private static final int ID_TIER = 1100;
+    private static final int ID_TIER_BUY = 1101;
+    private static final int ID_HIDDEN = 1102;
+    private static final int ID_ARCHIVE = 1103;
+    private static final int ID_ARCHIVE_NOW = 1104;
     private static final int ID_DELETED_LIST = 302;
     private static final int ID_FILTER = 800;
     private static final int ID_FILTER_WORDS = 801;
@@ -47,6 +53,20 @@ public class StarHubActivity extends UniversalFragment {
     private static final int ID_STATS = 600;
     private static final int ID_CLEAR = 601;
 
+    private static String pro(String title) {
+        return StarMod.isPro() ? title : title + "  🔒";
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        Runnable refresh = () -> {
+            if (listView != null) listView.adapter.update(true);
+        };
+        StarCloud.refreshTier(this, false, refresh);
+        StarCloud.syncArchive(this, false, refresh);
+    }
+
     @Override
     protected CharSequence getTitle() {
         return "⭐ StarTegs";
@@ -57,6 +77,14 @@ public class StarHubActivity extends UniversalFragment {
         if (StarMod.updateAvailable()) {
             items.add(UItem.asButton(ID_UPDATE, R.drawable.msg_download, "🔔 Скачать новую версию", StarMod.updateName()).accent());
             items.add(UItem.asShadow(null));
+        }
+        if (!StarModConfig.ECO_BOT.isEmpty()) {
+            items.add(UItem.asHeader("Тариф"));
+            items.add(UItem.asButton(ID_TIER, R.drawable.msg_premium_badge, "Ваш тариф: " + StarMod.tierTitle(), "обновить"));
+            if (!StarMod.isPro()) {
+                items.add(UItem.asButton(ID_TIER_BUY, R.drawable.msg_fave, "Оформить Premium за ⭐ Stars").accent());
+            }
+            items.add(UItem.asShadow("Premium и VIP оформляются в @" + StarModConfig.ECO_BOT + " и открывают в моде приватность, замок и скрытые чаты, все палитры и иконки. Отмечены 🔒."));
         }
         items.add(UItem.asHeader("Сервисы"));
         boolean any = false;
@@ -73,7 +101,7 @@ public class StarHubActivity extends UniversalFragment {
         int active = StarTheme.activePalette();
         items.add(UItem.asRadio(ID_PALETTE_OFF, "Выключен (обычная тема)").setChecked(active < 0));
         for (int i = 0; i < StarTheme.PALETTES.length; i++) {
-            items.add(UItem.asRadio(ID_PALETTE_OFF + 1 + i, "StarTegs · " + StarTheme.PALETTES[i][1]).setChecked(active == i));
+            items.add(UItem.asRadio(ID_PALETTE_OFF + 1 + i, "StarTegs · " + (i == 0 ? StarTheme.PALETTES[i][1] : pro(StarTheme.PALETTES[i][1]))).setChecked(active == i));
         }
         items.add(UItem.asShadow("У каждой палитры есть светлый и тёмный вариант — они переключаются вместе с ночным режимом Telegram. При выключении вернётся прежняя тема."));
         items.add(UItem.asHeader("Настройки вида"));
@@ -84,14 +112,18 @@ public class StarHubActivity extends UniversalFragment {
         items.add(UItem.asHeader("Сообщения"));
         items.add(UItem.asCheck(ID_SAVE_DELETED, "Сохранять удалённые сообщения").setChecked(StarMod.saveDeleted()));
         items.add(UItem.asCheck(ID_SAVE_EDITS, "Сохранять историю изменений").setChecked(StarMod.saveEdits()));
+        items.add(UItem.asCheck(ID_ARCHIVE, "Копировать удалённые в облачный архив бота").setChecked(StarCloud.archiveEnabled()));
+        if (StarCloud.archiveEnabled()) {
+            items.add(UItem.asButton(ID_ARCHIVE_NOW, R.drawable.msg_download, "Отправить в архив сейчас"));
+        }
         items.add(UItem.asButton(ID_DELETED_LIST, R.drawable.msg_delete, "Все удалённые сообщения"));
-        items.add(UItem.asShadow("Удалённые остаются в чате с пометкой «🗑 удалено», старые версии правок — в меню сообщения."));
+        items.add(UItem.asShadow("Удалённые остаются в чате с пометкой «🗑 удалено», старые версии правок — в меню сообщения. Облачный архив отправляет удалённые в ваш бот StarTegs, где их можно искать."));
 
         items.add(UItem.asHeader("Приватность"));
-        items.add(UItem.asCheck(ID_GHOST_TYPING, "Не показывать, что я печатаю").setChecked(StarMod.ghostTyping()));
-        items.add(UItem.asCheck(ID_GHOST_READ, "Не отправлять «прочитано» в личных чатах").setChecked(StarMod.ghostRead()));
-        items.add(UItem.asCheck(ID_GHOST_ONLINE, "Не показывать «в сети»").setChecked(StarMod.ghostOnline()));
-        items.add(UItem.asCheck(ID_GHOST_STORIES, "Смотреть истории тайно").setChecked(StarMod.ghostStories()));
+        items.add(UItem.asCheck(ID_GHOST_TYPING, pro("Не показывать, что я печатаю")).setChecked(StarMod.ghostTyping()));
+        items.add(UItem.asCheck(ID_GHOST_READ, pro("Не отправлять «прочитано» в личных чатах")).setChecked(StarMod.ghostRead()));
+        items.add(UItem.asCheck(ID_GHOST_ONLINE, pro("Не показывать «в сети»")).setChecked(StarMod.ghostOnline()));
+        items.add(UItem.asCheck(ID_GHOST_STORIES, pro("Смотреть истории тайно")).setChecked(StarMod.ghostStories()));
         items.add(UItem.asShadow("Собеседник не увидит «печатает…», две галочки и вас в сети, а автор истории — вас среди просмотревших. "
                 + "Чаты без «прочитано» останутся непрочитанными на других ваших устройствах."));
 
@@ -104,12 +136,13 @@ public class StarHubActivity extends UniversalFragment {
         }
         items.add(UItem.asShadow("Текст подходящих сообщений заменяется пометкой «скрыто фильтром». Скрыть все сообщения человека — профиль → ⋮ → «Скрывать его сообщения»."));
 
-        items.add(UItem.asHeader("Закрытые чаты"));
+        items.add(UItem.asHeader(StarMod.isPro() ? "Закрытые и скрытые чаты" : "Закрытые и скрытые чаты  🔒"));
+        items.add(UItem.asButton(ID_HIDDEN, R.drawable.msg_permissions, "🙈 Скрытые чаты", StarHidden.count() > 0 ? String.valueOf(StarHidden.count()) : ""));
         items.add(UItem.asButton(ID_LOCK_PIN, R.drawable.msg_permissions, StarLock.hasPin() ? "Сменить PIN-код" : "Задать PIN-код"));
         if (StarLock.lockedCount() > 0) {
             items.add(UItem.asButton(ID_LOCK_CLEAR, R.drawable.msg_delete, "Снять все замки", String.valueOf(StarLock.lockedCount())));
         }
-        items.add(UItem.asShadow("Закрыть чат: профиль чата → ⋮ → «Закрыть чат PIN-кодом». После ввода PIN чат открыт 5 минут."));
+        items.add(UItem.asShadow("Закрыть или скрыть чат: профиль чата → ⋮ → «Закрыть чат PIN-кодом» или «Скрыть чат из списка». Скрытые открываются здесь по PIN."));
 
         items.add(UItem.asHeader("Интерфейс"));
         items.add(UItem.asCheck(ID_CHATS_BUTTON, "Кнопка ⭐ StarTegs над списком чатов").setChecked(StarMod.showChatsButton()));
@@ -154,7 +187,26 @@ public class StarHubActivity extends UniversalFragment {
         Runnable refresh = () -> {
             if (listView != null) listView.adapter.update(true);
         };
+        if ((id == ID_GHOST_TYPING || id == ID_GHOST_READ || id == ID_GHOST_ONLINE || id == ID_GHOST_STORIES) && !StarMod.requirePro(this, "Приватность")) {
+            return;
+        }
         switch (id) {
+            case ID_TIER:
+                StarCloud.refreshTier(this, true, refresh);
+                return;
+            case ID_TIER_BUY:
+                Browser.openUrl(getParentActivity(), "https://t.me/" + StarModConfig.ECO_BOT + "?start=premium");
+                return;
+            case ID_HIDDEN:
+                StarLock.askPinThen(this, () -> presentFragment(new StarHiddenActivity()));
+                return;
+            case ID_ARCHIVE:
+                StarMod.toggle("cloud_archive", false);
+                if (StarCloud.archiveEnabled()) StarCloud.syncArchive(this, true, refresh);
+                break;
+            case ID_ARCHIVE_NOW:
+                StarCloud.syncArchive(this, true, refresh);
+                return;
             case ID_DELETED_LIST:
                 presentFragment(new StarDeletedActivity());
                 return;

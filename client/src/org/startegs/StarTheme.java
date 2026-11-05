@@ -74,6 +74,7 @@ public final class StarTheme {
 
     /** Включить палитру (0..N-1) или выключить фирменный дизайн (-1). */
     public static void setPalette(BaseFragment fragment, int palette) {
+        if (palette > 0 && !StarMod.requirePro(fragment, "Палитры StarTegs")) return;
         try {
             // Экраны перекрашивает LaunchActivity по событию needSetDayNightTheme, как при обычной смене темы
             if (palette < 0) disable(); else enable(palette);

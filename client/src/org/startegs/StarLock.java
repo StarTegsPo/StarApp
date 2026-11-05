@@ -153,6 +153,7 @@ public final class StarLock {
             }, null);
             return;
         }
+        if (!StarMod.requirePro(fragment, "Замок на чаты")) return;
         Runnable lock = () -> {
             Set<String> s = lockedSet();
             s.add(String.valueOf(dialogId));
@@ -161,6 +162,18 @@ public final class StarLock {
             Toast.makeText(fragment.getParentActivity(), "🔒 Чат закрыт PIN-кодом", Toast.LENGTH_SHORT).show();
         };
         if (hasPin()) lock.run(); else setupPin(fragment, lock);
+    }
+
+    /** Спросить PIN и, если он верный, выполнить действие (например, открыть скрытые чаты). */
+    public static void askPinThen(BaseFragment fragment, Runnable ok) {
+        if (!hasPin()) {
+            setupPin(fragment, ok);
+            return;
+        }
+        askPin(fragment.getParentActivity(), "🔒 PIN-код", "Введите PIN", pin -> {
+            if (checkPin(pin)) ok.run();
+            else Toast.makeText(fragment.getParentActivity(), "Неверный PIN", Toast.LENGTH_SHORT).show();
+        }, null);
     }
 
     public static void unlockAll(BaseFragment fragment, Runnable done) {

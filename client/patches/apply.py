@@ -79,6 +79,8 @@ for i in range(1, 20):
     "final class StarModConfig {\n"
     f"    static final String MOD_VERSION = {java_str(P.get('mod_version', '1.0'))};\n"
     f"    static final String AI_BOT = {java_str(P.get('ai_bot', ''))};\n"
+    f"    /** бот StarTegs: тариф Premium/VIP и облачный архив (пусто — всё бесплатно, архив выключен) */\n"
+    f"    static final String ECO_BOT = {java_str(P.get('eco_bot', ''))};\n"
     f"    static final String UPDATE_REPO = {java_str(P.get('update_repo') or os.environ.get('GITHUB_REPOSITORY', ''))};\n"
     f"    /** короткий хэш коммита сборки — по нему мод узнаёт, есть ли версия новее */\n"
     f"    static final String BUILD_SHA = {java_str(os.environ.get('GITHUB_SHA', '')[:7])};\n"
@@ -372,6 +374,35 @@ for f in res_main.rglob("*"):
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(f, target)
 print(f"  ✓ иконки: {sum(1 for f in res_main.rglob('*') if f.is_file())} файлов")
+
+print("== 1.4: скрытые чаты, Premium, облачный архив")
+for old in ("""        if (dialogsType == DIALOGS_TYPE_DEFAULT) {
+            return messagesController.getDialogs(folderId);""",
+            """            if (dialogFilter == null) {
+                return messagesController.getDialogs(folderId);""",
+            """                return dialogFilter.dialogs;
+            }"""):
+    new = old.replace("return messagesController.getDialogs(folderId);", "return org.startegs.StarHidden.filter(messagesController.getDialogs(folderId));") \
+             .replace("return dialogFilter.dialogs;", "return org.startegs.StarHidden.filter(dialogFilter.dialogs);")
+    patch(DA, old, new)
+patch(PA,
+      """            otherItem.addSubItem(org.startegs.StarMod.MENU_LOCK, R.drawable.msg_permissions,""",
+      """            otherItem.addSubItem(org.startegs.StarMod.MENU_HIDE, R.drawable.msg_archive,
+                    org.startegs.StarHidden.isHidden(getDialogId()) ? "Вернуть чат в список" : "Скрыть чат из списка");
+            otherItem.addSubItem(org.startegs.StarMod.MENU_LOCK, R.drawable.msg_permissions,""")
+patch(PA,
+      """                } else if (id == org.startegs.StarMod.MENU_LOCK) {""",
+      """                } else if (id == org.startegs.StarMod.MENU_HIDE) {
+                    org.startegs.StarHidden.toggle(ProfileActivity.this, getDialogId());
+                } else if (id == org.startegs.StarMod.MENU_LOCK) {""")
+patch(LIC,
+      """    public static void setIcon(LauncherIcon icon) {
+""",
+      """    public static void setIcon(LauncherIcon icon) {
+        if (!org.startegs.StarMod.allowIcon(icon.ordinal())) {
+            return;
+        }
+""")
 
 print("== интерфейс")
 patch("TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java",
