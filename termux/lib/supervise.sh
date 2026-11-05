@@ -11,6 +11,20 @@ child=""
 trap 'touch "$STOP"; alive "$child" && kill -TERM "$child" 2>/dev/null' TERM INT
 
 cd "$(dirname "$FILE")" || exit 1
+
+# Переменные из .env в папке бота (BOT_TOKEN=..., PORT=...) получает только этот бот,
+# поэтому у ботов не смешиваются токены, даже если переменная называется одинаково.
+# Файл читается как строки KEY=VALUE, команды из него не выполняются.
+if [ -f .env ]; then
+  while IFS= read -r l || [ -n "$l" ]; do
+    l="${l%$'\r'}"
+    [[ "$l" =~ ^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$ ]] || continue
+    k="${BASH_REMATCH[2]}"; v="${BASH_REMATCH[3]}"
+    if [[ "$v" =~ ^\"(.*)\"$ || "$v" =~ ^\'(.*)\'$ ]]; then v="${BASH_REMATCH[1]}"; else v="${v%%[[:space:]]#*}"; v="${v%"${v##*[![:space:]]}"}"; fi
+    export "$k=$v"
+  done < .env
+fi
+
 delay=5
 while [ ! -e "$STOP" ]; do
   if [ -f "$LOG" ] && [ "$(wc -c < "$LOG")" -gt "$MAX_LOG" ]; then mv -f "$LOG" "$LOG.1"; fi
