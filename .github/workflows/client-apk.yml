@@ -1,0 +1,113 @@
+name: Сборка клиента StarTegs
+
+# Собирает APK мода StarTegs: берёт официальный исходный код Telegram для Android,
+# накладывает мод из папки client/ и публикует APK в релизе «client-latest».
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'client/**'
+      - '.github/workflows/client-apk.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: client-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Освободить место на диске
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/node_modules /opt/ghc /usr/local/.ghcup /usr/share/swift \
+                      /usr/local/share/powershell /usr/local/share/chromium /opt/hostedtoolcache/CodeQL || true
+          df -h /
+
+      - name: Настройки мода
+        id: cfg
+        run: |
+          get() { grep -E "^$1=" client/startegs.properties | head -n1 | cut -d= -f2- | tr -d '\r'; }
+          echo "commit=$(get upstream_commit)" >> "$GITHUB_OUTPUT"
+          echo "version=$(get mod_version)" >> "$GITHUB_OUTPUT"
+
+      - name: Исходники Telegram
+        run: |
+          git init -q tg && cd tg
+          git remote add origin https://github.com/DrKLO/Telegram.git
+          git fetch -q --depth 1 origin "${{ steps.cfg.outputs.commit }}"
+          git checkout -q FETCH_HEAD
+          git submodule update --init --recursive --depth 1 --jobs 8
+          du -sh .
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK, NDK и CMake
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" --install "ndk;27.2.12479018" "cmake;3.22.1" "build-tools;36.0.0" "platforms;android-36" > /dev/null
+          echo "sdk.dir=$ANDROID_HOME" > tg/local.properties
+
+      - name: Наложить мод
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+        run: python3 client/patches/apply.py tg
+
+      - name: Ключ подписи
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > tg/TMessagesProj/config/release.keystore
+            ALIAS=$(keytool -list -keystore tg/TMessagesProj/config/release.keystore -storepass "$KEYSTORE_PASSWORD" | grep -m1 PrivateKeyEntry | cut -d, -f1)
+            sed -i "s|^RELEASE_KEY_PASSWORD=.*|RELEASE_KEY_PASSWORD=$KEYSTORE_PASSWORD|; s|^RELEASE_STORE_PASSWORD=.*|RELEASE_STORE_PASSWORD=$KEYSTORE_PASSWORD|; s|^RELEASE_KEY_ALIAS=.*|RELEASE_KEY_ALIAS=$ALIAS|" tg/gradle.properties
+            echo "Подпись: свой ключ ($ALIAS)"
+          else
+            echo "::warning::Секрет KEYSTORE_BASE64 не задан — APK подписан тестовым ключом из исходников Telegram. Для раздачи пользователям создайте свой ключ (см. client/README.md)."
+          fi
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Сборка APK
+        working-directory: tg
+        run: |
+          ./gradlew :TMessagesProj_AppStandalone:assembleAfatStandalone \
+            --no-daemon --stacktrace -Dorg.gradle.jvmargs="-Xmx6g -XX:MaxMetaspaceSize=1g"
+
+      - name: Найти APK
+        id: apk
+        run: |
+          APK=$(find tg/TMessagesProj_AppStandalone/build/outputs/apk -name '*.apk' | head -n1)
+          test -n "$APK" || { echo "APK не найден"; exit 1; }
+          OUT="StarTegs-${{ steps.cfg.outputs.version }}-${GITHUB_SHA::7}.apk"
+          cp "$APK" "$OUT"
+          echo "file=$OUT" >> "$GITHUB_OUTPUT"
+          ls -lh "$OUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StarTegs-apk
+          path: ${{ steps.apk.outputs.file }}
+
+      - name: Опубликовать в релизе client-latest
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: client-latest
+          name: StarTegs (последняя сборка)
+          prerelease: true
+          make_latest: false
+          files: ${{ steps.apk.outputs.file }}
+          body: |
+            Сборка мода StarTegs из ветки `${{ github.ref_name }}`, коммит ${{ github.sha }}.
+            Скачайте файл .apk на телефон и установите (разрешите установку из неизвестных источников).
