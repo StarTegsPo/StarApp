@@ -635,6 +635,17 @@ patch(PA,
                     org.startegs.StarAuto.toggle(ProfileActivity.this, getDialogId());
                 } else if (id == org.startegs.StarExtra.MENU_LABEL) {""")
 
+print("== 1.9: шаблоны ответов")
+patch(CA,
+      """                headerItem.lazilyAddSubItem(org.startegs.StarExtra.MENU_ASK_CHAT, R.drawable.msg_search, "Спросить ИИ про чат");""",
+      """                headerItem.lazilyAddSubItem(org.startegs.StarExtra.MENU_ASK_CHAT, R.drawable.msg_search, "Спросить ИИ про чат");
+                headerItem.lazilyAddSubItem(org.startegs.StarMore.MENU_TEMPLATES, R.drawable.msg_edit, "Шаблоны ответов");""")
+patch(CA,
+      """                } else if (id == org.startegs.StarExtra.MENU_ASK_CHAT) {""",
+      """                } else if (id == org.startegs.StarMore.MENU_TEMPLATES) {
+                    org.startegs.StarMore.pickTemplate(ChatActivity.this);
+                } else if (id == org.startegs.StarExtra.MENU_ASK_CHAT) {""")
+
 print("== отчёт о сбоях")
 patch("TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java",
       """        try {

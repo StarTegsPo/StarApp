@@ -35,6 +35,9 @@ public class StarHubActivity extends UniversalFragment {
     private static final int ID_SCAM = 1700;
     private static final int ID_BIOMETRIC = 1701;
     private static final int ID_LABELS = 1702;
+    private static final int ID_TEMPLATES = 1900;
+    private static final int ID_DAILY = 1901;
+    private static final int ID_BACKUP = 1902;
     private static final int ID_AR_PROMPT = 1800;
     private static final int ID_AR_MARK = 1801;
     private static final int ID_AR_OFF = 1802;
@@ -112,6 +115,7 @@ public class StarHubActivity extends UniversalFragment {
         if (StarAi.enabled()) {
             items.add(UItem.asHeader("Нейросеть"));
             items.add(UItem.asButton(ID_AI_CHAT, R.drawable.msg_bot, "🤖 Чат с ИИ"));
+            items.add(UItem.asButton(ID_DAILY, R.drawable.msg_calendar2, "☀️ Сводка дня"));
             items.add(UItem.asCheck(ID_AI_TRANSLATE, "🌍 Перевод чатов через ИИ").setChecked(StarAuto.aiTranslate()));
             items.add(UItem.asButton(ID_AR_PROMPT, R.drawable.msg_edit, "🤖 Автоответ: как отвечать", StarAuto.count() > 0 ? "вкл. в " + StarAuto.count() : ""));
             items.add(UItem.asCheck(ID_AR_MARK, "Помечать автоответы 🤖").setChecked(StarAuto.markReplies()));
@@ -163,6 +167,8 @@ public class StarHubActivity extends UniversalFragment {
         }
         items.add(UItem.asButton(ID_DELETED_LIST, R.drawable.msg_delete, "Все удалённые сообщения"));
         items.add(UItem.asButton(ID_LABELS, R.drawable.msg_folders, "🏷 Метки чатов"));
+        items.add(UItem.asButton(ID_TEMPLATES, R.drawable.msg_edit, "💬 Шаблоны ответов", StarMore.templatesCount() == 0 ? "" : String.valueOf(StarMore.templatesCount())));
+        items.add(UItem.asButton(ID_BACKUP, R.drawable.msg_download, "💾 Резервная копия настроек"));
         items.add(UItem.asButton(ID_NOTES, R.drawable.msg_edit, "📝 Мои заметки", StarTools.allNotes().isEmpty() ? "" : String.valueOf(StarTools.allNotes().size())));
         items.add(UItem.asShadow("Удалённые остаются в чате с пометкой «🗑 удалено», старые версии правок — в меню сообщения. Облачный архив отправляет удалённые в ваш бот StarTegs, где их можно искать."));
 
@@ -258,6 +264,15 @@ public class StarHubActivity extends UniversalFragment {
             return;
         }
         switch (id) {
+            case ID_TEMPLATES:
+                StarMore.manageTemplates(this, refresh);
+                return;
+            case ID_DAILY:
+                StarMore.dailySummary(this);
+                return;
+            case ID_BACKUP:
+                StarMore.backup(this);
+                return;
             case ID_NOTES:
                 presentFragment(new StarNotesActivity());
                 return;
