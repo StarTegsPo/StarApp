@@ -19,7 +19,11 @@ import java.util.ArrayList;
 public class StarHubActivity extends UniversalFragment {
 
     private static final int ID_SERVICE = 100;        // 100..119 — сервисы
-    private static final int ID_BRAND = 200;
+    private static final int ID_PALETTE_OFF = 210;     // 210 — выключено, 211.. — палитры
+    private static final int ID_UPDATE = 700;
+    private static final int ID_CHECK_UPDATE = 701;
+    private static final int ID_GHOST_ONLINE = 402;
+    private static final int ID_GHOST_STORIES = 403;
     private static final int ID_TG_THEMES = 201;
     private static final int ID_SECONDS = 202;
     private static final int ID_SAVE_DELETED = 300;
@@ -38,6 +42,10 @@ public class StarHubActivity extends UniversalFragment {
 
     @Override
     protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
+        if (StarMod.updateAvailable()) {
+            items.add(UItem.asButton(ID_UPDATE, R.drawable.msg_download, "🔔 Скачать новую версию", StarMod.updateName()).accent());
+            items.add(UItem.asShadow(null));
+        }
         items.add(UItem.asHeader("Сервисы"));
         boolean any = false;
         for (int i = 0; i < StarModConfig.SERVICES.length; i++) {
@@ -49,12 +57,17 @@ public class StarHubActivity extends UniversalFragment {
         }
         items.add(UItem.asShadow(any ? "Откроется бот, а в нём — его мини-приложение." : "Сервисы не настроены в startegs.properties."));
 
-        items.add(UItem.asHeader("Оформление"));
-        items.add(UItem.asCheck(ID_BRAND, "Фирменный дизайн StarTegs").setChecked(StarTheme.isActive()));
+        items.add(UItem.asHeader("Фирменный дизайн"));
+        int active = StarTheme.activePalette();
+        items.add(UItem.asRadio(ID_PALETTE_OFF, "Выключен (обычная тема)").setChecked(active < 0));
+        for (int i = 0; i < StarTheme.PALETTES.length; i++) {
+            items.add(UItem.asRadio(ID_PALETTE_OFF + 1 + i, "StarTegs · " + StarTheme.PALETTES[i][1]).setChecked(active == i));
+        }
+        items.add(UItem.asShadow("У каждой палитры есть светлый и тёмный вариант — они переключаются вместе с ночным режимом Telegram. При выключении вернётся прежняя тема."));
+        items.add(UItem.asHeader("Настройки вида"));
         items.add(UItem.asCheck(ID_SECONDS, "Секунды во времени сообщений").setChecked(StarMod.showSeconds()));
         items.add(UItem.asButton(ID_TG_THEMES, R.drawable.msg_theme, "Темы, шрифт и пузыри сообщений"));
-        items.add(UItem.asShadow("Фирменный дизайн — фиолетово-синяя тема StarTegs, светлая и тёмная. Выключите, чтобы вернуть прежнюю. "
-                + "В «Темах» можно собрать свою: цвета, обои, размер шрифта, скругление сообщений."));
+        items.add(UItem.asShadow("В «Темах» можно собрать свою: цвета, обои, размер шрифта, скругление сообщений."));
 
         items.add(UItem.asHeader("Сообщения"));
         items.add(UItem.asCheck(ID_SAVE_DELETED, "Сохранять удалённые сообщения").setChecked(StarMod.saveDeleted()));
@@ -64,7 +77,10 @@ public class StarHubActivity extends UniversalFragment {
         items.add(UItem.asHeader("Приватность"));
         items.add(UItem.asCheck(ID_GHOST_TYPING, "Не показывать, что я печатаю").setChecked(StarMod.ghostTyping()));
         items.add(UItem.asCheck(ID_GHOST_READ, "Не отправлять «прочитано» в личных чатах").setChecked(StarMod.ghostRead()));
-        items.add(UItem.asShadow("Собеседник не увидит «печатает…» и две галочки. На других ваших устройствах такие чаты останутся непрочитанными."));
+        items.add(UItem.asCheck(ID_GHOST_ONLINE, "Не показывать «в сети»").setChecked(StarMod.ghostOnline()));
+        items.add(UItem.asCheck(ID_GHOST_STORIES, "Смотреть истории тайно").setChecked(StarMod.ghostStories()));
+        items.add(UItem.asShadow("Собеседник не увидит «печатает…», две галочки и вас в сети, а автор истории — вас среди просмотревших. "
+                + "Чаты без «прочитано» останутся непрочитанными на других ваших устройствах."));
 
         items.add(UItem.asHeader("Интерфейс"));
         items.add(UItem.asCheck(ID_HIDE_STORIES, "Скрыть истории над списком чатов").setChecked(StarMod.hideStories()));
@@ -72,6 +88,7 @@ public class StarHubActivity extends UniversalFragment {
         items.add(UItem.asShadow(null));
 
         items.add(UItem.asButton(ID_STATS, R.drawable.msg_stats, "Что сохранил мод"));
+        items.add(UItem.asButton(ID_CHECK_UPDATE, R.drawable.msg_download, "Проверить обновления"));
         items.add(UItem.asButton(ID_CLEAR, R.drawable.msg_delete, "Очистить сохранённое модом").red());
         items.add(UItem.asShadow("StarTegs " + StarModConfig.MOD_VERSION + " — неофициальный клиент на основе исходного кода Telegram. "
                 + "Всё, что сохраняет мод, хранится только на этом телефоне."));
@@ -84,9 +101,23 @@ public class StarHubActivity extends UniversalFragment {
             StarMod.openService(this, id - ID_SERVICE);
             return;
         }
+        if (id >= ID_PALETTE_OFF && id <= ID_PALETTE_OFF + StarTheme.PALETTES.length) {
+            StarTheme.setPalette(this, id - ID_PALETTE_OFF - 1);
+            if (listView != null) listView.adapter.update(true);
+            return;
+        }
         switch (id) {
-            case ID_BRAND:
-                StarTheme.setActive(this, !StarTheme.isActive());
+            case ID_UPDATE:
+                StarMod.offerUpdate(this);
+                return;
+            case ID_CHECK_UPDATE:
+                StarMod.checkUpdate(this, true);
+                return;
+            case ID_GHOST_ONLINE:
+                StarMod.toggle("ghost_online", false);
+                break;
+            case ID_GHOST_STORIES:
+                StarMod.toggle("ghost_stories", false);
                 break;
             case ID_TG_THEMES:
                 presentFragment(new ThemeActivity(ThemeActivity.THEME_TYPE_BASIC));

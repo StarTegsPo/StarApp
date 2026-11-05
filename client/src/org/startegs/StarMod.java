@@ -10,6 +10,9 @@ package org.startegs;
 
 import android.content.ContentValues;
 import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
+import android.os.Bundle;
 import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
@@ -21,7 +24,11 @@ import org.telegram.SQLite.SQLiteCursor;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.FileLog;
+import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.SendMessagesHelper;
+import org.telegram.messenger.Utilities;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.R;
@@ -30,10 +37,19 @@ import org.telegram.tgnet.NativeByteBuffer;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.ChatActivity;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.SettingsActivity;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -44,6 +60,10 @@ public final class StarMod {
 
     /** Пункт меню сообщения «История изменений» (номер не пересекается с OPTION_* Telegram). */
     public static final int OPTION_EDIT_HISTORY = 9001;
+    /** Пункт меню сообщения «Спросить ИИ». */
+    public static final int OPTION_ASK_AI = 9002;
+    /** Пункт меню профиля «ID и дата регистрации». */
+    public static final int MENU_PEER_INFO = 9301;
 
     // ---------------------------------------------------------------- настройки
 
@@ -71,6 +91,16 @@ public final class StarMod {
     /** Не отправлять отметку о прочтении в личных чатах. */
     public static boolean ghostRead() {
         return prefs().getBoolean("ghost_read", false);
+    }
+
+    /** Не показывать «в сети»: клиент сообщает серверу, что он офлайн. */
+    public static boolean ghostOnline() {
+        return prefs().getBoolean("ghost_online", false);
+    }
+
+    /** Смотреть истории, не попадая в список просмотревших. */
+    public static boolean ghostStories() {
+        return prefs().getBoolean("ghost_stories", false);
     }
 
     public static boolean hideStories() {
@@ -307,7 +337,8 @@ public final class StarMod {
     private static final int ID_HUB = ID_BASE + 99;
 
     /** Добавляет раздел в начало экрана настроек (вызывается из SettingsActivity.fillItems). */
-    public static void fillSettings(ArrayList<UItem> items) {
+    public static void fillSettings(BaseFragment fragment, ArrayList<UItem> items) {
+        checkUpdate(fragment, false);
         items.add(UItem.asHeader("⭐ StarTegs"));
         for (int i = 0; i < StarModConfig.SERVICES.length; i++) {
             String[] s = StarModConfig.SERVICES[i];
@@ -315,7 +346,7 @@ public final class StarMod {
             items.add(SettingsActivity.SettingCell.Factory.of(ID_BASE + i, color(s[3]), color(s[4]), iconFor(s[5]), s[0], s[1]));
         }
         items.add(SettingsActivity.SettingCell.Factory.of(ID_HUB, 0xFF9B6BFF, 0xFF5A7BFF, R.drawable.settings_features,
-                "Оформление и настройки StarTegs", StarTheme.isActive() ? "Фирменный дизайн включён" : "Дизайн, приватность, сохранение сообщений"));
+                "Оформление и настройки StarTegs", updateAvailable() ? "🔔 Доступна новая версия" : StarTheme.isActive() ? "Фирменный дизайн включён" : "Дизайн, приватность, сохранение сообщений"));
         items.add(UItem.asShadow(null));
     }
 
@@ -392,6 +423,183 @@ public final class StarMod {
                         "Сохранено удалённых сообщений: %d\nСохранено старых версий правок: %d\n\n"
                                 + "Всё хранится только на этом телефоне.", deleted, edits))
                 .setPositiveButton("OK", null)
+                .show();
+    }
+
+    // ---------------------------------------------------------------- ID и дата регистрации
+
+    /** Опорные точки «ID пользователя → примерная дата регистрации» (месяц, год). */
+    private static final long[][] ID_DATES = {
+            {1_000_000L, 2013, 9}, {50_000_000L, 2014, 11}, {100_000_000L, 2015, 3}, {200_000_000L, 2016, 4},
+            {300_000_000L, 2017, 2}, {400_000_000L, 2017, 9}, {500_000_000L, 2018, 1}, {600_000_000L, 2018, 6},
+            {700_000_000L, 2018, 11}, {800_000_000L, 2019, 2}, {900_000_000L, 2019, 6}, {1_000_000_000L, 2019, 9},
+            {1_100_000_000L, 2020, 1}, {1_300_000_000L, 2020, 6}, {1_500_000_000L, 2020, 12}, {1_700_000_000L, 2021, 3},
+            {2_000_000_000L, 2021, 7}, {5_000_000_000L, 2021, 9}, {5_500_000_000L, 2022, 5}, {6_000_000_000L, 2023, 3},
+            {6_500_000_000L, 2023, 10}, {7_000_000_000L, 2024, 3}, {7_500_000_000L, 2024, 9}, {8_000_000_000L, 2025, 3},
+            {8_500_000_000L, 2025, 9},
+    };
+
+    private static final String[] MONTHS = {"январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август",
+            "сентябрь", "октябрь", "ноябрь", "декабрь"};
+
+    /** Примерный месяц регистрации по ID (линейно между опорными точками). */
+    static String estimateRegDate(long userId) {
+        if (userId <= 0) return null;
+        long[] a = ID_DATES[0], b = ID_DATES[ID_DATES.length - 1];
+        if (userId <= a[0]) return "до " + a[1];
+        for (int i = 1; i < ID_DATES.length; i++) {
+            if (userId <= ID_DATES[i][0]) {
+                a = ID_DATES[i - 1];
+                b = ID_DATES[i];
+                break;
+            }
+            if (i == ID_DATES.length - 1) return "после " + MONTHS[(int) b[2] - 1] + " " + b[1];
+        }
+        double k = (double) (userId - a[0]) / (b[0] - a[0]);
+        long ma = a[1] * 12 + a[2] - 1, mb = b[1] * 12 + b[2] - 1;
+        long m = Math.round(ma + (mb - ma) * k);
+        return MONTHS[(int) (m % 12)] + " " + (m / 12);
+    }
+
+    public static void showPeerInfo(BaseFragment fragment, long dialogId) {
+        if (fragment == null || fragment.getParentActivity() == null || dialogId == 0) return;
+        StringBuilder sb = new StringBuilder();
+        final String copyId;
+        if (dialogId > 0) {
+            copyId = String.valueOf(dialogId);
+            sb.append("ID: ").append(dialogId);
+            String reg = estimateRegDate(dialogId);
+            if (reg != null) sb.append("\n\nРегистрация: примерно ").append(reg)
+                    .append("\n\nДата оценивается по номеру ID и может отличаться на несколько месяцев.");
+        } else {
+            long chatId = -dialogId;
+            TLRPC.Chat chat = MessagesController.getInstance(fragment.getCurrentAccount()).getChat(chatId);
+            boolean channel = ChatObject.isChannel(chat);
+            copyId = channel ? "-100" + chatId : String.valueOf(-chatId);
+            sb.append("ID: ").append(chatId).append("\nID для ботов: ").append(copyId);
+            if (chat != null && chat.date > 0) sb.append("\n\nСоздан: ").append(formatDate(chat.date));
+        }
+        new AlertDialog.Builder(fragment.getParentActivity())
+                .setTitle("🪪 Информация")
+                .setMessage(sb.toString())
+                .setPositiveButton("Копировать ID", (d, w) -> {
+                    AndroidUtilities.addToClipboard(copyId);
+                    Toast.makeText(fragment.getParentActivity(), "ID скопирован", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Закрыть", null)
+                .show();
+    }
+
+    // ---------------------------------------------------------------- спросить ИИ
+
+    public static boolean canAskAi(MessageObject m) {
+        return !TextUtils.isEmpty(StarModConfig.AI_BOT) && m != null && m.messageOwner != null && !TextUtils.isEmpty(m.messageOwner.message);
+    }
+
+    public static void askAi(BaseFragment fragment, MessageObject m) {
+        if (fragment == null || fragment.getParentActivity() == null || !canAskAi(m)) return;
+        final String text = m.messageOwner.message.length() > 3500 ? m.messageOwner.message.substring(0, 3500) + "…" : m.messageOwner.message;
+        final String[] prompts = {
+                "Перескажи коротко, о чём это сообщение:",
+                "Переведи на русский язык:",
+                "Объясни простыми словами:",
+                "Предложи 3 варианта ответа на это сообщение:",
+        };
+        CharSequence[] items = {"📝 Пересказать", "🌍 Перевести на русский", "💡 Объяснить", "💬 Предложить ответ"};
+        new AlertDialog.Builder(fragment.getParentActivity())
+                .setTitle("🤖 Спросить ИИ")
+                .setItems(items, (dialog, which) -> sendToAi(fragment, prompts[which] + "\n\n" + text))
+                .show();
+    }
+
+    private static void sendToAi(BaseFragment fragment, String prompt) {
+        int account = fragment.getCurrentAccount();
+        MessagesController.getInstance(account).getUserNameResolver().resolve(StarModConfig.AI_BOT, peerId -> AndroidUtilities.runOnUIThread(() -> {
+            if (peerId == null || peerId == 0) {
+                Toast.makeText(ApplicationLoader.applicationContext, "Не удалось найти @" + StarModConfig.AI_BOT, Toast.LENGTH_SHORT).show();
+                return;
+            }
+            SendMessagesHelper.getInstance(account).sendMessage(SendMessagesHelper.SendMessageParams.of(prompt, peerId));
+            Bundle args = new Bundle();
+            args.putLong("user_id", peerId);
+            fragment.presentFragment(new ChatActivity(args));
+        }));
+    }
+
+    // ---------------------------------------------------------------- автообновление
+
+    private static volatile boolean checking;
+
+    public static boolean updateAvailable() {
+        String name = prefs().getString("update_name", "");
+        return !TextUtils.isEmpty(name) && !TextUtils.isEmpty(StarModConfig.BUILD_SHA) && !name.contains(StarModConfig.BUILD_SHA);
+    }
+
+    public static String updateName() {
+        return prefs().getString("update_name", "");
+    }
+
+    /** Проверяет релиз client-latest на GitHub (не чаще раза в 6 часов, если не force). */
+    public static void checkUpdate(BaseFragment fragment, boolean force) {
+        if (TextUtils.isEmpty(StarModConfig.UPDATE_REPO) || TextUtils.isEmpty(StarModConfig.BUILD_SHA) || checking) return;
+        long last = prefs().getLong("update_checked", 0);
+        if (!force && System.currentTimeMillis() - last < 6 * 3600_000L) return;
+        checking = true;
+        Utilities.globalQueue.postRunnable(() -> {
+            String bestName = null, bestUrl = null, bestDate = "";
+            try {
+                HttpURLConnection c = (HttpURLConnection) new URL("https://api.github.com/repos/" + StarModConfig.UPDATE_REPO + "/releases/tags/client-latest").openConnection();
+                c.setConnectTimeout(10000);
+                c.setReadTimeout(10000);
+                c.setRequestProperty("Accept", "application/vnd.github+json");
+                StringBuilder body = new StringBuilder();
+                try (BufferedReader r = new BufferedReader(new InputStreamReader(c.getInputStream(), "UTF-8"))) {
+                    String line;
+                    while ((line = r.readLine()) != null) body.append(line);
+                }
+                JSONArray assets = new JSONObject(body.toString()).getJSONArray("assets");
+                for (int i = 0; i < assets.length(); i++) {
+                    JSONObject a = assets.getJSONObject(i);
+                    String name = a.optString("name"), date = a.optString("created_at");
+                    if (name.startsWith("StarTegs-") && name.endsWith(".apk") && date.compareTo(bestDate) > 0) {
+                        bestName = name;
+                        bestUrl = a.optString("browser_download_url");
+                        bestDate = date;
+                    }
+                }
+            } catch (Exception e) {
+                FileLog.e(e);
+            }
+            final String name = bestName, url = bestUrl;
+            AndroidUtilities.runOnUIThread(() -> {
+                checking = false;
+                SharedPreferences.Editor e = prefs().edit().putLong("update_checked", System.currentTimeMillis());
+                if (name != null) e.putString("update_name", name).putString("update_url", url);
+                e.apply();
+                if (name != null && updateAvailable() && !name.equals(prefs().getString("update_notified", ""))) {
+                    prefs().edit().putString("update_notified", name).apply();
+                    if (fragment != null && fragment.getParentActivity() != null) offerUpdate(fragment);
+                } else if (force && fragment != null && fragment.getParentActivity() != null) {
+                    if (updateAvailable()) offerUpdate(fragment);
+                    else Toast.makeText(fragment.getParentActivity(), "У вас последняя версия ✓", Toast.LENGTH_SHORT).show();
+                }
+            });
+        });
+    }
+
+    public static void offerUpdate(BaseFragment fragment) {
+        if (fragment == null || fragment.getParentActivity() == null || !updateAvailable()) return;
+        new AlertDialog.Builder(fragment.getParentActivity())
+                .setTitle("🔔 Новая версия StarTegs")
+                .setMessage("Доступна " + updateName() + ".\n\nСкачайте файл и установите его поверх текущей версии — чаты и настройки сохранятся.")
+                .setPositiveButton("Скачать", (d, w) -> {
+                    try {
+                        fragment.getParentActivity().startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(prefs().getString("update_url", ""))));
+                    } catch (Exception e) {
+                        FileLog.e(e);
+                    }
+                })
+                .setNegativeButton("Позже", null)
                 .show();
     }
 }

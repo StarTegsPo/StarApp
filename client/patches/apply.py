@@ -78,6 +78,10 @@ for i in range(1, 20):
     "package org.startegs;\n\n// Создано client/patches/apply.py из startegs.properties — не редактируйте вручную.\n"
     "final class StarModConfig {\n"
     f"    static final String MOD_VERSION = {java_str(P.get('mod_version', '1.0'))};\n"
+    f"    static final String AI_BOT = {java_str(P.get('ai_bot', ''))};\n"
+    f"    static final String UPDATE_REPO = {java_str(P.get('update_repo') or os.environ.get('GITHUB_REPOSITORY', ''))};\n"
+    f"    /** короткий хэш коммита сборки — по нему мод узнаёт, есть ли версия новее */\n"
+    f"    static final String BUILD_SHA = {java_str(os.environ.get('GITHUB_SHA', '')[:7])};\n"
     "    /** название, подпись, username, цвет1, цвет2, иконка, режим */\n"
     "    static final String[][] SERVICES = {\n"
     + "".join("        {" + ", ".join(java_str(x) for x in s) + "},\n" for s in services)
@@ -192,7 +196,7 @@ print("== раздел StarTegs в настройках")
 SA = "TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java"
 patch(SA,
       """        items.add(SettingCell.Factory.of(1, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom, R.drawable.settings_account, getString(R.string.SettingsAccount), getString(R.string.SettingsAccountInfo)));""",
-      """        org.startegs.StarMod.fillSettings(items);
+      """        org.startegs.StarMod.fillSettings(this, items);
         items.add(SettingCell.Factory.of(1, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom, R.drawable.settings_account, getString(R.string.SettingsAccount), getString(R.string.SettingsAccountInfo)));""")
 patch(SA,
       """        switch (item.id) {
@@ -222,6 +226,62 @@ patch(MC,
             return; // «прочитано» в личных чатах не отправляем
         }
         if (task.replyId != 0 && task.monoForumPeerId == 0) {""")
+
+patch(MC,
+      """                        TL_account.updateStatus req = new TL_account.updateStatus();
+                        req.offline = false;""",
+      """                        TL_account.updateStatus req = new TL_account.updateStatus();
+                        req.offline = org.startegs.StarMod.ghostOnline();""")
+SC = "TMessagesProj/src/main/java/org/telegram/ui/Stories/StoriesController.java"
+patch(SC,
+      """            req.max_id = storyItem.id;
+            ConnectionsManager.getInstance(currentAccount).sendRequest(req, null);""",
+      """            req.max_id = storyItem.id;
+            if (!org.startegs.StarMod.ghostStories()) ConnectionsManager.getInstance(currentAccount).sendRequest(req, null);""")
+patch(SC,
+      """            req.id.add(storyId);
+            ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> {});""",
+      """            req.id.add(storyId);
+            if (!org.startegs.StarMod.ghostStories()) ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> {});""")
+
+print("== спросить ИИ, ID и дата регистрации")
+patch(CA,
+      """            options.add(org.startegs.StarMod.OPTION_EDIT_HISTORY);
+            icons.add(R.drawable.msg_edit);
+        }
+""",
+      """            options.add(org.startegs.StarMod.OPTION_EDIT_HISTORY);
+            icons.add(R.drawable.msg_edit);
+        }
+        if (org.startegs.StarMod.canAskAi(selectedObject)) {
+            items.add("Спросить ИИ");
+            options.add(org.startegs.StarMod.OPTION_ASK_AI);
+            icons.add(R.drawable.msg_bot);
+        }
+""")
+patch(CA,
+      """            case org.startegs.StarMod.OPTION_EDIT_HISTORY: {""",
+      """            case org.startegs.StarMod.OPTION_ASK_AI: {
+                org.startegs.StarMod.askAi(this, selectedObject);
+                break;
+            }
+            case org.startegs.StarMod.OPTION_EDIT_HISTORY: {""")
+PA = "TMessagesProj/src/main/java/org/telegram/ui/ProfileActivity.java"
+patch(PA,
+      """        otherItem.removeAllSubItems();
+        animatingItem = null;
+""",
+      """        otherItem.removeAllSubItems();
+        if (getDialogId() != 0) {
+            otherItem.addSubItem(org.startegs.StarMod.MENU_PEER_INFO, R.drawable.msg_info, "ID и дата регистрации");
+        }
+        animatingItem = null;
+""")
+patch(PA,
+      """                } else if (id == share) {""",
+      """                } else if (id == org.startegs.StarMod.MENU_PEER_INFO) {
+                    org.startegs.StarMod.showPeerInfo(ProfileActivity.this, getDialogId());
+                } else if (id == share) {""")
 
 print("== интерфейс")
 patch("TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java",
