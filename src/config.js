@@ -24,6 +24,7 @@ export function readConfig(env = process.env) {
     supportChatId: env.SUPPORT_CHAT_ID ? Number(env.SUPPORT_CHAT_ID) : null,
     referralBonus: Number(env.REFERRAL_BONUS ?? 10),
     channelSnapshotMinutes: Number(env.CHANNEL_SNAPSHOT_MINUTES || 60),
+    ecoBots: env.ECO_BOTS || '',
     devUserId: env.NODE_ENV !== 'production' && env.DEV_USER_ID ? Number(env.DEV_USER_ID) : null,
   };
 }

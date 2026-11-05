@@ -70,7 +70,7 @@ p { margin: 8px 0; }
 .hero { position: relative; overflow: hidden; border-radius: 24px; padding: 18px; margin: 6px 0 14px; color: #fff; background: var(--grad); box-shadow: 0 10px 30px color-mix(in srgb, var(--a1) 35%, transparent); }
 .hero::before, .hero::after { content: ""; position: absolute; border-radius: 50%; background: #ffffff1c; }
 .hero::before { width: 220px; height: 220px; right: -70px; top: -90px; }
-.hero::after { width: 140px; height: 140px; right: 40px; bottom: -80px; background: #ff5ca833; }
+.hero::after { width: 140px; height: 140px; right: 40px; bottom: -80px; background: color-mix(in srgb, var(--a3) 20%, transparent); }
 .hero > * { position: relative; }
 .hero .hello { font-size: 14px; opacity: .85; }
 .hero .big { font-size: 34px; font-weight: 750; letter-spacing: -.02em; line-height: 1.1; font-variant-numeric: tabular-nums; }
@@ -208,3 +208,40 @@ textarea { min-height: 96px; resize: vertical; }
 .steps li { counter-increment: s; display: flex; gap: 12px; margin: 12px 0; }
 .steps li::before { content: counter(s); flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--grad); color: #fff; display: grid; place-items: center; font-size: 13px; font-weight: 700; }
 #confetti { position: fixed; inset: 0; pointer-events: none; z-index: 50; }
+
+/* ---------- StarTegs для iPhone (eco) ---------- */
+#season-fx { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 9; }
+.eco-hero .eco-title { font-size: 24px; font-weight: 750; letter-spacing: -.02em; line-height: 1.15; margin-top: 4px; }
+.eco-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+.eco-chip { border: 0; cursor: pointer; font-size: 12px; font-weight: 600; color: #fff; background: #ffffff2b; padding: 6px 10px; border-radius: 99px; transition: background .2s, transform .12s; }
+.eco-chip:active { transform: scale(.95); background: #ffffff40; }
+.eco-seg button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-width: 0; font-size: 12px; padding: 6px 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.eco-seg button span { font-size: 17px; line-height: 1.2; }
+.eco-seg button.active { background: color-mix(in srgb, var(--a1) 14%, var(--bg)); color: var(--text); }
+.eco-bot { display: flex; align-items: center; gap: 12px; padding: 14px; }
+.eco-bot .ic { width: 46px; height: 46px; border-radius: 14px; flex: none; display: grid; place-items: center; font-size: 22px; color: #fff; }
+.eco-bot .main { flex: 1; min-width: 0; }
+.eco-bot .title { font-weight: 650; }
+.eco-bot .meta { line-height: 1.3; }
+.eco-handle { font-size: 12px; color: var(--link); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eco-bot .btn { flex: none; }
+.eco-android { background: linear-gradient(135deg, color-mix(in srgb, #3ddc84 14%, var(--bg)), var(--bg) 70%); }
+.eco-android .ic { background: color-mix(in srgb, #3ddc84 22%, transparent); }
+.eco-url { text-align: center; margin-top: 8px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eco-palettes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.eco-swatch, .eco-effect { border: 0; background: var(--bg2); border-radius: 14px; padding: 10px 4px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 13px; color: var(--text); box-shadow: inset 0 0 0 2px transparent; transition: box-shadow .2s, transform .12s; }
+.eco-swatch:active, .eco-effect:active { transform: scale(.95); }
+.eco-swatch i { width: 38px; height: 38px; border-radius: 50%; box-shadow: 0 3px 10px rgb(0 0 0 / .15); transition: transform .25s cubic-bezier(.3, 1.6, .5, 1); }
+.eco-swatch.active, .eco-effect.active { box-shadow: inset 0 0 0 2px var(--a1); font-weight: 650; background: color-mix(in srgb, var(--a1) 10%, var(--bg)); }
+.eco-swatch.active i { transform: scale(1.12); }
+.eco-hues { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; justify-items: center; }
+.eco-hue { width: 34px; height: 34px; border-radius: 50%; border: 0; cursor: pointer; transition: transform .2s; }
+.eco-hue.active { box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--text); transform: scale(1.08); }
+.eco-preview { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.eco-preview .btn { pointer-events: none; }
+.eco-effects { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.eco-effect span { font-size: 22px; line-height: 1; }
+.eco-text { white-space: pre-wrap; word-break: break-word; color: color-mix(in srgb, var(--text) 82%, var(--hint)); font-size: 14px; margin-top: 6px; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.eco-text.clamp2 { -webkit-line-clamp: 2; }
+.eco-note-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+@media (prefers-reduced-motion: reduce) { #season-fx { display: none; } }

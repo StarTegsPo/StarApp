@@ -1,4 +1,8 @@
 // Ядро Mini App: авторизация, API, навигация, общие UI-хелперы и анимации.
+import { initTheme, applyTheme } from './theme.js';
+
+// Палитра и сезонный эффект из localStorage — сразу, чтобы не было «мигания» цветов
+initTheme();
 const tg = window.Telegram?.WebApp;
 if (tg?.initData) {
   document.documentElement.classList.add('tg');
@@ -70,8 +74,20 @@ export function share(url, text) {
   const u = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
   tg?.openTelegramLink ? tg.openTelegramLink(u) : window.open(u, '_blank');
 }
+/** Копирование в буфер: Clipboard API, иначе запасной путь через execCommand, иначе показать текст */
 export async function copy(text) {
-  try { await navigator.clipboard.writeText(text); toast('Скопировано ✓'); tap(); } catch { toast(text); }
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none';
+    document.body.append(ta); ta.select(); ta.setSelectionRange(0, text.length);
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch {}
+    ta.remove();
+    if (!ok) return toast(text.length > 200 ? 'Не удалось скопировать — выделите текст вручную' : text);
+  }
+  toast('Скопировано ✓'); tap();
 }
 
 /** Кнопка «Назад» Telegram (в браузере — без неё). fn = null убирает кнопку. */
@@ -155,9 +171,9 @@ export function chart(points, { type = 'line', key = 'value', height = 130, mini
   const x = (i) => (type === 'bar' ? (i + 0.5) * (w / n) : n === 1 ? w / 2 : (i / (n - 1)) * w);
   const y = (v) => h - padB - ((v - min) / span) * (h - padB - padT);
   const defs = `<defs>
-    <linearGradient id="g-line" x1="0" x2="1"><stop offset="0" stop-color="#7b5cff"/><stop offset="1" stop-color="#33a6ff"/></linearGradient>
-    <linearGradient id="g-area${id}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#7b5cff" stop-opacity=".28"/><stop offset="1" stop-color="#33a6ff" stop-opacity="0"/></linearGradient>
-    <linearGradient id="g-bar${id}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#7b5cff"/><stop offset="1" stop-color="#33a6ff"/></linearGradient></defs>`;
+    <linearGradient id="g-line" x1="0" x2="1"><stop offset="0" style="stop-color:var(--a1)"/><stop offset="1" style="stop-color:var(--a2)"/></linearGradient>
+    <linearGradient id="g-area${id}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" style="stop-color:var(--a1)" stop-opacity=".28"/><stop offset="1" style="stop-color:var(--a2)" stop-opacity="0"/></linearGradient>
+    <linearGradient id="g-bar${id}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" style="stop-color:var(--a1)"/><stop offset="1" style="stop-color:var(--a2)"/></linearGradient></defs>`;
   let body = '';
   if (type === 'bar') {
     const bw = (w / n) * 0.62;
@@ -261,6 +277,8 @@ app.rerender = async (mod) => { await mod.render(view, app); animateCounts(view)
 try {
   await refreshMe();
   renderTop();
+  // Оформление с сервера (синхронизация между устройствами), если сервис eco подключён
+  if (app.me.services.some((s) => s.id === 'eco')) api('/api/eco/settings').then((s) => applyTheme(s)).catch(() => {});
   tabs.innerHTML = app.me.services.map((s) => `<button data-id="${s.id}"><span class="ico">${s.icon}</span>${esc(s.title)}</button>`).join('');
   tabs.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b && b.dataset.id !== current) { tap(); open(b.dataset.id); } });
   window.addEventListener('hashchange', () => {
