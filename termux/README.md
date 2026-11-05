@@ -21,6 +21,7 @@ pkg install -y python curl && curl -fsSL https://raw.githubusercontent.com/StarT
 | Команда | Что делает |
 |---|---|
 | `bash ~/startegs-run/start_all.sh` | запустить всех (уже запущенных не трогает) |
+| `bash ~/startegs-run/start_all.sh startegsshop` | запустить одного бота отдельно от остальных |
 | `bash ~/startegs-run/stop_all.sh` | остановить всех |
 | `bash ~/startegs-run/stop_all.sh startegsai` | остановить одного |
 | `bash ~/startegs-run/status.sh` | кто работает |

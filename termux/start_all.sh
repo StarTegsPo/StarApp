@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Запускает все боты из bots.conf в фоне. У каждого свой надзиратель:
 # отдельный лог, ровно один экземпляр, автоперезапуск при падении.
+# Один бот отдельно от остальных: bash start_all.sh <имя>   (например startegsshop)
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 command -v "$PYTHON" >/dev/null || { err "Не найден $PYTHON. Установите: pkg install python"; exit 1; }
@@ -11,9 +12,16 @@ echo "Проверка…"
 bash "$HERE/lib/check.sh"
 echo
 
+if [ -n "$1" ]; then
+  found=""
+  for line in "${BOTS[@]}"; do parse_bot "$line"; [ "$NAME" = "$1" ] && found=1; done
+  [ -n "$found" ] || { err "Бота «$1» нет в $CONF. Есть: $(for l in "${BOTS[@]}"; do parse_bot "$l"; printf '%s ' "$NAME"; done)"; exit 1; }
+fi
+
 for line in "${BOTS[@]}"; do
   parse_bot "$line"
   [ -z "$NAME" ] && continue
+  [ -n "$1" ] && [ "$1" != "$NAME" ] && continue
   if [ ! -f "$FILE" ]; then
     err "$NAME: файл не найден: $FILE — исправьте путь в $CONF"
     continue
