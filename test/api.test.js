@@ -13,7 +13,7 @@ test('без initData — 401, с ним — профиль и список се
   assert.equal(status, 200);
   assert.equal(data.user.id, 2);
   assert.equal(data.isAdmin, false);
-  assert.deepEqual(data.services.map((s) => s.id), ['analytics', 'shop', 'profile', 'support']);
+  assert.deepEqual(data.services.map((s) => s.id), ['home', 'analytics', 'shop', 'profile', 'support']);
 });
 
 test('магазин: демо-товары, покупка с баланса и через Stars', async () => {

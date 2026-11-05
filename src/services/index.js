@@ -12,15 +12,18 @@
  *    setupApi?(router, ctx),
  *    onPayment?(ctx, { user, payload, payment }), // payload без префикса "<id>:"
  *    validatePayment?(ctx, { user, payload, totalAmount }) -> string|null (текст ошибки)
+ *    onStart?(ctx, { user, args, isNew }),  // команда /start (args — deep link payload)
+ *    afterPayment?(ctx, { user, payment }), // после любой успешной оплаты
  *    start?(ctx)                            // фоновые задачи
  *  }
  */
+import home from './home/index.js';
 import profile from './profile/index.js';
 import shop from './shop/index.js';
 import analytics from './analytics/index.js';
 import support from './support/index.js';
 
-export const services = [analytics, shop, profile, support].sort((a, b) => a.order - b.order);
+export const services = [home, analytics, shop, profile, support].sort((a, b) => a.order - b.order);
 
 export const isAdmin = (config, userId) => config.adminIds.includes(Number(userId));
 

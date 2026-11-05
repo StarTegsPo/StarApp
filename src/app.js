@@ -19,25 +19,31 @@ export function createApp(config, { bot = new TelegramBot(config.botToken), db }
       : undefined;
 
   // Регистрируем/обновляем пользователя при любом личном взаимодействии
-  bot.use(({ type, payload }) => {
-    if (!['message', 'callback_query', 'pre_checkout_query', 'my_chat_member'].includes(type)) return;
-    const from = payload?.from;
-    if (from && !from.is_bot) upsertUser(db, from);
+  bot.use((c) => {
+    if (!['message', 'callback_query', 'pre_checkout_query', 'my_chat_member'].includes(c.type)) return;
+    const from = c.payload?.from;
+    if (!from || from.is_bot) return;
+    c.isNewUser = !db.prepare('SELECT 1 FROM users WHERE id = ?').get(from.id);
+    upsertUser(db, from);
   });
 
-  bot.command('start', async ({ payload }) => {
+  bot.command('start', async (c) => {
+    const { payload, args, isNewUser } = c;
+    for (const s of services) await s.onStart?.(ctx, { user: payload.from, args, isNew: !!isNewUser });
     await bot.sendMessage(
       payload.chat.id,
       [
         `Привет, ${payload.from.first_name || 'друг'}! 👋`,
         '',
-        '<b>StarApp</b> — ваш бизнес-помощник в Telegram:',
-        '📊 аналитика каналов, ботов и покупок',
-        '🛍 магазин услуг с оплатой в Telegram Stars',
-        '👤 профиль и баланс',
-        '💬 поддержка',
+        '<b>⭐ StarApp</b> — ваш бизнес-помощник прямо в Telegram:',
         '',
-        'Чтобы подключить канал — добавьте меня администратором канала.',
+        '📊 <b>Аналитика</b> каналов, ботов и продаж в реальном времени',
+        '🔥 <b>Ежедневный бонус</b>, уровни и достижения',
+        '🎁 <b>Приглашайте друзей</b> и получайте ⭐',
+        '🛍 <b>Магазин</b> услуг с оплатой в Telegram Stars',
+        '💬 <b>Поддержка</b>, которая отвечает',
+        '',
+        '➕ Чтобы подключить канал — добавьте меня администратором.',
       ].join('\n'),
       { reply_markup: webAppButton() },
     );
@@ -75,6 +81,7 @@ export function createApp(config, { bot = new TelegramBot(config.botToken), db }
       const payment = payload.successful_payment;
       const { service, rest } = routePayment(payment.invoice_payload);
       await service.onPayment(ctx, { user: payload.from, payload: rest, payment });
+      for (const s of services) await s.afterPayment?.(ctx, { user: payload.from, payment });
     },
     (m) => !!m.successful_payment,
   );

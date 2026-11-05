@@ -55,7 +55,13 @@ export default {
 
   setupApi(router) {
     router.get('/api/shop/products', ({ db }) => ({
-      products: db.prepare('SELECT id, title, description, price FROM products WHERE active = 1 ORDER BY id').all(),
+      products: db
+        .prepare(
+          `SELECT p.id, p.title, p.description, p.price,
+             (SELECT COUNT(*) FROM orders o WHERE o.product_id = p.id AND o.status = 'paid') AS sold
+           FROM products p WHERE p.active = 1 ORDER BY p.id`,
+        )
+        .all(),
     }));
 
     router.get('/api/shop/orders', ({ db, user }) => ({

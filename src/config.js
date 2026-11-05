@@ -22,6 +22,7 @@ export function readConfig(env = process.env) {
     dbPath: env.DB_PATH || './data/starapp.db',
     adminIds: list(env.ADMIN_IDS),
     supportChatId: env.SUPPORT_CHAT_ID ? Number(env.SUPPORT_CHAT_ID) : null,
+    referralBonus: Number(env.REFERRAL_BONUS ?? 10),
     channelSnapshotMinutes: Number(env.CHANNEL_SNAPSHOT_MINUTES || 60),
     devUserId: env.NODE_ENV !== 'production' && env.DEV_USER_ID ? Number(env.DEV_USER_ID) : null,
   };

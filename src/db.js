@@ -30,8 +30,14 @@ export function openDb(path, services = []) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
   for (const sql of CORE_MIGRATIONS) db.exec(sql);
-  for (const s of services) for (const sql of s.migrations || []) db.exec(sql);
+  for (const s of services) for (const m of s.migrations || []) (typeof m === 'function' ? m(db) : db.exec(m));
   return db;
+}
+
+/** Идемпотентно добавляет колонку (для миграций существующих таблиц). */
+export function addColumn(db, table, column, definition) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+  if (!cols.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 
 /** Выполняет fn в транзакции. */
