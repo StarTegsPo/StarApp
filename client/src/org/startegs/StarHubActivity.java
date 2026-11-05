@@ -29,6 +29,16 @@ public class StarHubActivity extends UniversalFragment {
     private static final int ID_GHOST_STORIES = 403;
     private static final int ID_AI_CHAT = 1200;
     private static final int ID_NOTES = 1300;
+    private static final int ID_CUSTOM_PALETTE = 1400;
+    private static final int ID_SEASON = 1500;        // 1500.. — сезонные эффекты
+    private static final int ID_TAP = 1600;           // 1600.. — двойное нажатие
+    private static final int ID_SCAM = 1700;
+    private static final int ID_BIOMETRIC = 1701;
+    private static final int ID_LABELS = 1702;
+    private static final int ID_AR_PROMPT = 1800;
+    private static final int ID_AR_MARK = 1801;
+    private static final int ID_AR_OFF = 1802;
+    private static final int ID_AI_TRANSLATE = 1803;
     private static final int ID_TIER = 1100;
     private static final int ID_TIER_BUY = 1101;
     private static final int ID_HIDDEN = 1102;
@@ -76,6 +86,17 @@ public class StarHubActivity extends UniversalFragment {
 
     @Override
     protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
+        if (getParentActivity() != null) {
+            items.add(UItem.asCustom(StarHero.create(getParentActivity(), currentAccount, which -> {
+                switch (which) {
+                    case 0: presentFragment(new StarAiChatActivity()); break;
+                    case 1: presentFragment(new StarDeletedActivity()); break;
+                    case 2: StarLock.askPinThen(this, () -> presentFragment(new StarHiddenActivity())); break;
+                    case 3: presentFragment(new StarLabelsActivity()); break;
+                    default: presentFragment(new StarNotesActivity());
+                }
+            })));
+        }
         if (StarMod.updateAvailable()) {
             items.add(UItem.asButton(ID_UPDATE, R.drawable.msg_download, "🔔 Скачать новую версию", StarMod.updateName()).accent());
             items.add(UItem.asShadow(null));
@@ -91,6 +112,12 @@ public class StarHubActivity extends UniversalFragment {
         if (StarAi.enabled()) {
             items.add(UItem.asHeader("Нейросеть"));
             items.add(UItem.asButton(ID_AI_CHAT, R.drawable.msg_bot, "🤖 Чат с ИИ"));
+            items.add(UItem.asCheck(ID_AI_TRANSLATE, "🌍 Перевод чатов через ИИ").setChecked(StarAuto.aiTranslate()));
+            items.add(UItem.asButton(ID_AR_PROMPT, R.drawable.msg_edit, "🤖 Автоответ: как отвечать", StarAuto.count() > 0 ? "вкл. в " + StarAuto.count() : ""));
+            items.add(UItem.asCheck(ID_AR_MARK, "Помечать автоответы 🤖").setChecked(StarAuto.markReplies()));
+            if (StarAuto.count() > 0) items.add(UItem.asButton(ID_AR_OFF, R.drawable.msg_delete, "Выключить автоответ везде").red());
+            items.add(UItem.asShadow("Перевод: кнопка «Перевести» над иностранным чатом работает без Telegram Premium — переводит нейросеть. "
+                    + "Автоответ: профиль собеседника → ⋮ → «Автоответ ИИ». Отвечает, пока приложение работает, не чаще раза в 20 с и 20 раз в час; если вы ответили сами — молчит 15 минут."));
             items.add(UItem.asShadow("Также: долгое нажатие на сообщение → «Спросить ИИ», меню чата ⋮ → «Что я пропустил?» и «Улучшить мой текст». Лимиты и Premium — из @" + StarModConfig.AI_BOT + "."));
         }
         items.add(UItem.asHeader("Сервисы"));
@@ -110,7 +137,18 @@ public class StarHubActivity extends UniversalFragment {
         for (int i = 0; i < StarTheme.PALETTES.length; i++) {
             items.add(UItem.asRadio(ID_PALETTE_OFF + 1 + i, "StarTegs · " + (i == 0 ? StarTheme.PALETTES[i][1] : pro(StarTheme.PALETTES[i][1]))).setChecked(active == i));
         }
+        items.add(UItem.asRadio(ID_CUSTOM_PALETTE, pro("🎨 Своя палитра…")).setChecked(active == -2));
         items.add(UItem.asShadow("У каждой палитры есть светлый и тёмный вариант — они переключаются вместе с ночным режимом Telegram. При выключении вернётся прежняя тема."));
+        items.add(UItem.asHeader("Сезонные эффекты"));
+        for (int i = 0; i < StarSeason.MODES.length; i++) {
+            items.add(UItem.asRadio(ID_SEASON + i, StarSeason.MODES[i]).setChecked(StarSeason.mode() == i));
+        }
+        items.add(UItem.asShadow("Падают поверх списка чатов и не мешают нажатиям. «Авто»: зимой снег, весной лепестки, летом светлячки, осенью листья."));
+        items.add(UItem.asHeader("Двойное нажатие на сообщение"));
+        for (int i = 0; i < StarExtra.TAP_ACTIONS.length; i++) {
+            items.add(UItem.asRadio(ID_TAP + i, StarExtra.TAP_ACTIONS[i]).setChecked(StarExtra.tapAction() == i));
+        }
+        items.add(UItem.asShadow(null));
         items.add(UItem.asHeader("Настройки вида"));
         items.add(UItem.asCheck(ID_SECONDS, "Секунды во времени сообщений").setChecked(StarMod.showSeconds()));
         items.add(UItem.asButton(ID_TG_THEMES, R.drawable.msg_theme, "Темы, шрифт и пузыри сообщений"));
@@ -124,6 +162,7 @@ public class StarHubActivity extends UniversalFragment {
             items.add(UItem.asButton(ID_ARCHIVE_NOW, R.drawable.msg_download, "Отправить в архив сейчас"));
         }
         items.add(UItem.asButton(ID_DELETED_LIST, R.drawable.msg_delete, "Все удалённые сообщения"));
+        items.add(UItem.asButton(ID_LABELS, R.drawable.msg_folders, "🏷 Метки чатов"));
         items.add(UItem.asButton(ID_NOTES, R.drawable.msg_edit, "📝 Мои заметки", StarTools.allNotes().isEmpty() ? "" : String.valueOf(StarTools.allNotes().size())));
         items.add(UItem.asShadow("Удалённые остаются в чате с пометкой «🗑 удалено», старые версии правок — в меню сообщения. Облачный архив отправляет удалённые в ваш бот StarTegs, где их можно искать."));
 
@@ -135,6 +174,12 @@ public class StarHubActivity extends UniversalFragment {
         items.add(UItem.asShadow("Собеседник не увидит «печатает…», две галочки и вас в сети, а автор истории — вас среди просмотревших. "
                 + "Чаты без «прочитано» останутся непрочитанными на других ваших устройствах."));
 
+        items.add(UItem.asHeader("Безопасность"));
+        items.add(UItem.asCheck(ID_SCAM, "🛡 Предупреждать о мошенниках").setChecked(StarExtra.guardEnabled()));
+        if (StarLock.biometricAvailable()) {
+            items.add(UItem.asCheck(ID_BIOMETRIC, "👆 Открывать замок по отпечатку").setChecked(StarLock.biometricEnabled()));
+        }
+        items.add(UItem.asShadow("Подозрительные сообщения от незнакомых (просьбы прислать код, «служба поддержки Telegram», «вы выиграли», поддельные ссылки) помечаются ⚠️. Контакты не проверяются."));
         items.add(UItem.asHeader("Фильтр"));
         items.add(UItem.asCheck(ID_FILTER, "Скрывать сообщения по фильтру").setChecked(StarMod.filterEnabled()));
         int words = StarMod.filterWordsText().isEmpty() ? 0 : StarMod.filterWordsText().split("[\\n,]").length;
@@ -186,6 +231,20 @@ public class StarHubActivity extends UniversalFragment {
             if (listView != null) listView.adapter.update(true);
             return;
         }
+        if (id == ID_CUSTOM_PALETTE) {
+            StarTheme.chooseCustom(this);
+            return;
+        }
+        if (id >= ID_SEASON && id < ID_SEASON + StarSeason.MODES.length) {
+            StarSeason.setMode(id - ID_SEASON);
+            if (listView != null) listView.adapter.update(true);
+            return;
+        }
+        if (id >= ID_TAP && id < ID_TAP + StarExtra.TAP_ACTIONS.length) {
+            StarExtra.setTapAction(id - ID_TAP);
+            if (listView != null) listView.adapter.update(true);
+            return;
+        }
         if (id >= ID_SHAPE && id < ID_SHAPE + 3) {
             StarMod.setAvatarShape(id - ID_SHAPE);
             NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.dialogsNeedReload, true);
@@ -201,6 +260,27 @@ public class StarHubActivity extends UniversalFragment {
         switch (id) {
             case ID_NOTES:
                 presentFragment(new StarNotesActivity());
+                return;
+            case ID_AI_TRANSLATE:
+                StarAuto.toggleTranslate();
+                break;
+            case ID_AR_PROMPT:
+                StarAuto.editInstructions(this, refresh);
+                return;
+            case ID_AR_MARK:
+                StarAuto.toggleMark();
+                break;
+            case ID_AR_OFF:
+                StarAuto.disableAll();
+                break;
+            case ID_SCAM:
+                StarMod.toggle("scam_guard", true);
+                break;
+            case ID_BIOMETRIC:
+                StarLock.setBiometric(!StarLock.biometricEnabled());
+                break;
+            case ID_LABELS:
+                presentFragment(new StarLabelsActivity());
                 return;
             case ID_AI_CHAT:
                 presentFragment(new StarAiChatActivity());

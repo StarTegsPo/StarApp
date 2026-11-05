@@ -496,6 +496,145 @@ patch(PA,
                     org.startegs.StarTools.exportChat(ProfileActivity.this, getDialogId());
                 } else if (id == org.startegs.StarMod.MENU_HIDE) {""")
 
+print("== 1.7")
+patch(CA,
+      """        if (org.startegs.StarMod.canAskAi(selectedObject)) {
+            items.add("Спросить ИИ");
+            options.add(org.startegs.StarMod.OPTION_ASK_AI);
+            icons.add(R.drawable.msg_bot);
+        }
+""",
+      """        if (org.startegs.StarMod.canAskAi(selectedObject)) {
+            items.add("Спросить ИИ");
+            options.add(org.startegs.StarMod.OPTION_ASK_AI);
+            icons.add(R.drawable.msg_bot);
+        }
+        if (org.startegs.StarExtra.canTranscribe(selectedObject)) {
+            items.add("Расшифровать (ИИ)");
+            options.add(org.startegs.StarExtra.OPTION_TRANSCRIBE);
+            icons.add(R.drawable.msg_translate);
+        }
+        if (selectedObject != null && chatMode == MODE_DEFAULT) {
+            items.add("Напомнить ответить");
+            options.add(org.startegs.StarExtra.OPTION_REMIND);
+            icons.add(R.drawable.msg_mute);
+        }
+""")
+patch(CA,
+      """            case org.startegs.StarMod.OPTION_ASK_AI: {""",
+      """            case org.startegs.StarExtra.OPTION_TRANSCRIBE: {
+                org.startegs.StarExtra.transcribe(this, selectedObject);
+                break;
+            }
+            case org.startegs.StarExtra.OPTION_REMIND: {
+                org.startegs.StarExtra.remind(this, selectedObject);
+                break;
+            }
+            case org.startegs.StarMod.OPTION_ASK_AI: {""")
+patch(CA,
+      """                headerItem.lazilyAddSubItem(org.startegs.StarAi.MENU_IMPROVE, R.drawable.msg_edit, "Улучшить мой текст (ИИ)");""",
+      """                headerItem.lazilyAddSubItem(org.startegs.StarAi.MENU_IMPROVE, R.drawable.msg_edit, "Улучшить мой текст (ИИ)");
+                headerItem.lazilyAddSubItem(org.startegs.StarExtra.MENU_ASK_CHAT, R.drawable.msg_search, "Спросить ИИ про чат");""")
+patch(CA,
+      """                } else if (id == org.startegs.StarAi.MENU_SUMMARY) {""",
+      """                } else if (id == org.startegs.StarExtra.MENU_ASK_CHAT) {
+                    org.startegs.StarExtra.askAboutChat(ChatActivity.this);
+                } else if (id == org.startegs.StarAi.MENU_SUMMARY) {""")
+patch(CA,
+      """            } else {
+                return;
+            }
+            if (messageObject.isSecret() || !messageObject.canSetReaction()""",
+      """            } else {
+                return;
+            }
+            if (org.startegs.StarExtra.onDoubleTap(ChatActivity.this, messageObject)) {
+                return;
+            }
+            if (messageObject.isSecret() || !messageObject.canSetReaction()""")
+patch(PA,
+      """            otherItem.addSubItem(org.startegs.StarTools.MENU_NOTE, R.drawable.msg_edit, org.startegs.StarTools.noteMenuTitle(getDialogId()));""",
+      """            otherItem.addSubItem(org.startegs.StarTools.MENU_NOTE, R.drawable.msg_edit, org.startegs.StarTools.noteMenuTitle(getDialogId()));
+            otherItem.addSubItem(org.startegs.StarExtra.MENU_LABEL, R.drawable.msg_folders, org.startegs.StarExtra.labelMenuTitle(getDialogId()));""")
+patch(PA,
+      """                } else if (id == org.startegs.StarTools.MENU_NOTE) {""",
+      """                } else if (id == org.startegs.StarExtra.MENU_LABEL) {
+                    org.startegs.StarExtra.chooseLabel(ProfileActivity.this, getDialogId());
+                } else if (id == org.startegs.StarTools.MENU_NOTE) {""")
+patch("TMessagesProj/src/main/java/org/telegram/ui/Cells/DialogCell.java",
+      """                        nameString = AndroidUtilities.escape(UserObject.getUserName(user));
+                    }
+                }
+                if (nameString != null && nameString.length() == 0) {
+                    nameString = getString(R.string.HiddenName);
+                }
+""",
+      """                        nameString = AndroidUtilities.escape(UserObject.getUserName(user));
+                    }
+                }
+                if (nameString != null && nameString.length() == 0) {
+                    nameString = getString(R.string.HiddenName);
+                }
+                nameString = org.startegs.StarExtra.decorateName(currentDialogId, nameString);
+""")
+patch("TMessagesProj/src/main/java/org/telegram/messenger/MessageObject.java",
+      """        if (org.startegs.StarMod.filterMessage(this)) {
+            messageText = "🚫 Скрыто фильтром StarTegs";
+        }""",
+      """        if (org.startegs.StarMod.filterMessage(this)) {
+            messageText = "🚫 Скрыто фильтром StarTegs";
+        } else if (org.startegs.StarExtra.isSuspicious(this)) {
+            messageText = TextUtils.concat("⚠️ StarTegs: похоже на мошенничество — не сообщайте коды и не переводите деньги\\n\\n", messageText);
+        }""")
+patch(DA,
+      """        return fragmentView;""",
+      """        org.startegs.StarSeason.attach((android.view.ViewGroup) fragmentView);
+        return fragmentView;""")
+
+print("== 1.8: автоответ и перевод")
+TC = "TMessagesProj/src/main/java/org/telegram/messenger/TranslateController.java"
+patch(TC,
+      """        return isChatTranslateEnabled() && UserConfig.getInstance(currentAccount).isPremium();""",
+      """        return isChatTranslateEnabled() && (UserConfig.getInstance(currentAccount).isPremium() || org.startegs.StarAuto.aiTranslate());""")
+patch(TC,
+      """        return (
+            UserConfig.getInstance(currentAccount).isPremium() ||
+            chat != null && chat.autotranslation""",
+      """        return (
+            UserConfig.getInstance(currentAccount).isPremium() || org.startegs.StarAuto.aiTranslate() ||
+            chat != null && chat.autotranslation""")
+patch(TC,
+      """        } else {
+            source.text = message.messageOwner.message;
+            source.entities = message.messageOwner.entities;
+        }
+""",
+      """        } else {
+            source.text = message.messageOwner.message;
+            source.entities = message.messageOwner.entities;
+        }
+        if (!UserConfig.getInstance(currentAccount).isPremium() && org.startegs.StarAuto.aiTranslate()) {
+            // без Premium переводим нейросетью StarTegs и отдаём результат в тот же колбэк
+            org.startegs.StarAuto.translate(currentAccount, message.getId(), isTranscription, source.text, language, callback);
+            return;
+        }
+""")
+patch(DA,
+      """        org.startegs.StarSeason.attach((android.view.ViewGroup) fragmentView);""",
+      """        org.startegs.StarSeason.attach((android.view.ViewGroup) fragmentView);
+        org.startegs.StarAuto.init();""")
+patch(PA,
+      """            otherItem.addSubItem(org.startegs.StarExtra.MENU_LABEL, R.drawable.msg_folders, org.startegs.StarExtra.labelMenuTitle(getDialogId()));""",
+      """            otherItem.addSubItem(org.startegs.StarExtra.MENU_LABEL, R.drawable.msg_folders, org.startegs.StarExtra.labelMenuTitle(getDialogId()));
+            if (userId != 0 && userId != getUserConfig().getClientUserId()) {
+                otherItem.addSubItem(org.startegs.StarAuto.MENU_AUTOREPLY, R.drawable.msg_bot, org.startegs.StarAuto.menuTitle(getDialogId()));
+            }""")
+patch(PA,
+      """                } else if (id == org.startegs.StarExtra.MENU_LABEL) {""",
+      """                } else if (id == org.startegs.StarAuto.MENU_AUTOREPLY) {
+                    org.startegs.StarAuto.toggle(ProfileActivity.this, getDialogId());
+                } else if (id == org.startegs.StarExtra.MENU_LABEL) {""")
+
 print("== отчёт о сбоях")
 patch("TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java",
       """        try {

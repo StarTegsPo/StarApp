@@ -135,22 +135,75 @@ public final class StarLock {
         }, null);
     }
 
+    // ---------------------------------------------------------------- отпечаток пальца
+
+    public static boolean biometricEnabled() {
+        return prefs().getBoolean("biometric", true);
+    }
+
+    static void setBiometric(boolean on) {
+        prefs().edit().putBoolean("biometric", on).apply();
+    }
+
+    public static boolean biometricAvailable() {
+        try {
+            return androidx.biometric.BiometricManager.from(ApplicationLoader.applicationContext)
+                    .canAuthenticate(androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK) == androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS;
+        } catch (Throwable e) {
+            return false;
+        }
+    }
+
+    /**
+     * Проверить владельца: сначала отпечаток (если включён и есть на телефоне), при отказе
+     * или ошибке — PIN. ok выполняется только после успешной проверки.
+     */
+    static void verify(Context ctx, String title, Runnable ok) {
+        Runnable byPin = () -> askPin(ctx, title, "Введите PIN", pin -> {
+            if (checkPin(pin)) ok.run();
+            else Toast.makeText(ctx, "Неверный PIN", Toast.LENGTH_SHORT).show();
+        }, null);
+        if (!biometricEnabled() || !biometricAvailable() || LaunchActivity.instance == null) {
+            byPin.run();
+            return;
+        }
+        try {
+            androidx.biometric.BiometricPrompt prompt = new androidx.biometric.BiometricPrompt(LaunchActivity.instance,
+                    androidx.core.content.ContextCompat.getMainExecutor(ctx), new androidx.biometric.BiometricPrompt.AuthenticationCallback() {
+                @Override
+                public void onAuthenticationSucceeded(androidx.biometric.BiometricPrompt.AuthenticationResult result) {
+                    ok.run();
+                }
+
+                @Override
+                public void onAuthenticationError(int errorCode, CharSequence errString) {
+                    byPin.run();
+                }
+            });
+            prompt.authenticate(new androidx.biometric.BiometricPrompt.PromptInfo.Builder()
+                    .setTitle(title)
+                    .setSubtitle("Приложите палец")
+                    .setNegativeButtonText("Ввести PIN")
+                    .setAllowedAuthenticators(androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK)
+                    .build());
+        } catch (Throwable e) {
+            FileLog.e(e);
+            byPin.run();
+        }
+    }
+
     // ---------------------------------------------------------------- замок
 
     /** Пункт профиля: закрыть чат замком или снять замок. */
     public static void toggleLock(BaseFragment fragment, long dialogId) {
         if (dialogId == 0) return;
         if (isLocked(dialogId)) {
-            askPin(fragment.getParentActivity(), "🔓 Снять замок", "Введите PIN", pin -> {
-                if (!checkPin(pin)) {
-                    Toast.makeText(fragment.getParentActivity(), "Неверный PIN", Toast.LENGTH_SHORT).show();
-                    return;
-                }
+            verify(fragment.getParentActivity(), "🔓 Снять замок", () -> {
                 Set<String> s = lockedSet();
                 s.remove(String.valueOf(dialogId));
                 prefs().edit().putStringSet("locked", s).apply();
                 Toast.makeText(fragment.getParentActivity(), "Замок снят", Toast.LENGTH_SHORT).show();
-            }, null);
+            });
             return;
         }
         if (!StarMod.requirePro(fragment, "Замок на чаты")) return;
@@ -170,21 +223,14 @@ public final class StarLock {
             setupPin(fragment, ok);
             return;
         }
-        askPin(fragment.getParentActivity(), "🔒 PIN-код", "Введите PIN", pin -> {
-            if (checkPin(pin)) ok.run();
-            else Toast.makeText(fragment.getParentActivity(), "Неверный PIN", Toast.LENGTH_SHORT).show();
-        }, null);
+        verify(fragment.getParentActivity(), "🔒 Подтвердите, что это вы", ok);
     }
 
     public static void unlockAll(BaseFragment fragment, Runnable done) {
-        askPin(fragment.getParentActivity(), "🔓 Снять все замки", "Введите PIN", pin -> {
-            if (!checkPin(pin)) {
-                Toast.makeText(fragment.getParentActivity(), "Неверный PIN", Toast.LENGTH_SHORT).show();
-                return;
-            }
+        verify(fragment.getParentActivity(), "🔓 Снять все замки", () -> {
             prefs().edit().remove("locked").apply();
             if (done != null) done.run();
-        }, null);
+        });
     }
 
     /**
@@ -201,14 +247,10 @@ public final class StarLock {
             AndroidUtilities.runOnUIThread(() -> {
                 BaseFragment last = LaunchActivity.getLastFragment();
                 if (last == null || last.getParentActivity() == null) return;
-                askPin(last.getParentActivity(), "🔒 Закрытый чат", "Введите PIN, чтобы открыть чат", pin -> {
-                    if (!checkPin(pin)) {
-                        Toast.makeText(last.getParentActivity(), "Неверный PIN", Toast.LENGTH_SHORT).show();
-                        return;
-                    }
+                verify(last.getParentActivity(), "🔒 Закрытый чат", () -> {
                     unlockedUntil.put(dialogId, System.currentTimeMillis() + UNLOCK_MS);
                     last.presentFragment(new ChatActivity(args));
-                }, null);
+                });
             });
             return false;
         } catch (Exception e) {
