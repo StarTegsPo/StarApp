@@ -86,8 +86,17 @@ export class TelegramBot {
   }
 
   async startPolling() {
-    this.me = await this.call('getMe');
     this.running = true;
+    // Нет интернета при старте (частое дело на телефоне) — ждём и пробуем снова, а не падаем
+    while (this.running && !this.me) {
+      try {
+        this.me = await this.call('getMe');
+      } catch (e) {
+        if (e.code === 401) console.error('[bot] Telegram отклонил токен (401 Unauthorized) — проверьте BOT_TOKEN в .env');
+        else console.error('[bot] нет связи с Telegram:', e.message, '— повтор через 5 с');
+        await new Promise((r) => setTimeout(r, 5000));
+      }
+    }
     console.log(`[bot] @${this.me.username} запущен (long polling)`);
     while (this.running) {
       try {
