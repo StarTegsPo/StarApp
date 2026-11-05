@@ -70,6 +70,8 @@ public final class StarMod {
     public static final int MENU_FILTER_USER = 9303;
     /** Кнопка StarTegs в списке чатов. */
     public static final int MENU_HUB = 9400;
+    /** Кнопка «Чат с ИИ» в списке чатов. */
+    public static final int MENU_AI = 9401;
     /** Пункт меню профиля: скрыть чат из списка. */
     public static final int MENU_HIDE = 9304;
 
@@ -543,34 +545,10 @@ public final class StarMod {
         return !TextUtils.isEmpty(StarModConfig.AI_BOT) && m != null && m.messageOwner != null && !TextUtils.isEmpty(m.messageOwner.message);
     }
 
+    /** «Спросить ИИ» в меню сообщения: ответ показывается прямо в чате (см. StarAi). */
     public static void askAi(BaseFragment fragment, MessageObject m) {
-        if (fragment == null || fragment.getParentActivity() == null || !canAskAi(m)) return;
-        final String text = m.messageOwner.message.length() > 3500 ? m.messageOwner.message.substring(0, 3500) + "…" : m.messageOwner.message;
-        final String[] prompts = {
-                "Перескажи коротко, о чём это сообщение:",
-                "Переведи на русский язык:",
-                "Объясни простыми словами:",
-                "Предложи 3 варианта ответа на это сообщение:",
-        };
-        CharSequence[] items = {"📝 Пересказать", "🌍 Перевести на русский", "💡 Объяснить", "💬 Предложить ответ"};
-        new AlertDialog.Builder(fragment.getParentActivity())
-                .setTitle("🤖 Спросить ИИ")
-                .setItems(items, (dialog, which) -> sendToAi(fragment, prompts[which] + "\n\n" + text))
-                .show();
-    }
-
-    private static void sendToAi(BaseFragment fragment, String prompt) {
-        int account = fragment.getCurrentAccount();
-        MessagesController.getInstance(account).getUserNameResolver().resolve(StarModConfig.AI_BOT, peerId -> AndroidUtilities.runOnUIThread(() -> {
-            if (peerId == null || peerId == 0) {
-                Toast.makeText(ApplicationLoader.applicationContext, "Не удалось найти @" + StarModConfig.AI_BOT, Toast.LENGTH_SHORT).show();
-                return;
-            }
-            SendMessagesHelper.getInstance(account).sendMessage(SendMessagesHelper.SendMessageParams.of(prompt, peerId));
-            Bundle args = new Bundle();
-            args.putLong("user_id", peerId);
-            fragment.presentFragment(new ChatActivity(args));
-        }));
+        if (fragment == null || !canAskAi(m)) return;
+        StarAi.askAboutMessage(fragment, m);
     }
 
     // ---------------------------------------------------------------- автообновление

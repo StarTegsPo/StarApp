@@ -50,8 +50,6 @@ public final class StarCloud {
         void fail(String why);
     }
 
-    private static String cachedApi, cachedInit;
-    private static long cachedAt;
     private static volatile boolean busy;
 
     private static SharedPreferences prefs() {
@@ -60,19 +58,30 @@ public final class StarCloud {
 
     // ---------------------------------------------------------------- сессия с ботом
 
-    static void session(int account, Session cb) {
-        if (TextUtils.isEmpty(StarModConfig.ECO_BOT)) {
-            cb.fail("Бот StarTegs не указан в настройках мода");
+    /** Результат открытия мини-приложения бота: ссылка от Telegram, исходная ссылка кнопки меню и initData. */
+    interface WebApp {
+        void ok(String url, String menuUrl, String init);
+
+        void fail(String why);
+    }
+
+    private static final java.util.HashMap<String, String[]> webAppCache = new java.util.HashMap<>();
+
+    /** Открыть мини-приложение бота @username «без экрана» и получить ссылку с подписанными данными. */
+    static void webApp(int account, String username, WebApp cb) {
+        if (TextUtils.isEmpty(username)) {
+            cb.fail("Бот не указан в настройках мода");
             return;
         }
-        if (cachedInit != null && System.currentTimeMillis() - cachedAt < 30 * 60_000L) {
-            cb.ok(cachedApi, cachedInit);
+        String[] c = webAppCache.get(account + ":" + username);
+        if (c != null && System.currentTimeMillis() - Long.parseLong(c[3]) < 30 * 60_000L) {
+            cb.ok(c[0], c[1], c[2]);
             return;
         }
         MessagesController mc = MessagesController.getInstance(account);
-        mc.getUserNameResolver().resolve(StarModConfig.ECO_BOT, peerId -> AndroidUtilities.runOnUIThread(() -> {
+        mc.getUserNameResolver().resolve(username, peerId -> AndroidUtilities.runOnUIThread(() -> {
             if (peerId == null || peerId <= 0) {
-                cb.fail("Не удалось найти @" + StarModConfig.ECO_BOT);
+                cb.fail("Не удалось найти @" + username);
                 return;
             }
             TLRPC.TL_users_getFullUser full = new TLRPC.TL_users_getFullUser();
@@ -86,7 +95,7 @@ public final class StarCloud {
                     }
                 }
                 if (TextUtils.isEmpty(menuUrl)) {
-                    cb.fail("У бота нет кнопки мини-приложения. Откройте бота и нажмите /start");
+                    cb.fail("У @" + username + " нет кнопки мини-приложения. Откройте бота и нажмите /start");
                     return;
                 }
                 TLRPC.TL_messages_requestWebView req = new TLRPC.TL_messages_requestWebView();
@@ -96,34 +105,51 @@ public final class StarCloud {
                 req.url = menuUrl;
                 req.flags |= 2;
                 req.from_bot_menu = true;
-                final String fallbackUrl = menuUrl;
+                final String mUrl = menuUrl;
                 ConnectionsManager.getInstance(account).sendRequest(req, (res2, err2) -> AndroidUtilities.runOnUIThread(() -> {
                     if (!(res2 instanceof TLRPC.TL_webViewResultUrl)) {
-                        cb.fail("Telegram не открыл мини-приложение бота" + (err2 != null ? ": " + err2.text : ""));
+                        cb.fail("Telegram не открыл мини-приложение @" + username + (err2 != null ? ": " + err2.text : ""));
                         return;
                     }
                     String url = ((TLRPC.TL_webViewResultUrl) res2).url;
-                    String api = param(url, "api");
-                    if (api == null) api = param(fallbackUrl, "api");
                     String init = fragmentParam(url, "tgWebAppData");
-                    if (api == null || !api.startsWith("https://")) {
-                        cb.fail("Бот не сообщил адрес своего сервера — он запущен?");
-                        return;
-                    }
                     if (init == null) {
                         cb.fail("Telegram не передал данные авторизации");
                         return;
                     }
-                    cachedApi = api.replaceAll("/+$", "");
-                    cachedInit = init;
-                    cachedAt = System.currentTimeMillis();
-                    cb.ok(cachedApi, cachedInit);
+                    webAppCache.put(account + ":" + username, new String[]{url, mUrl, init, String.valueOf(System.currentTimeMillis())});
+                    cb.ok(url, mUrl, init);
                 }));
             }));
         }));
     }
 
-    private static String param(String url, String key) {
+    static void forget(int account, String username) {
+        webAppCache.remove(account + ":" + username);
+    }
+
+    /** Сессия с ботом StarTegs: адрес его API (?api=… в ссылке мини-приложения) и initData. */
+    static void session(int account, Session cb) {
+        webApp(account, StarModConfig.ECO_BOT, new WebApp() {
+            @Override
+            public void ok(String url, String menuUrl, String init) {
+                String api = param(url, "api");
+                if (api == null) api = param(menuUrl, "api");
+                if (api == null || !api.startsWith("https://")) {
+                    cb.fail("Бот StarTegs не сообщил адрес своего сервера — он запущен?");
+                    return;
+                }
+                cb.ok(api.replaceAll("/+$", ""), init);
+            }
+
+            @Override
+            public void fail(String why) {
+                cb.fail(why);
+            }
+        });
+    }
+
+    static String param(String url, String key) {
         try {
             return Uri.parse(url).getQueryParameter(key);
         } catch (Exception e) {
@@ -131,7 +157,7 @@ public final class StarCloud {
         }
     }
 
-    private static String fragmentParam(String url, String key) {
+    static String fragmentParam(String url, String key) {
         try {
             String frag = Uri.parse(url).getEncodedFragment();
             if (frag == null) return null;

@@ -404,6 +404,53 @@ patch(LIC,
         }
 """)
 
+print("== 1.5: нейросеть")
+patch(DA,
+      """            if (org.startegs.StarMod.showChatsButton()) {
+                menu.addItem(org.startegs.StarMod.MENU_HUB, R.drawable.msg_fave).setContentDescription("StarTegs");
+            }""",
+      """            if (org.startegs.StarMod.showChatsButton()) {
+                menu.addItem(org.startegs.StarMod.MENU_HUB, R.drawable.msg_fave).setContentDescription("StarTegs");
+                if (org.startegs.StarAi.enabled()) {
+                    menu.addItem(org.startegs.StarMod.MENU_AI, R.drawable.msg_bot).setContentDescription("Чат с ИИ");
+                }
+            }""")
+patch(DA,
+      """                if (id == org.startegs.StarMod.MENU_HUB) {
+                    DialogsActivity.this.presentFragment(new org.startegs.StarHubActivity());
+                    return;
+                }""",
+      """                if (id == org.startegs.StarMod.MENU_HUB) {
+                    DialogsActivity.this.presentFragment(new org.startegs.StarHubActivity());
+                    return;
+                }
+                if (id == org.startegs.StarMod.MENU_AI) {
+                    DialogsActivity.this.presentFragment(new org.startegs.StarAiChatActivity());
+                    return;
+                }""")
+patch(CA,
+      """            if (searchItem != null) {
+                headerItem.lazilyAddSubItem(search, R.drawable.msg_search, LocaleController.getString(R.string.Search));
+            }
+""",
+      """            if (searchItem != null) {
+                headerItem.lazilyAddSubItem(search, R.drawable.msg_search, LocaleController.getString(R.string.Search));
+            }
+            if (org.startegs.StarAi.enabled()) {
+                headerItem.lazilyAddSubItem(org.startegs.StarAi.MENU_SUMMARY, R.drawable.msg_bot, "Что я пропустил? (ИИ)");
+                headerItem.lazilyAddSubItem(org.startegs.StarAi.MENU_IMPROVE, R.drawable.msg_edit, "Улучшить мой текст (ИИ)");
+            }
+""")
+patch(CA,
+      """                } else if (id == search) {
+                    openSearchWithText(isSupportedTags() ? "" : null);""",
+      """                } else if (id == org.startegs.StarAi.MENU_SUMMARY) {
+                    org.startegs.StarAi.summarize(ChatActivity.this);
+                } else if (id == org.startegs.StarAi.MENU_IMPROVE) {
+                    org.startegs.StarAi.improveInput(ChatActivity.this);
+                } else if (id == search) {
+                    openSearchWithText(isSupportedTags() ? "" : null);""")
+
 print("== интерфейс")
 patch("TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java",
       """            newVisibility = !onlySelfStories && getStoriesController().hasStories();

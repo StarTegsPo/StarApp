@@ -27,6 +27,7 @@ public class StarHubActivity extends UniversalFragment {
     private static final int ID_CHECK_UPDATE = 701;
     private static final int ID_GHOST_ONLINE = 402;
     private static final int ID_GHOST_STORIES = 403;
+    private static final int ID_AI_CHAT = 1200;
     private static final int ID_TIER = 1100;
     private static final int ID_TIER_BUY = 1101;
     private static final int ID_HIDDEN = 1102;
@@ -85,6 +86,11 @@ public class StarHubActivity extends UniversalFragment {
                 items.add(UItem.asButton(ID_TIER_BUY, R.drawable.msg_fave, "Оформить Premium за ⭐ Stars").accent());
             }
             items.add(UItem.asShadow("Premium и VIP оформляются в @" + StarModConfig.ECO_BOT + " и открывают в моде приватность, замок и скрытые чаты, все палитры и иконки. Отмечены 🔒."));
+        }
+        if (StarAi.enabled()) {
+            items.add(UItem.asHeader("Нейросеть"));
+            items.add(UItem.asButton(ID_AI_CHAT, R.drawable.msg_bot, "🤖 Чат с ИИ"));
+            items.add(UItem.asShadow("Также: долгое нажатие на сообщение → «Спросить ИИ», меню чата ⋮ → «Что я пропустил?» и «Улучшить мой текст». Лимиты и Premium — из @" + StarModConfig.AI_BOT + "."));
         }
         items.add(UItem.asHeader("Сервисы"));
         boolean any = false;
@@ -191,6 +197,9 @@ public class StarHubActivity extends UniversalFragment {
             return;
         }
         switch (id) {
+            case ID_AI_CHAT:
+                presentFragment(new StarAiChatActivity());
+                return;
             case ID_TIER:
                 StarCloud.refreshTier(this, true, refresh);
                 return;
