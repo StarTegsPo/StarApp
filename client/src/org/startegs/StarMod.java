@@ -263,6 +263,14 @@ public final class StarMod {
         }
     }
 
+    /** Удалено ли сообщение mid (scope: -channel_id для каналов, 0 для остальных). */
+    static boolean isDeletedKey(int account, long scope, int mid) {
+        ensureLoaded(account);
+        synchronized (StarMod.class) {
+            return deletedCache.contains(key(account, scope, mid));
+        }
+    }
+
     public static boolean isDeleted(int account, MessageObject m) {
         if (m == null || m.messageOwner == null) return false;
         ensureLoaded(account);
@@ -528,6 +536,8 @@ public final class StarMod {
             sb.append("ID: ").append(chatId).append("\nID для ботов: ").append(copyId);
             if (chat != null && chat.date > 0) sb.append("\n\nСоздан: ").append(formatDate(chat.date));
         }
+        String note = StarTools.note(dialogId);
+        if (!note.isEmpty()) sb.append("\n\n📝 Ваша заметка:\n").append(note);
         new AlertDialog.Builder(fragment.getParentActivity())
                 .setTitle("🪪 Информация")
                 .setMessage(sb.toString())

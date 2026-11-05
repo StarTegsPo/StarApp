@@ -451,6 +451,30 @@ patch(CA,
                 } else if (id == search) {
                     openSearchWithText(isSupportedTags() ? "" : null);""")
 
+print("== 1.6: аккаунты, статистика, заметки, экспорт")
+UC = "TMessagesProj/src/main/java/org/telegram/messenger/UserConfig.java"
+patch(UC, "public final static int MAX_ACCOUNT_DEFAULT_COUNT = 3;", "public final static int MAX_ACCOUNT_DEFAULT_COUNT = 10;")
+patch(UC, "public final static int MAX_ACCOUNT_COUNT = 4;", "public final static int MAX_ACCOUNT_COUNT = 10;")
+# в нативной сетевой части слотов на один больше, чем аккаунтов в Java — сохраняем это соотношение
+patch("TMessagesProj/jni/tgnet/Defines.h", "#define MAX_ACCOUNT_COUNT 5", "#define MAX_ACCOUNT_COUNT 11")
+patch(PA,
+      """            otherItem.addSubItem(org.startegs.StarMod.MENU_PEER_INFO, R.drawable.msg_info, "ID и дата регистрации");
+""",
+      """            otherItem.addSubItem(org.startegs.StarMod.MENU_PEER_INFO, R.drawable.msg_info, "ID и дата регистрации");
+            otherItem.addSubItem(org.startegs.StarTools.MENU_NOTE, R.drawable.msg_edit, org.startegs.StarTools.noteMenuTitle(getDialogId()));
+            otherItem.addSubItem(org.startegs.StarTools.MENU_STATS, R.drawable.msg_stats, "Статистика переписки");
+            otherItem.addSubItem(org.startegs.StarTools.MENU_EXPORT, R.drawable.msg_download, "Экспорт чата в файл");
+""")
+patch(PA,
+      """                } else if (id == org.startegs.StarMod.MENU_HIDE) {""",
+      """                } else if (id == org.startegs.StarTools.MENU_NOTE) {
+                    org.startegs.StarTools.editNote(ProfileActivity.this, getDialogId(), null);
+                } else if (id == org.startegs.StarTools.MENU_STATS) {
+                    presentFragment(new org.startegs.StarStatsActivity(getDialogId()));
+                } else if (id == org.startegs.StarTools.MENU_EXPORT) {
+                    org.startegs.StarTools.exportChat(ProfileActivity.this, getDialogId());
+                } else if (id == org.startegs.StarMod.MENU_HIDE) {""")
+
 print("== интерфейс")
 patch("TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java",
       """            newVisibility = !onlySelfStories && getStoriesController().hasStories();

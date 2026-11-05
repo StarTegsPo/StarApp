@@ -28,6 +28,7 @@ public class StarHubActivity extends UniversalFragment {
     private static final int ID_GHOST_ONLINE = 402;
     private static final int ID_GHOST_STORIES = 403;
     private static final int ID_AI_CHAT = 1200;
+    private static final int ID_NOTES = 1300;
     private static final int ID_TIER = 1100;
     private static final int ID_TIER_BUY = 1101;
     private static final int ID_HIDDEN = 1102;
@@ -123,6 +124,7 @@ public class StarHubActivity extends UniversalFragment {
             items.add(UItem.asButton(ID_ARCHIVE_NOW, R.drawable.msg_download, "Отправить в архив сейчас"));
         }
         items.add(UItem.asButton(ID_DELETED_LIST, R.drawable.msg_delete, "Все удалённые сообщения"));
+        items.add(UItem.asButton(ID_NOTES, R.drawable.msg_edit, "📝 Мои заметки", StarTools.allNotes().isEmpty() ? "" : String.valueOf(StarTools.allNotes().size())));
         items.add(UItem.asShadow("Удалённые остаются в чате с пометкой «🗑 удалено», старые версии правок — в меню сообщения. Облачный архив отправляет удалённые в ваш бот StarTegs, где их можно искать."));
 
         items.add(UItem.asHeader("Приватность"));
@@ -197,6 +199,9 @@ public class StarHubActivity extends UniversalFragment {
             return;
         }
         switch (id) {
+            case ID_NOTES:
+                presentFragment(new StarNotesActivity());
+                return;
             case ID_AI_CHAT:
                 presentFragment(new StarAiChatActivity());
                 return;
