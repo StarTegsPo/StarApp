@@ -457,6 +457,27 @@ patch(UC, "public final static int MAX_ACCOUNT_DEFAULT_COUNT = 3;", "public fina
 patch(UC, "public final static int MAX_ACCOUNT_COUNT = 4;", "public final static int MAX_ACCOUNT_COUNT = 10;")
 # в нативной сетевой части слотов на один больше, чем аккаунтов в Java — сохраняем это соотношение
 patch("TMessagesProj/jni/tgnet/Defines.h", "#define MAX_ACCOUNT_COUNT 5", "#define MAX_ACCOUNT_COUNT 11")
+# В нативной части у каждого аккаунта свой объект соединения, но выбор жёстко прописан для 0–4,
+# а всё остальное падает в instance4. С 10 аккаунтами номера 5–9 делили бы один объект — сбой при запуске.
+NATIVE_OLD = """        case 3:
+            static ConnectionsManager instance3(3);
+            return instance3;
+        case 4:
+        default:
+            static ConnectionsManager instance4(4);
+            return instance4;
+    }"""
+NATIVE_NEW = "".join(f"""        case {i}: {{
+            static ConnectionsManager instance{i}({i});
+            return instance{i};
+        }}
+""" for i in range(3, 10)) + """        case 10:
+        default: {
+            static ConnectionsManager instance10(10);
+            return instance10;
+        }
+    }"""
+patch("TMessagesProj/jni/tgnet/ConnectionsManager.cpp", NATIVE_OLD, NATIVE_NEW)
 patch(PA,
       """            otherItem.addSubItem(org.startegs.StarMod.MENU_PEER_INFO, R.drawable.msg_info, "ID и дата регистрации");
 """,
@@ -474,6 +495,24 @@ patch(PA,
                 } else if (id == org.startegs.StarTools.MENU_EXPORT) {
                     org.startegs.StarTools.exportChat(ProfileActivity.this, getDialogId());
                 } else if (id == org.startegs.StarMod.MENU_HIDE) {""")
+
+print("== отчёт о сбоях")
+patch("TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java",
+      """        try {
+            applicationContext = getApplicationContext();
+        } catch (Throwable ignore) {
+
+        }
+
+        super.onCreate();""",
+      """        try {
+            applicationContext = getApplicationContext();
+        } catch (Throwable ignore) {
+
+        }
+        org.startegs.StarCrash.install(applicationContext != null ? applicationContext : this);
+
+        super.onCreate();""")
 
 print("== интерфейс")
 patch("TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java",
