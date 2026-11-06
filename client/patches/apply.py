@@ -722,6 +722,31 @@ patch(PA,
                     org.startegs.StarPrivacy.toggleNoRead(ProfileActivity.this, getDialogId());
                 } else if (id == org.startegs.StarAuto.MENU_AUTOREPLY) {""")
 
+print("== 2.2: оформление")
+AU = "TMessagesProj/src/main/java/org/telegram/messenger/AndroidUtilities.java"
+patch(AU,
+      """    public static Typeface bold() {
+""",
+      """    public static Typeface bold() {
+        Typeface starFont = org.startegs.StarLook.boldOverride();
+        if (starFont != null) {
+            return starFont; // шрифт StarTegs
+        }
+""")
+patch(CA,
+      """        contentView.addView(chatListView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));""",
+      """        contentView.addView(chatListView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        org.startegs.StarLook.attachList(chatListView);""")
+patch(DA,
+      """        org.startegs.StarSend.init();""",
+      """        org.startegs.StarSend.init();
+        org.startegs.StarLook.applyFonts();
+        org.startegs.StarLook.checkSeasonIcon();""")
+patch("TMessagesProj/src/main/java/org/telegram/ui/Components/FilterTabsView.java",
+      """            emojiColorFilter = new PorterDuffColorFilter(textPaint.getColor(), PorterDuff.Mode.SRC_IN);""",
+      """            textPaint.setColor(org.startegs.StarLook.tabColor(currentTab.id, currentTab.isDefault, textPaint.getColor()));
+            emojiColorFilter = new PorterDuffColorFilter(textPaint.getColor(), PorterDuff.Mode.SRC_IN);""")
+
 print("== отчёт о сбоях")
 patch("TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java",
       """        try {

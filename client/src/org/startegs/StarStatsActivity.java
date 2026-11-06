@@ -124,6 +124,7 @@ public class StarStatsActivity extends UniversalFragment {
         SimpleDateFormat f = new SimpleDateFormat("dd.MM.yyyy", Locale.getDefault());
         int days = Math.max(1, (lastDate - firstDate) / 86400 + 1);
         items.add(UItem.asHeader("Всего"));
+        if (getParentActivity() != null) items.add(UItem.asCustom(StarChart.ring(getParentActivity(), mine, total, "мои сообщения")));
         items.add(UItem.asButton(1, "Сообщений", String.valueOf(total)));
         items.add(UItem.asButton(2, "Моих", mine + " · " + pct(mine, total)));
         items.add(UItem.asButton(3, "С фото, видео и файлами", String.valueOf(media)));
@@ -149,18 +150,18 @@ public class StarStatsActivity extends UniversalFragment {
         }
         items.add(UItem.asShadow(null));
 
-        int maxH = 0;
-        for (int h : hours) maxH = Math.max(maxH, h);
         items.add(UItem.asHeader("Когда вы общаетесь"));
-        for (int h = 0; h < 24; h += 3) {
-            int v = hours[h] + hours[h + 1] + hours[h + 2];
-            items.add(UItem.asButton(200 + h, String.format(Locale.US, "%02d–%02d  %s", h, h + 3, bar(v, maxH * 3)), String.valueOf(v)));
-        }
-        String[] wd = {"Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"};
-        int maxD = 0;
-        for (int d : weekdays) maxD = Math.max(maxD, d);
-        for (int d = 0; d < 7; d++) {
-            items.add(UItem.asButton(300 + d, wd[d] + "  " + bar(weekdays[d], maxD), String.valueOf(weekdays[d])));
+        if (getParentActivity() != null) {
+            String[] hl = new String[8];
+            int[] hv = new int[8];
+            for (int h = 0; h < 24; h += 3) {
+                hl[h / 3] = String.format(Locale.US, "%02d", h);
+                hv[h / 3] = hours[h] + hours[h + 1] + hours[h + 2];
+            }
+            items.add(UItem.asCustom(StarChart.bars(getParentActivity(), hl, hv)));
+            items.add(UItem.asShadow("По часам: каждый столбец — три часа, подпись — начало."));
+            items.add(UItem.asHeader("По дням недели"));
+            items.add(UItem.asCustom(StarChart.bars(getParentActivity(), new String[]{"Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"}, weekdays.clone())));
         }
         items.add(UItem.asShadow(null));
 

@@ -111,6 +111,7 @@ public final class StarSend {
             if (p == null || bypass.remove(p)) return false;
             if (p.scheduleDate != 0 || p.retryMessageObject != null || p.quick_reply_shortcut != null) return false;
             if (Looper.myLooper() != Looper.getMainLooper()) return false;
+            StarLook.sendFlash(top());
             if (p.document != null && p.path != null && voiceToText() && MessageObject.isVoiceDocument(p.document)) {
                 voiceFlow(account, p);
                 return true;

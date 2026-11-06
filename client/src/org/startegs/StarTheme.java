@@ -89,19 +89,50 @@ public final class StarTheme {
         setPalette(fragment, enable ? 0 : -1);
     }
 
+    /** Тема из assets с оформлением StarTegs поверх (градиентные пузыри, неон). */
     private static File fromAssets(String asset) throws Exception {
-        File out = new File(ApplicationLoader.applicationContext.getCacheDir(), asset);
-        try (InputStream in = ApplicationLoader.applicationContext.getAssets().open(asset);
-             OutputStream os = new FileOutputStream(out)) {
+        java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+        try (InputStream in = ApplicationLoader.applicationContext.getAssets().open(asset)) {
             byte[] buf = new byte[8192];
             int n;
-            while ((n = in.read(buf)) > 0) os.write(buf, 0, n);
+            while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
+        }
+        String text = StarLook.processTheme(bo.toString("UTF-8"), asset.contains("night"));
+        File out = new File(ApplicationLoader.applicationContext.getCacheDir(), asset);
+        try (OutputStream os = new FileOutputStream(out)) {
+            os.write(text.getBytes("UTF-8"));
         }
         return out;
     }
 
+    /** Пересобрать и применить текущую тему StarTegs (после смены оформления). false — тема не наша. */
+    static boolean reapply(boolean forceNight) {
+        try {
+            int p = activePalette();
+            if (p == -1) return false;
+            if (p == -2) applyCustom(prefs().getInt("custom_hue", 270), forceNight);
+            else enable(p, forceNight);
+            return true;
+        } catch (Exception e) {
+            FileLog.e(e);
+            return false;
+        }
+    }
+
+    static void enableDefault(boolean forceNight) {
+        try {
+            enable(0, forceNight);
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+    }
+
     private static void enable(int palette) throws Exception {
-        boolean dark = Theme.getActiveTheme().isDark();
+        enable(palette, false);
+    }
+
+    private static void enable(int palette, boolean forceNight) throws Exception {
+        boolean dark = forceNight || Theme.getActiveTheme().isDark();
         Theme.ThemeInfo prevDay = Theme.getCurrentTheme();
         Theme.ThemeInfo prevNight = Theme.getCurrentNightTheme();
         SharedPreferences.Editor e = prefs().edit();
@@ -186,7 +217,7 @@ public final class StarTheme {
         r.close();
         File f = new File(ApplicationLoader.applicationContext.getCacheDir(), out);
         try (OutputStream os = new FileOutputStream(f)) {
-            os.write(sb.toString().getBytes("UTF-8"));
+            os.write(StarLook.processTheme(sb.toString(), asset.contains("night")).getBytes("UTF-8"));
         }
         return f;
     }
@@ -209,24 +240,28 @@ public final class StarTheme {
                 .setTitle("🎨 Своя палитра")
                 .setItems(items, (d, which) -> {
                     try {
-                        float hue = ((Integer) HUES[which][1]).floatValue();
-                        boolean dark = Theme.getActiveTheme().isDark();
-                        Theme.ThemeInfo prevDay = Theme.getCurrentTheme();
-                        Theme.ThemeInfo prevNight = Theme.getCurrentNightTheme();
-                        SharedPreferences.Editor e = prefs().edit();
-                        if (prevDay != null && !isOurs(prevDay)) e.putString("prev_day_theme", prevDay.getKey());
-                        if (prevNight != null && !isOurs(prevNight)) e.putString("prev_night_theme", prevNight.getKey());
-                        e.putInt("custom_hue", (int) hue).apply();
-                        Theme.ThemeInfo night = Theme.applyThemeFile(buildCustom("night.attheme", hue, "startegs_custom_night.attheme"), CUSTOM + " Night", null, false);
-                        Theme.ThemeInfo day = Theme.applyThemeFile(buildCustom("day.attheme", hue, "startegs_custom_day.attheme"), CUSTOM, null, false);
-                        if (day == null || night == null) return;
-                        Theme.setCurrentNightTheme(night);
-                        saveLast(day, night);
-                        post(dark ? night : day, dark);
+                        applyCustom(((Integer) HUES[which][1]).floatValue(), false);
                     } catch (Exception ex) {
                         FileLog.e(ex);
                     }
                 })
                 .show();
+    }
+
+    /** Своя палитра с заданным оттенком (0–360°). Используется и «темой по аватарке». */
+    static void applyCustom(float hue, boolean forceNight) throws Exception {
+        boolean dark = forceNight || Theme.getActiveTheme().isDark();
+        Theme.ThemeInfo prevDay = Theme.getCurrentTheme();
+        Theme.ThemeInfo prevNight = Theme.getCurrentNightTheme();
+        SharedPreferences.Editor e = prefs().edit();
+        if (prevDay != null && !isOurs(prevDay)) e.putString("prev_day_theme", prevDay.getKey());
+        if (prevNight != null && !isOurs(prevNight)) e.putString("prev_night_theme", prevNight.getKey());
+        e.putInt("custom_hue", (int) hue).apply();
+        Theme.ThemeInfo night = Theme.applyThemeFile(buildCustom("night.attheme", hue, "startegs_custom_night.attheme"), CUSTOM + " Night", null, false);
+        Theme.ThemeInfo day = Theme.applyThemeFile(buildCustom("day.attheme", hue, "startegs_custom_day.attheme"), CUSTOM, null, false);
+        if (day == null || night == null) return;
+        Theme.setCurrentNightTheme(night);
+        saveLast(day, night);
+        post(dark ? night : day, dark);
     }
 }

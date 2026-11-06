@@ -54,6 +54,15 @@ public class StarHubActivity extends UniversalFragment {
     private static final int ID_WALL = 2034;
     private static final int ID_WALL_SEASON = 2035;
     private static final int[] UNDO_SECONDS = {0, 3, 5, 10};
+    private static final int ID_GLASS = 2100;
+    private static final int ID_GRADIENT = 2101;
+    private static final int ID_NEON = 2102;
+    private static final int ID_FONT = 2103;
+    private static final int ID_ANIM = 2104;
+    private static final int ID_AVATAR_THEME = 2105;
+    private static final int ID_COMPACT = 2106;
+    private static final int ID_FOLDERS = 2107;
+    private static final int ID_SEASON_ICON = 2108;
     private static final int ID_AR_PROMPT = 1800;
     private static final int ID_AR_MARK = 1801;
     private static final int ID_AR_OFF = 1802;
@@ -197,6 +206,20 @@ public class StarHubActivity extends UniversalFragment {
         items.add(UItem.asButton(ID_TG_THEMES, R.drawable.msg_theme, "Темы, шрифт и пузыри сообщений"));
         items.add(UItem.asShadow("В «Темах» можно собрать свою: цвета, обои, размер шрифта, скругление сообщений."));
 
+        items.add(UItem.asHeader("Дизайн"));
+        items.add(UItem.asCheck(ID_GRADIENT, "🌈 Градиентные пузыри").setChecked(StarLook.gradientBubbles()));
+        items.add(UItem.asCheck(ID_NEON, "🌃 Неоновый OLED-режим").setChecked(StarLook.neon()));
+        items.add(UItem.asButton(ID_AVATAR_THEME, R.drawable.msg_photos, "🖼 Тема по моей аватарке"));
+        items.add(UItem.asCheck(ID_GLASS, "🫧 Стеклянные панели (размытие)").setChecked(StarLook.glass()));
+        items.add(UItem.asButton(ID_FONT, R.drawable.msg_edit, "🔤 Шрифт", StarLook.FONTS[StarLook.font()][1]));
+        items.add(UItem.asCheck(ID_ANIM, "✨ Анимации сообщений").setChecked(StarLook.animations()));
+        items.add(UItem.asCheck(ID_COMPACT, "📏 Компактный режим").setChecked(StarLook.compact()));
+        items.add(UItem.asCheck(ID_FOLDERS, "🗂 Цветные папки").setChecked(StarLook.folderColors()));
+        items.add(UItem.asCheck(ID_SEASON_ICON, "🍂 Иконка по сезону").setChecked(StarLook.seasonIcon()));
+        items.add(UItem.asShadow("Градиент и неон работают с темами StarTegs (включатся сами); неон — для тёмной темы, фон чёрный, акценты светятся. "
+                + "Анимации: новые сообщения появляются с отскоком, отправка — вспышка в цвет палитры. Компактный: мельче текст и плотнее пузыри. "
+                + "Иконка по сезону сейчас — " + StarLook.seasonIconName() + ". Шрифт меняется в чатах и списке чатов; полностью — после перезапуска."));
+
         items.add(UItem.asHeader("Сообщения"));
         items.add(UItem.asCheck(ID_SAVE_DELETED, "Сохранять удалённые сообщения").setChecked(StarMod.saveDeleted()));
         items.add(UItem.asCheck(ID_SAVE_EDITS, "Сохранять историю изменений").setChecked(StarMod.saveEdits()));
@@ -324,6 +347,44 @@ public class StarHubActivity extends UniversalFragment {
             return;
         }
         switch (id) {
+            case ID_GRADIENT:
+                if (StarTheme.activePalette() > 0 && !StarMod.requirePro(this, "Палитры StarTegs")) return;
+                StarLook.toggleThemeFlag(this, "look_gradient");
+                break;
+            case ID_NEON:
+                StarLook.toggleThemeFlag(this, "look_neon");
+                break;
+            case ID_AVATAR_THEME:
+                StarLook.themeFromAvatar(this);
+                break;
+            case ID_GLASS:
+                StarLook.toggleGlass(this);
+                break;
+            case ID_FONT: {
+                CharSequence[] names = new CharSequence[StarLook.FONTS.length];
+                for (int i = 0; i < names.length; i++) names[i] = (i == StarLook.font() ? "✓ " : "") + StarLook.FONTS[i][1];
+                new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity())
+                        .setTitle("🔤 Шрифт")
+                        .setItems(names, (d, which) -> {
+                            StarLook.setFont(which);
+                            refresh.run();
+                        })
+                        .show();
+                return;
+            }
+            case ID_ANIM:
+                StarMod.toggle("look_anim", true);
+                break;
+            case ID_COMPACT:
+                StarLook.toggleCompact();
+                break;
+            case ID_FOLDERS:
+                StarMod.toggle("look_folders", false);
+                org.telegram.messenger.NotificationCenter.getInstance(currentAccount).postNotificationName(org.telegram.messenger.NotificationCenter.dialogFiltersUpdated);
+                break;
+            case ID_SEASON_ICON:
+                StarLook.toggleSeasonIcon();
+                break;
             case ID_DECOY:
                 StarPrivacy.setupDecoy(this, refresh);
                 return;
