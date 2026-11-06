@@ -747,6 +747,77 @@ patch("TMessagesProj/src/main/java/org/telegram/ui/Components/FilterTabsView.jav
       """            textPaint.setColor(org.startegs.StarLook.tabColor(currentTab.id, currentTab.isDefault, textPaint.getColor()));
             emojiColorFilter = new PorterDuffColorFilter(textPaint.getColor(), PorterDuff.Mode.SRC_IN);""")
 
+print("== 3.0: друзья, магазин, игры, голос")
+patch(CA,
+      """                headerItem.lazilyAddSubItem(org.startegs.StarMore.MENU_TEMPLATES, R.drawable.msg_edit, "Шаблоны ответов");""",
+      """                headerItem.lazilyAddSubItem(org.startegs.StarMore.MENU_TEMPLATES, R.drawable.msg_edit, "Шаблоны ответов");
+                headerItem.lazilyAddSubItem(org.startegs.StarGames.MENU_GAMES, R.drawable.msg_fave, "🎮 Игры");
+                headerItem.lazilyAddSubItem(org.startegs.StarVoice.MENU_VOICE, R.drawable.msg_voice_unmuted, "🎙 Голос в голосовых");""")
+patch(CA,
+      """                } else if (id == org.startegs.StarMore.MENU_TEMPLATES) {""",
+      """                } else if (id == org.startegs.StarGames.MENU_GAMES) {
+                    org.startegs.StarGames.menu(ChatActivity.this);
+                } else if (id == org.startegs.StarVoice.MENU_VOICE) {
+                    org.startegs.StarVoice.choose(ChatActivity.this);
+                } else if (id == org.startegs.StarMore.MENU_TEMPLATES) {""")
+patch(CA,
+      """        if (org.startegs.StarStarred.canStar(selectedObject) && chatMode == MODE_DEFAULT) {""",
+      """        if (org.startegs.StarGames.canPlay(currentAccount, selectedObject)) {
+            items.add(org.startegs.StarGames.playTitle(currentAccount, selectedObject));
+            options.add(org.startegs.StarGames.OPTION_PLAY);
+            icons.add(R.drawable.msg_fave);
+        }
+        if (org.startegs.StarStarred.canStar(selectedObject) && chatMode == MODE_DEFAULT) {""")
+patch(CA,
+      """            case org.startegs.StarStarred.OPTION_STAR: {""",
+      """            case org.startegs.StarGames.OPTION_PLAY: {
+                org.startegs.StarGames.play(this, selectedObject);
+                break;
+            }
+            case org.startegs.StarStarred.OPTION_STAR: {""")
+patch(PA,
+      """                otherItem.addSubItem(org.startegs.StarPrivacy.MENU_NOREAD, R.drawable.msg_viewreplies, org.startegs.StarPrivacy.noReadTitle(getDialogId()));""",
+      """                otherItem.addSubItem(org.startegs.StarPrivacy.MENU_NOREAD, R.drawable.msg_viewreplies, org.startegs.StarPrivacy.noReadTitle(getDialogId()));
+                otherItem.addSubItem(org.startegs.StarCosmetics.MENU_SOUND, R.drawable.msg_voice_unmuted, "🔔 Свой звук для чата");""")
+patch(PA,
+      """                } else if (id == org.startegs.StarPrivacy.MENU_NOREAD) {""",
+      """                } else if (id == org.startegs.StarCosmetics.MENU_SOUND) {
+                    org.startegs.StarCosmetics.pickSound(ProfileActivity.this, getDialogId());
+                } else if (id == org.startegs.StarPrivacy.MENU_NOREAD) {""")
+patch("TMessagesProj/src/main/java/org/telegram/ui/Cells/DialogCell.java",
+      """                StoriesUtilities.drawAvatarWithStory(currentDialogId, canvas, avatarImage, storyParams);
+                if (storyParams.drawnLive) {
+                    checkTtl();
+                }
+                storyParams.forceState = s;
+            }""",
+      """                StoriesUtilities.drawAvatarWithStory(currentDialogId, canvas, avatarImage, storyParams);
+                if (storyParams.drawnLive) {
+                    checkTtl();
+                }
+                storyParams.forceState = s;
+                org.startegs.StarCosmetics.drawFrame(canvas, storyParams.originalAvatarRect, currentDialogId, this);
+            }""")
+MCTRL = "TMessagesProj/src/main/java/org/telegram/messenger/MediaController.java"
+patch(MCTRL,
+      """    private boolean shouldUseAudioRecorderV2(int account) {
+""",
+      """    private boolean shouldUseAudioRecorderV2(int account) {
+        if (org.startegs.StarVoice.active()) {
+            return false; // эффект голоса StarTegs — старый рекордер, где есть доступ к звуку
+        }
+""")
+patch(MCTRL,
+      """                int len = audioRecorder.read(buffer, buffer.capacity());
+                if (len > 0) {
+                    buffer.limit(len);
+""",
+      """                int len = audioRecorder.read(buffer, buffer.capacity());
+                if (len > 0) {
+                    buffer.limit(len);
+                    org.startegs.StarVoice.process(buffer, len, sampleRate);
+""")
+
 print("== отчёт о сбоях")
 patch("TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java",
       """        try {

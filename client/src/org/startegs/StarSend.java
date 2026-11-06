@@ -129,6 +129,10 @@ public final class StarSend {
                 undoFlow(account, p);
                 return true;
             }
+            if (!StarCosmetics.myEffect().isEmpty() && StarCodec.read(p.message) == null) {
+                finalSend(account, p);
+                return true;
+            }
         } catch (Exception e) {
             FileLog.e(e);
         }
@@ -148,20 +152,30 @@ public final class StarSend {
         BaseFragment f = top();
         if (f instanceof ChatActivity && ((ChatActivity) f).getDialogId() == p.peer && ((ChatActivity) f).getChatActivityEnterView() != null) {
             CharSequence cur = ((ChatActivity) f).getChatActivityEnterView().getFieldText();
-            if (TextUtils.isEmpty(cur)) ((ChatActivity) f).getChatActivityEnterView().setFieldText(p.message);
+            if (TextUtils.isEmpty(cur)) ((ChatActivity) f).getChatActivityEnterView().setFieldText(StarCodec.strip(p.message));
         }
     }
 
     private static void proceed(int account, SendMessagesHelper.SendMessageParams p) {
         if (undoSeconds() > 0 && isPlainText(p)) undoFlow(account, p);
-        else direct(account, p);
+        else finalSend(account, p);
+    }
+
+    /** Отправка с эффектом StarTegs (невидимая метка — эффект увидит друг с модом). */
+    private static void finalSend(int account, SendMessagesHelper.SendMessageParams p) {
+        String fx = StarCosmetics.myEffect();
+        if (!fx.isEmpty() && isPlainText(p) && StarCodec.read(p.message) == null) {
+            p.message = StarCodec.attach(p.message, "fx|" + fx);
+            StarFx.play(top(), fx);
+        }
+        direct(account, p);
     }
 
     private static void undoFlow(int account, SendMessagesHelper.SendMessageParams p) {
         int sec = undoSeconds();
         final boolean[] cancelled = {false};
         Runnable send = () -> {
-            if (!cancelled[0]) direct(account, p);
+            if (!cancelled[0]) finalSend(account, p);
         };
         AndroidUtilities.runOnUIThread(send, sec * 1000L);
         BaseFragment f = top();
@@ -276,7 +290,7 @@ public final class StarSend {
             final int account = a;
             NotificationCenter.getInstance(account).addObserver((id, acc, args) -> {
                 try {
-                    if (id != NotificationCenter.didReceiveNewMessages || args.length < 2 || !remindDetect()) return;
+                    if (id != NotificationCenter.didReceiveNewMessages || args.length < 2) return;
                     if (args.length > 2 && args[2] instanceof Boolean && (Boolean) args[2]) return;
                     long dialogId = (Long) args[0];
                     @SuppressWarnings("unchecked") ArrayList<MessageObject> msgs = (ArrayList<MessageObject>) args[1];
@@ -332,6 +346,9 @@ public final class StarSend {
         for (MessageObject m : msgs) {
             if (m == null || m.messageOwner == null || TextUtils.isEmpty(m.messageOwner.message)) continue;
             if (now - m.messageOwner.date > 120) continue;
+            String payload = m.isOut() ? null : StarCodec.read(m.messageOwner.message);
+            if (payload != null && payload.startsWith("fx|")) StarFx.play(f, payload.substring(3)); // эффект от друга
+            if (!remindDetect()) continue;
             String[] label = {null};
             int when = parse(m.messageOwner.message, now, label);
             if (when < 0) continue;

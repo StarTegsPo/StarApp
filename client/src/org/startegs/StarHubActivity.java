@@ -55,6 +55,13 @@ public class StarHubActivity extends UniversalFragment {
     private static final int ID_WALL_SEASON = 2035;
     private static final int[] UNDO_SECONDS = {0, 3, 5, 10};
     private static final int ID_GLASS = 2100;
+    private static final int ID_SHOP = 2200;
+    private static final int ID_FRIENDS = 2201;
+    private static final int ID_ASK = 2202;
+    private static final int ID_GAMES = 2203;
+    private static final int ID_VOICE = 2204;
+    private static final int ID_STUDY = 2205;
+    private static final int ID_STICKER = 2206;
     private static final int ID_GRADIENT = 2101;
     private static final int ID_NEON = 2102;
     private static final int ID_FONT = 2103;
@@ -125,6 +132,16 @@ public class StarHubActivity extends UniversalFragment {
                 }
             })));
         }
+        items.add(UItem.asHeader("🔥 Для друзей"));
+        items.add(UItem.asButton(ID_SHOP, R.drawable.msg_premium_badge, "🛍 Магазин: рамки, эффекты, темы, звуки").accent());
+        items.add(UItem.asButton(ID_FRIENDS, R.drawable.msg_contacts, "💞 Лучшие друзья и стрики 🔥"));
+        items.add(UItem.asButton(ID_ASK, R.drawable.msg_link, "🤫 Анонимные вопросы"));
+        items.add(UItem.asButton(ID_GAMES, R.drawable.msg_fave, "🎮 Игры в чате"));
+        items.add(UItem.asButton(ID_VOICE, R.drawable.msg_voice_unmuted, "🎙 Голос в голосовых", StarVoice.title()));
+        items.add(UItem.asButton(ID_STUDY, R.drawable.msg_calendar2, "📚 Учёба: расписание, домашка, репетитор"));
+        items.add(UItem.asButton(ID_STICKER, R.drawable.msg_photos, "🖼 Стикер из фото"));
+        items.add(UItem.asShadow("Рамки и эффекты видят друзья, у которых тоже StarTegs — зови их 😉 Покупки — за 💎 кристаллы в @"
+                + StarModConfig.ECO_BOT + ", Premium открывает всё."));
         if (StarMod.updateAvailable()) {
             items.add(UItem.asButton(ID_UPDATE, R.drawable.msg_download, "🔔 Скачать новую версию", StarMod.updateName()).accent());
             items.add(UItem.asShadow(null));
@@ -347,6 +364,38 @@ public class StarHubActivity extends UniversalFragment {
             return;
         }
         switch (id) {
+            case ID_SHOP:
+                presentFragment(new StarCosmetics.Shop());
+                return;
+            case ID_FRIENDS:
+                presentFragment(new StarFriends());
+                return;
+            case ID_ASK:
+                presentFragment(new StarAsk());
+                return;
+            case ID_GAMES:
+                new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity())
+                        .setTitle("🎮 Игры в чате")
+                        .setMessage("Открой чат с другом → ⋮ → «🎮 Игры»: крестики-нолики, правда или действие, угадай по эмодзи, кубик и дартс.\n\n"
+                                + "Чтобы сделать ход — долгое нажатие на сообщение с игрой → «Сделать ход». Друг без StarTegs видит поле, но ходить сможет только с модом 😉")
+                        .setPositiveButton("Понятно", null)
+                        .show();
+                return;
+            case ID_VOICE:
+                StarVoice.choose(this);
+                return;
+            case ID_STUDY:
+                presentFragment(new StarStudy());
+                return;
+            case ID_STICKER:
+                new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity())
+                        .setTitle("🖼 Стикер из фото")
+                        .setMessage("Это уже умеет сам Telegram — фон вырезается автоматически:\n\n"
+                                + "1. В любом чате открой панель стикеров.\n2. Нажми ➕ «Создать стикер».\n3. Выбери фото — человек или предмет вырежется сам.\n"
+                                + "4. Добавь эмодзи и сохрани в свой набор.\n\nСтикер можно сразу отправить другу или собрать целый пак.")
+                        .setPositiveButton("Понятно", null)
+                        .show();
+                return;
             case ID_GRADIENT:
                 if (StarTheme.activePalette() > 0 && !StarMod.requirePro(this, "Палитры StarTegs")) return;
                 StarLook.toggleThemeFlag(this, "look_gradient");

@@ -191,6 +191,45 @@ public final class StarCloud {
         return new JSONObject(sb.toString());
     }
 
+    interface Result {
+        void ok(JSONObject res);
+
+        void fail(String why);
+    }
+
+    /** Запрос к API бота StarTegs: {init, a, ...extra}. Колбэк — на главном потоке. */
+    static void call(int account, String action, JSONObject extra, Result cb) {
+        session(account, new Session() {
+            @Override
+            public void ok(String api, String init) {
+                Utilities.globalQueue.postRunnable(() -> {
+                    JSONObject res = null;
+                    String err;
+                    try {
+                        JSONObject body = extra != null ? new JSONObject(extra.toString()) : new JSONObject();
+                        body.put("init", init).put("a", action);
+                        res = post(api, body);
+                        err = res.optBoolean("ok") ? null : res.optString("msg", "Бот ответил ошибкой — он обновлён до v59?");
+                    } catch (Exception e) {
+                        FileLog.e(e);
+                        err = "Сервер бота недоступен";
+                    }
+                    final JSONObject r = res;
+                    final String er = err;
+                    AndroidUtilities.runOnUIThread(() -> {
+                        if (er == null) cb.ok(r);
+                        else cb.fail(er);
+                    });
+                });
+            }
+
+            @Override
+            public void fail(String why) {
+                cb.fail(why);
+            }
+        });
+    }
+
     // ---------------------------------------------------------------- тариф
 
     /** "free", "pro" или "vip". */
