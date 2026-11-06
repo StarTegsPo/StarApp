@@ -88,10 +88,15 @@ public final class StarHidden {
      */
     public static ArrayList<TLRPC.Dialog> filter(ArrayList<TLRPC.Dialog> dialogs) {
         Set<Long> h = hidden();
-        if (h.isEmpty() || dialogs == null) return dialogs;
+        boolean decoy = StarPrivacy.decoy(), focus = StarFocus.active();
+        if (dialogs == null || h.isEmpty() && !decoy && !focus) return dialogs;
         ArrayList<TLRPC.Dialog> out = new ArrayList<>(dialogs.size());
         for (TLRPC.Dialog d : dialogs) {
-            if (d == null || !h.contains(d.id)) out.add(d);
+            if (d == null) continue;
+            if (h.contains(d.id)) continue;
+            if (decoy && StarLock.isLocked(d.id)) continue; // фальшивый код: закрытых чатов «нет»
+            if (focus && !StarFocus.allowed(d.id)) continue; // режим «Фокус»
+            out.add(d);
         }
         return out;
     }

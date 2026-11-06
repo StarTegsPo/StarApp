@@ -402,7 +402,7 @@ public final class StarMod {
             if (TextUtils.isEmpty(s[2])) continue; // бот не указан в startegs.properties
             items.add(SettingsActivity.SettingCell.Factory.of(ID_BASE + i, color(s[3]), color(s[4]), iconFor(s[5]), s[0], s[1]));
         }
-        items.add(SettingsActivity.SettingCell.Factory.of(ID_HUB, 0xFF9B6BFF, 0xFF5A7BFF, R.drawable.settings_features,
+        if (!StarPrivacy.decoy()) items.add(SettingsActivity.SettingCell.Factory.of(ID_HUB, 0xFF9B6BFF, 0xFF5A7BFF, R.drawable.settings_features,
                 "Оформление и настройки StarTegs", updateAvailable() ? "🔔 Доступна новая версия" : StarTheme.isActive() ? "Фирменный дизайн включён" : "Дизайн, приватность, сохранение сообщений"));
         items.add(UItem.asShadow(null));
     }
@@ -655,7 +655,7 @@ public final class StarMod {
     // ---------------------------------------------------------------- кнопка StarTegs в чатах
 
     public static boolean showChatsButton() {
-        return prefs().getBoolean("chats_button", true);
+        return !StarPrivacy.decoy() && prefs().getBoolean("chats_button", true);
     }
 
     // ---------------------------------------------------------------- форма аватарок

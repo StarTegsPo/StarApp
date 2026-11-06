@@ -183,18 +183,23 @@ public final class StarExtra {
                             c.set(Calendar.SECOND, 0);
                             when = (int) (c.getTimeInMillis() / 1000);
                     }
-                    long dialog = m.getDialogId();
-                    String who = StarTools.dialogTitle(fragment.getCurrentAccount(), dialog);
-                    String text = m.messageOwner != null && !TextUtils.isEmpty(m.messageOwner.message) ? m.messageOwner.message : "[медиа]";
-                    if (text.length() > 300) text = text.substring(0, 300) + "…";
-                    String msg = "⏰ Напоминание StarTegs: ответить — " + who + "\n«" + text + "»\n" + link(fragment.getCurrentAccount(), m);
-                    long self = UserConfig.getInstance(fragment.getCurrentAccount()).getClientUserId();
-                    SendMessagesHelper.SendMessageParams p = SendMessagesHelper.SendMessageParams.of(msg, self);
-                    p.scheduleDate = when;
-                    SendMessagesHelper.getInstance(fragment.getCurrentAccount()).sendMessage(p);
+                    remindAt(fragment.getCurrentAccount(), m, when, "ответить");
                     Toast.makeText(fragment.getParentActivity(), "⏰ Напомню: " + items[which].toString().toLowerCase(Locale.ROOT), Toast.LENGTH_SHORT).show();
                 })
                 .show();
+    }
+
+    /** Напоминание отложенным сообщением в «Избранное» со ссылкой на сообщение. */
+    static void remindAt(int account, MessageObject m, int when, String what) {
+        long dialog = m.getDialogId();
+        String who = StarTools.dialogTitle(account, dialog);
+        String text = m.messageOwner != null && !TextUtils.isEmpty(m.messageOwner.message) ? m.messageOwner.message : "[медиа]";
+        if (text.length() > 300) text = text.substring(0, 300) + "…";
+        String msg = "⏰ Напоминание StarTegs: " + what + " — " + who + "\n«" + text + "»\n" + link(account, m);
+        long self = UserConfig.getInstance(account).getClientUserId();
+        SendMessagesHelper.SendMessageParams p = SendMessagesHelper.SendMessageParams.of(msg, self);
+        p.scheduleDate = when;
+        SendMessagesHelper.getInstance(account).sendMessage(p);
     }
 
     private static String link(int account, MessageObject m) {
@@ -243,7 +248,56 @@ public final class StarExtra {
                 })
                 .setNegativeButton("Закрыть", null)
                 .show();
-        StarAi.api(fragment.getCurrentAccount(), new StarAi.Api() {
+        stt(fragment.getCurrentAccount(), f, (t, er) -> {
+            if (er != null || TextUtils.isEmpty(t)) {
+                tv.setText("⚠️ " + (er != null ? er : "Не удалось разобрать речь"));
+                return;
+            }
+            result[0] = t;
+            tv.setText(t);
+            if (!looksRussian(t)) { // голосовое на другом языке — сразу переводим
+                tv.setText(t + "\n\n🌍 Перевожу…");
+                StarAi.ask(fragment.getCurrentAccount(), "Переведи на русский. Дай только перевод.\n\n" + t, 0, new StarAi.Stream() {
+                    @Override
+                    public void partial(String x) {
+                        tv.setText(t + "\n\n🌍 " + x);
+                    }
+
+                    @Override
+                    public void done(String x) {
+                        tv.setText(t + "\n\n🌍 Перевод:\n" + (x == null ? "" : x.trim()));
+                        result[0] = x == null ? t : x.trim();
+                    }
+
+                    @Override
+                    public void error(String why) {
+                        tv.setText(t);
+                    }
+                });
+            }
+        });
+    }
+
+    /** Есть ли в тексте заметно кириллицы (иначе голосовое переводим). */
+    static boolean looksRussian(String t) {
+        int letters = 0, cyr = 0;
+        for (int i = 0; i < t.length(); i++) {
+            char ch = t.charAt(i);
+            if (Character.isLetter(ch)) {
+                letters++;
+                if (ch >= 0x0400 && ch <= 0x04FF) cyr++;
+            }
+        }
+        return letters < 4 || cyr * 2 >= letters;
+    }
+
+    interface Stt {
+        void done(String text, String error);
+    }
+
+    /** Речь в текст через ИИ-бота (POST /api/stt). Колбэк — на UI-потоке. */
+    static void stt(int account, File f, Stt cb) {
+        StarAi.api(account, new StarAi.Api() {
             @Override
             public void ok(String base, String init) {
                 Utilities.globalQueue.postRunnable(() -> {
@@ -270,19 +324,13 @@ public final class StarExtra {
                         err = "Сервер ИИ недоступен — бот запущен?";
                     }
                     final String t = text, er = err;
-                    AndroidUtilities.runOnUIThread(() -> {
-                        if (er != null || TextUtils.isEmpty(t)) tv.setText("⚠️ " + (er != null ? er : "Не удалось разобрать речь"));
-                        else {
-                            result[0] = t;
-                            tv.setText(t);
-                        }
-                    });
+                    AndroidUtilities.runOnUIThread(() -> cb.done(t, er));
                 });
             }
 
             @Override
             public void fail(String why) {
-                tv.setText("⚠️ " + why);
+                cb.done(null, why);
             }
         });
     }

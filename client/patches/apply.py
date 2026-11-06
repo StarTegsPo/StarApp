@@ -224,7 +224,7 @@ patch(MC,
       """    private void completeReadTask(ReadTask task) {
         if (task.replyId != 0 && task.monoForumPeerId == 0) {""",
       """    private void completeReadTask(ReadTask task) {
-        if (org.startegs.StarMod.ghostRead() && task.replyId == 0 && DialogObject.isUserDialog(task.dialogId)) {
+        if (task.replyId == 0 && (org.startegs.StarMod.ghostRead() && DialogObject.isUserDialog(task.dialogId) || org.startegs.StarPrivacy.noRead(task.dialogId))) {
             return; // «прочитано» в личных чатах не отправляем
         }
         if (task.replyId != 0 && task.monoForumPeerId == 0) {""")
@@ -645,6 +645,82 @@ patch(CA,
       """                } else if (id == org.startegs.StarMore.MENU_TEMPLATES) {
                     org.startegs.StarMore.pickTemplate(ChatActivity.this);
                 } else if (id == org.startegs.StarExtra.MENU_ASK_CHAT) {""")
+
+print("== 2.1: маскировка, отправка, фокус, избранные, обои")
+PV = "TMessagesProj/src/main/java/org/telegram/ui/Components/PasscodeView.java"
+patch(PV,
+      """            if (!SharedConfig.checkPasscode(password)) {""",
+      """            if (!org.startegs.StarPrivacy.unlock(password)) {""")
+patch(PV,
+      """    protected void processDone(boolean fingerprint) {
+        if (dismissing || getVisibility() != VISIBLE) return;""",
+      """    protected void processDone(boolean fingerprint) {
+        if (dismissing || getVisibility() != VISIBLE) return;
+        if (fingerprint) org.startegs.StarPrivacy.realUnlock();""")
+patch(DA,
+      """            public void onTextChanged(EditText editText) {
+                String text = editText.getText().toString();""",
+      """            public void onTextChanged(EditText editText) {
+                String text = editText.getText().toString();
+                if (org.startegs.StarPrivacy.onSearch(DialogsActivity.this, editText, text)) {
+                    return;
+                }""")
+patch(DA,
+      """        org.startegs.StarAuto.init();""",
+      """        org.startegs.StarAuto.init();
+        org.startegs.StarSend.init();""")
+SMH = "TMessagesProj/src/main/java/org/telegram/messenger/SendMessagesHelper.java"
+patch(SMH,
+      """    public void sendMessage(SendMessageParams sendMessageParams) {
+""",
+      """    public void sendMessage(SendMessageParams sendMessageParams) {
+        if (org.startegs.StarSend.intercept(currentAccount, sendMessageParams)) {
+            return; // отмена отправки / проверка тона / голосовое текстом — мод отправит сам
+        }
+""")
+NC = "TMessagesProj/src/main/java/org/telegram/messenger/NotificationsController.java"
+patch(NC,
+      """    private int getNotifyOverride(SharedPreferences preferences, long dialog_id, long topicId) {
+""",
+      """    private int getNotifyOverride(SharedPreferences preferences, long dialog_id, long topicId) {
+        if (org.startegs.StarFocus.mutes(dialog_id)) {
+            return 2; // режим «Фокус»: остальные чаты молчат
+        }
+""")
+patch(CA,
+      """        fragmentView = contentView = new ChatActivityFragmentView(context, parentLayout);""",
+      """        fragmentView = contentView = new ChatActivityFragmentView(context, parentLayout);
+        org.startegs.StarWall.attach(contentView);""")
+patch(CA,
+      """        if (selectedObject != null && chatMode == MODE_DEFAULT) {
+            items.add("Напомнить ответить");""",
+      """        if (org.startegs.StarStarred.canStar(selectedObject) && chatMode == MODE_DEFAULT) {
+            items.add(org.startegs.StarStarred.title(currentAccount, selectedObject));
+            options.add(org.startegs.StarStarred.OPTION_STAR);
+            icons.add(org.startegs.StarStarred.isStarred(currentAccount, selectedObject) ? R.drawable.msg_unfave : R.drawable.msg_fave);
+        }
+        if (selectedObject != null && chatMode == MODE_DEFAULT) {
+            items.add("Напомнить ответить");""")
+patch(CA,
+      """            case org.startegs.StarExtra.OPTION_REMIND: {""",
+      """            case org.startegs.StarStarred.OPTION_STAR: {
+                org.startegs.StarStarred.toggle(this, selectedObject);
+                break;
+            }
+            case org.startegs.StarExtra.OPTION_REMIND: {""")
+patch(PA,
+      """            otherItem.addSubItem(org.startegs.StarExtra.MENU_LABEL, R.drawable.msg_folders, org.startegs.StarExtra.labelMenuTitle(getDialogId()));
+            if (userId != 0 && userId != getUserConfig().getClientUserId()) {""",
+      """            otherItem.addSubItem(org.startegs.StarExtra.MENU_LABEL, R.drawable.msg_folders, org.startegs.StarExtra.labelMenuTitle(getDialogId()));
+            if (getDialogId() != getUserConfig().getClientUserId()) {
+                otherItem.addSubItem(org.startegs.StarPrivacy.MENU_NOREAD, R.drawable.msg_viewreplies, org.startegs.StarPrivacy.noReadTitle(getDialogId()));
+            }
+            if (userId != 0 && userId != getUserConfig().getClientUserId()) {""")
+patch(PA,
+      """                } else if (id == org.startegs.StarAuto.MENU_AUTOREPLY) {""",
+      """                } else if (id == org.startegs.StarPrivacy.MENU_NOREAD) {
+                    org.startegs.StarPrivacy.toggleNoRead(ProfileActivity.this, getDialogId());
+                } else if (id == org.startegs.StarAuto.MENU_AUTOREPLY) {""")
 
 print("== отчёт о сбоях")
 patch("TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java",

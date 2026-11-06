@@ -39,6 +39,21 @@ public class StarHubActivity extends UniversalFragment {
     private static final int ID_DAILY = 1901;
     private static final int ID_BACKUP = 1902;
     private static final int ID_BROADCAST = 1903;
+    private static final int ID_DECOY = 2000;
+    private static final int ID_WORD = 2001;
+    private static final int ID_WORD_ONLY = 2002;
+    private static final int ID_NOREAD_CLEAR = 2003;
+    private static final int ID_UNDO = 2010;          // 2010.. — секунды отмены
+    private static final int ID_TONE = 2020;
+    private static final int ID_VOICE_TEXT = 2021;
+    private static final int ID_REMIND_DETECT = 2022;
+    private static final int ID_FOCUS = 2030;
+    private static final int ID_STARRED = 2031;
+    private static final int ID_WRAPPED = 2032;
+    private static final int ID_CARD = 2033;
+    private static final int ID_WALL = 2034;
+    private static final int ID_WALL_SEASON = 2035;
+    private static final int[] UNDO_SECONDS = {0, 3, 5, 10};
     private static final int ID_AR_PROMPT = 1800;
     private static final int ID_AR_MARK = 1801;
     private static final int ID_AR_OFF = 1802;
@@ -125,6 +140,29 @@ public class StarHubActivity extends UniversalFragment {
                     + "Автоответ: профиль собеседника → ⋮ → «Автоответ ИИ». Отвечает, пока приложение работает, не чаще раза в 20 с и 20 раз в час; если вы ответили сами — молчит 15 минут."));
             items.add(UItem.asShadow("Также: долгое нажатие на сообщение → «Спросить ИИ», меню чата ⋮ → «Что я пропустил?» и «Улучшить мой текст». Лимиты и Premium — из @" + StarModConfig.AI_BOT + "."));
         }
+        items.add(UItem.asHeader("✨ Фишки"));
+        items.add(UItem.asButton(ID_FOCUS, R.drawable.msg_fave, "🎯 Режим «Фокус»", StarFocus.active() ? StarFocus.statusText() : ""));
+        items.add(UItem.asButton(ID_STARRED, R.drawable.msg_fave, "⭐ Избранные сообщения", StarStarred.count() > 0 ? String.valueOf(StarStarred.count()) : ""));
+        items.add(UItem.asButton(ID_WRAPPED, R.drawable.msg_stats, "🎁 Итоги года"));
+        items.add(UItem.asButton(ID_CARD, R.drawable.msg_qrcode, "🪪 Визитка с QR-кодом"));
+        items.add(UItem.asCheck(ID_WALL, "🌄 Живые обои в чатах").setChecked(StarWall.enabled()));
+        if (StarWall.enabled()) items.add(UItem.asCheck(ID_WALL_SEASON, "Сезонный эффект и в чатах").setChecked(StarWall.seasonInChats()));
+        items.add(UItem.asShadow("Живые обои: фон чатов мягко меняется по времени суток — утро, день, вечер, ночь (сейчас " + StarWall.phaseName() + "). "
+                + "Применяется к вновь открытым чатам. Избранные: долгое нажатие на сообщение → «В избранные ⭐»."));
+
+        items.add(UItem.asHeader("Отправка"));
+        for (int i = 0; i < UNDO_SECONDS.length; i++) {
+            int sec = UNDO_SECONDS[i];
+            items.add(UItem.asRadio(ID_UNDO + i, sec == 0 ? "Отмена отправки: выключена" : "Отмена отправки: " + sec + " с").setChecked(StarSend.undoSeconds() == sec));
+        }
+        if (StarAi.enabled()) {
+            items.add(UItem.asCheck(ID_TONE, "😬 Проверять тон перед отправкой (ИИ)").setChecked(StarSend.toneCheck()));
+            items.add(UItem.asCheck(ID_VOICE_TEXT, "🎙 Предлагать отправить голосовое текстом").setChecked(StarSend.voiceToText()));
+        }
+        items.add(UItem.asCheck(ID_REMIND_DETECT, "⏰ Предлагать напоминание из переписки").setChecked(StarSend.remindDetect()));
+        items.add(UItem.asShadow("Отмена отправки: текст уходит через несколько секунд, а внизу кнопка «Отменить» — текст вернётся в поле ввода. "
+                + "Напоминания: если в открытом чате пишут «давай завтра в 7», появится кнопка «Напомнить»."));
+
         items.add(UItem.asHeader("Сервисы"));
         boolean any = false;
         for (int i = 0; i < StarModConfig.SERVICES.length; i++) {
@@ -198,12 +236,27 @@ public class StarHubActivity extends UniversalFragment {
         items.add(UItem.asShadow("Текст подходящих сообщений заменяется пометкой «скрыто фильтром». Скрыть все сообщения человека — профиль → ⋮ → «Скрывать его сообщения»."));
 
         items.add(UItem.asHeader(StarMod.isPro() ? "Закрытые и скрытые чаты" : "Закрытые и скрытые чаты  🔒"));
-        items.add(UItem.asButton(ID_HIDDEN, R.drawable.msg_permissions, "🙈 Скрытые чаты", StarHidden.count() > 0 ? String.valueOf(StarHidden.count()) : ""));
+        if (!StarPrivacy.hideEntry()) {
+            items.add(UItem.asButton(ID_HIDDEN, R.drawable.msg_permissions, "🙈 Скрытые чаты", StarHidden.count() > 0 ? String.valueOf(StarHidden.count()) : ""));
+        }
         items.add(UItem.asButton(ID_LOCK_PIN, R.drawable.msg_permissions, StarLock.hasPin() ? "Сменить PIN-код" : "Задать PIN-код"));
         if (StarLock.lockedCount() > 0) {
             items.add(UItem.asButton(ID_LOCK_CLEAR, R.drawable.msg_delete, "Снять все замки", String.valueOf(StarLock.lockedCount())));
         }
         items.add(UItem.asShadow("Закрыть или скрыть чат: профиль чата → ⋮ → «Закрыть чат PIN-кодом» или «Скрыть чат из списка». Скрытые открываются здесь по PIN."));
+
+        items.add(UItem.asHeader("Маскировка"));
+        items.add(UItem.asButton(ID_DECOY, R.drawable.msg_permissions, "🎭 Фальшивый код-пароль", StarPrivacy.hasDecoy() ? "вкл" : ""));
+        items.add(UItem.asButton(ID_WORD, R.drawable.msg_permissions, "🔎 Секретное слово в поиске", StarPrivacy.hasSecretWord() ? "вкл" : ""));
+        if (StarPrivacy.hasSecretWord()) {
+            items.add(UItem.asCheck(ID_WORD_ONLY, "Убрать «Скрытые чаты» с этого экрана").setChecked(StarPrivacy.hideEntry()));
+        }
+        if (StarPrivacy.noReadCount() > 0) {
+            items.add(UItem.asButton(ID_NOREAD_CLEAR, R.drawable.msg_delete, "Снова отправлять «прочитано» всем", String.valueOf(StarPrivacy.noReadCount())));
+        }
+        items.add(UItem.asShadow("Фальшивый код: введите его вместо настоящего кода-пароля Telegram — приложение откроется без скрытых и закрытых чатов и без StarTegs. "
+                + "Секретное слово: наберите его в поиске над чатами — откроются скрытые чаты. "
+                + "«Прочитано» выборочно: профиль чата → ⋮ → «Не отправлять «прочитано» этому чату»."));
 
         items.add(UItem.asHeader("Интерфейс"));
         items.add(UItem.asCheck(ID_CHATS_BUTTON, "Кнопка ⭐ StarTegs над списком чатов").setChecked(StarMod.showChatsButton()));
@@ -265,7 +318,51 @@ public class StarHubActivity extends UniversalFragment {
         if ((id == ID_GHOST_TYPING || id == ID_GHOST_READ || id == ID_GHOST_ONLINE || id == ID_GHOST_STORIES) && !StarMod.requirePro(this, "Приватность")) {
             return;
         }
+        if (id >= ID_UNDO && id < ID_UNDO + UNDO_SECONDS.length) {
+            StarSend.setUndoSeconds(UNDO_SECONDS[id - ID_UNDO]);
+            refresh.run();
+            return;
+        }
         switch (id) {
+            case ID_DECOY:
+                StarPrivacy.setupDecoy(this, refresh);
+                return;
+            case ID_WORD:
+                StarPrivacy.setupWord(this, refresh);
+                return;
+            case ID_WORD_ONLY:
+                StarPrivacy.toggleHideEntry();
+                break;
+            case ID_NOREAD_CLEAR:
+                StarPrivacy.clearNoRead();
+                break;
+            case ID_TONE:
+                StarSend.toggleTone();
+                break;
+            case ID_VOICE_TEXT:
+                StarSend.toggleVoiceText();
+                break;
+            case ID_REMIND_DETECT:
+                StarSend.toggleRemindDetect();
+                break;
+            case ID_FOCUS:
+                presentFragment(new StarFocus.Screen());
+                return;
+            case ID_STARRED:
+                presentFragment(new StarStarred.Screen());
+                return;
+            case ID_WRAPPED:
+                presentFragment(new StarWrapped());
+                return;
+            case ID_CARD:
+                presentFragment(new StarCard());
+                return;
+            case ID_WALL:
+                StarWall.toggle();
+                break;
+            case ID_WALL_SEASON:
+                StarWall.toggleSeason();
+                break;
             case ID_BROADCAST:
                 presentFragment(new StarBroadcastActivity());
                 return;

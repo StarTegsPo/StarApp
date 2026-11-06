@@ -68,6 +68,7 @@ final class StarHero {
         String[][] btns = {{"🤖", "ИИ"}, {"🗑", "Удалённые"}, {"🙈", "Скрытые"}, {"🏷", "Метки"}, {"📝", "Заметки"}};
         for (int i = 0; i < btns.length; i++) {
             if (i == 0 && !StarAi.enabled()) continue;
+            if (i == 2 && StarPrivacy.hideEntry()) continue;
             final int which = i;
             LinearLayout b = new LinearLayout(ctx);
             b.setOrientation(LinearLayout.VERTICAL);

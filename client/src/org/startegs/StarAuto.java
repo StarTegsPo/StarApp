@@ -207,7 +207,7 @@ public final class StarAuto {
                 Long paused = pausedUntil.get(key);
                 if (paused != null && paused > System.currentTimeMillis()) return; // владелец успел ответить сам
                 if (t.length() > 3500) t = t.substring(0, 3500);
-                SendMessagesHelper.getInstance(account).sendMessage(SendMessagesHelper.SendMessageParams.of(markReplies() ? "🤖 " + t : t, dialogId));
+                StarSend.direct(account, SendMessagesHelper.SendMessageParams.of(markReplies() ? "🤖 " + t : t, dialogId));
             }
 
             @Override
