@@ -818,6 +818,37 @@ patch(MCTRL,
                     org.startegs.StarVoice.process(buffer, len, sampleRate);
 """)
 
+print("== 3.1: витрина, караоке, бизнес")
+patch(CA,
+      """        if (org.startegs.StarGames.canPlay(currentAccount, selectedObject)) {""",
+      """        if (org.startegs.StarKaraoke.canUse(selectedObject) && chatMode == MODE_DEFAULT) {
+            items.add(org.startegs.StarKaraoke.optionTitle());
+            options.add(org.startegs.StarKaraoke.OPTION_KARAOKE);
+            icons.add(R.drawable.msg_voice_unmuted);
+        }
+        if (org.startegs.StarGames.canPlay(currentAccount, selectedObject)) {""")
+patch(CA,
+      """            case org.startegs.StarGames.OPTION_PLAY: {""",
+      """            case org.startegs.StarKaraoke.OPTION_KARAOKE: {
+                org.startegs.StarKaraoke.toggle(this, selectedObject);
+                break;
+            }
+            case org.startegs.StarGames.OPTION_PLAY: {""")
+patch(PA,
+      """                otherItem.addSubItem(org.startegs.StarCosmetics.MENU_SOUND, R.drawable.msg_voice_unmuted, "🔔 Свой звук для чата");""",
+      """                otherItem.addSubItem(org.startegs.StarCosmetics.MENU_SOUND, R.drawable.msg_voice_unmuted, "🔔 Свой звук для чата");
+                if (userId != 0) {
+                    otherItem.addSubItem(org.startegs.StarProfile.MENU_SHOWCASE, R.drawable.msg_fave, "🌟 Витрина StarTegs");
+                }
+                otherItem.addSubItem(org.startegs.StarBiz.MENU_CLIENT, R.drawable.msg_contacts, "💼 Карточка клиента");""")
+patch(PA,
+      """                } else if (id == org.startegs.StarCosmetics.MENU_SOUND) {""",
+      """                } else if (id == org.startegs.StarProfile.MENU_SHOWCASE) {
+                    org.startegs.StarProfile.showFriend(ProfileActivity.this, getDialogId());
+                } else if (id == org.startegs.StarBiz.MENU_CLIENT) {
+                    org.startegs.StarBiz.editClient(ProfileActivity.this, getDialogId());
+                } else if (id == org.startegs.StarCosmetics.MENU_SOUND) {""")
+
 print("== отчёт о сбоях")
 patch("TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java",
       """        try {

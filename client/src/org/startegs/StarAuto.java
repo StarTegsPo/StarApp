@@ -127,7 +127,7 @@ public final class StarAuto {
 
     /** Подписаться на новые сообщения всех аккаунтов (вызывается из DialogsActivity). */
     public static void init() {
-        if (inited || count() == 0) return;
+        if (inited || count() == 0 && !StarBiz.seller()) return;
         inited = true;
         for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
             final int account = a;
@@ -146,7 +146,7 @@ public final class StarAuto {
     }
 
     private static void onNew(int account, long dialogId, ArrayList<MessageObject> msgs) {
-        if (!isOn(dialogId) || msgs == null || msgs.isEmpty()) return;
+        if (!isOn(dialogId) && !StarBiz.sellerApplies(account, dialogId) || msgs == null || msgs.isEmpty()) return;
         String key = account + ":" + dialogId;
         long now = System.currentTimeMillis();
         int serverNow = ConnectionsManager.getInstance(account).getCurrentTime();
@@ -187,7 +187,9 @@ public final class StarAuto {
             dialog.append(m.out ? myName : otherName).append(": ").append(m.text.length() > 500 ? m.text.substring(0, 500) : m.text).append('\n');
         }
         String extra = instructions();
-        String prompt = "Ты отвечаешь в Telegram вместо пользователя по имени " + myName + ", пока он занят. "
+        boolean seller = !isOn(dialogId) && StarBiz.sellerApplies(account, dialogId);
+        String prompt = seller ? StarBiz.sellerPrompt() + "\n\nПереписка (последнее сообщение — от " + otherName + "):\n" + dialog + "\nНапиши только текст ответа."
+                : "Ты отвечаешь в Telegram вместо пользователя по имени " + myName + ", пока он занят. "
                 + "Пиши от первого лица, коротко и естественно, на языке собеседника, без markdown. Не обещай того, чего не знаешь; "
                 + "если вопрос требует решения самого пользователя — вежливо скажи, что ответишь позже."
                 + (extra.isEmpty() ? "" : "\nВажно знать: " + extra)
@@ -203,7 +205,9 @@ public final class StarAuto {
             public void done(String text) {
                 busy.remove(key);
                 String t = text == null ? "" : text.trim();
-                if (t.isEmpty() || !isOn(dialogId)) return;
+                if (t.isEmpty() || !isOn(dialogId) && !StarBiz.sellerApplies(account, dialogId)) return;
+                t = StarBiz.handleHot(account, dialogId, t);
+                if (t.isEmpty()) return;
                 Long paused = pausedUntil.get(key);
                 if (paused != null && paused > System.currentTimeMillis()) return; // владелец успел ответить сам
                 if (t.length() > 3500) t = t.substring(0, 3500);

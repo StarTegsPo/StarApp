@@ -32,7 +32,7 @@ public final class StarVoice {
 
     /** Вызывается в MediaController.shouldUseAudioRecorderV2: с эффектом пишем старым рекордером, где есть доступ к звуку. */
     public static boolean active() {
-        return effect() != 0;
+        return effect() != 0 || StarKaraoke.armed();
     }
 
     public static void choose(BaseFragment f) {
@@ -99,9 +99,17 @@ public final class StarVoice {
      */
     public static void process(ByteBuffer buffer, int len, int sampleRate) {
         int fx = effect();
-        if (fx == 0 || buffer == null || len <= 0) return;
+        if (fx == 0 && !StarKaraoke.armed() || buffer == null || len <= 0) return;
         try {
+            if (System.currentTimeMillis() - lastCall > 1000) {
+                StarQuest.progress("voice_fx", fx != 0 ? 1 : 0);
+                if (fx != 0) StarAchieve.bump("voice_fx", 1);
+            }
             resetIfNew();
+            if (fx == 0) {
+                StarKaraoke.mix(buffer, len / 2);
+                return;
+            }
             int n = len / 2;
             float sr = sampleRate > 0 ? sampleRate : 48000;
             for (int i = 0; i < n; i++) {
@@ -134,6 +142,7 @@ public final class StarVoice {
                 if (y < -1f) y = -1f;
                 buffer.putShort(i * 2, (short) (y * 32767));
             }
+            StarKaraoke.mix(buffer, n);
         } catch (Exception ignore) {
         }
     }

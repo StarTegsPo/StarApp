@@ -131,7 +131,11 @@ public class StarStudy extends UniversalFragment {
                         o.put("done", !o.optBoolean("done"));
                         hw.put(i, o);
                         prefs().edit().putString("homework", hw.toString()).apply();
-                        if (o.optBoolean("done")) StarFx.play(org.telegram.ui.LaunchActivity.getLastFragment(), "fx_confetti");
+                        if (o.optBoolean("done")) {
+                            StarFx.play(org.telegram.ui.LaunchActivity.getLastFragment(), "fx_confetti");
+                            StarAchieve.bump("homework", 1);
+                            StarQuest.progress("homework", 1);
+                        }
                     } catch (Exception ignore) {
                     }
                     refresh();

@@ -77,6 +77,7 @@ public class StarAsk extends UniversalFragment {
                         for (int i = 0; a != null && i < a.length(); i++) qs.add(a.optJSONObject(i));
                         loading = false;
                         error = null;
+                        StarAchieve.setMax("asks", qs.size());
                         update();
                     }
 
@@ -244,6 +245,7 @@ public class StarAsk extends UniversalFragment {
             Uri uri = FileProvider.getUriForFile(ctx, ApplicationLoader.getApplicationId() + ".provider", f);
             ctx.startActivity(Intent.createChooser(new Intent(Intent.ACTION_SEND).setType("image/png")
                     .putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Ответить в истории"));
+            StarQuest.progress("share", 1);
         } catch (Exception e) {
             FileLog.e(e);
             Toast.makeText(ctx, "Не удалось сделать карточку", Toast.LENGTH_SHORT).show();

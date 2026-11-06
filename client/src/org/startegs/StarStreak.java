@@ -113,6 +113,7 @@ public final class StarStreak {
                 int[] old = cache.get(id);
                 int[] val = {r[0], r[1], (int) (System.currentTimeMillis() / 60000)};
                 cache.put(id, val);
+                StarAchieve.setMax("streak", r[0]);
                 if (old == null ? r[0] >= 3 : old[0] != r[0] || old[1] != r[1]) changed = true;
                 done++;
             }

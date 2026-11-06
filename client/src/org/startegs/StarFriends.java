@@ -139,6 +139,8 @@ public class StarFriends extends UniversalFragment {
                 for (Friend f : out) f.name = StarTools.dialogTitle(account, f.id);
                 friends.clear();
                 friends.addAll(out);
+                StarAchieve.setMax("friends", Math.min(3, out.size()));
+                for (Friend f : out) StarAchieve.setMax("streak", f.streak);
                 loading = false;
                 card = null;
                 if (listView != null) listView.adapter.update(true);
@@ -254,6 +256,7 @@ public class StarFriends extends UniversalFragment {
             Uri uri = FileProvider.getUriForFile(ctx, ApplicationLoader.getApplicationId() + ".provider", f);
             ctx.startActivity(Intent.createChooser(new Intent(Intent.ACTION_SEND).setType("image/png")
                     .putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Лучшие друзья"));
+            StarQuest.progress("share", 1);
         } catch (Exception e) {
             FileLog.e(e);
             Toast.makeText(ctx, "Не удалось сохранить картинку", Toast.LENGTH_SHORT).show();

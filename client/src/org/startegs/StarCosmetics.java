@@ -151,12 +151,15 @@ public final class StarCosmetics {
             pending.clear();
             lastFetch = System.currentTimeMillis();
             try {
-                StarCloud.call(UserConfig.selectedAccount, "cos_get", new JSONObject().put("ids", ids), new StarCloud.Result() {
+                StarCloud.Result handler = new StarCloud.Result() {
+                    boolean fallback;
+
                     @Override
                     public void ok(JSONObject res) {
                         fetching = false;
+                        StarProfile.put(res.optJSONObject("profiles"));
                         JSONObject fr = res.optJSONObject("frames");
-                        boolean changed = false;
+                        boolean changed = res.optJSONObject("profiles") != null && res.optJSONObject("profiles").length() > 0;
                         for (int i = 0; i < ids.length(); i++) {
                             long id = ids.optLong(i);
                             String f = fr != null ? fr.optString(String.valueOf(id), "") : "";
@@ -175,10 +178,19 @@ public final class StarCosmetics {
 
                     @Override
                     public void fail(String why) {
+                        if (!fallback) { // бот v59 без витрин — берём только рамки
+                            fallback = true;
+                            try {
+                                StarCloud.call(UserConfig.selectedAccount, "cos_get", new JSONObject().put("ids", ids), this);
+                                return;
+                            } catch (Exception ignore) {
+                            }
+                        }
                         fetching = false; // бот без v59 — тихо пропускаем
                         lastFetch = System.currentTimeMillis() + 10 * 60_000L;
                     }
-                });
+                };
+                StarCloud.call(UserConfig.selectedAccount, "prof_get", new JSONObject().put("ids", ids), handler);
             } catch (Exception e) {
                 fetching = false;
             }
@@ -217,8 +229,9 @@ public final class StarCosmetics {
         try {
             if (dialogId <= 0 || avatar == null || avatar.width() <= 0) return;
             String f = frameOf(dialogId);
-            if (f == null || f.isEmpty()) return;
             float cx = avatar.centerX(), cy = avatar.centerY(), r = avatar.width() / 2f + AndroidUtilities.dp(2.5f);
+            drawBadge(canvas, dialogId, cx, cy, r, cell);
+            if (f == null || f.isEmpty()) return;
             ring.setStyle(Paint.Style.STROKE);
             ring.setStrokeWidth(AndroidUtilities.dp(2.6f));
             ring.setShader(new SweepGradient(cx, cy, colors(f), null));
@@ -237,6 +250,26 @@ public final class StarCosmetics {
             }
         } catch (Exception ignore) {
         }
+    }
+
+    private static final Paint badgeBg = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+    /** Статус друга или его эмодзи (пульсирует, когда он в сети) — в правом нижнем углу аватарки. */
+    private static void drawBadge(Canvas canvas, long uid, float cx, float cy, float r, View cell) {
+        boolean[] pulse = {false};
+        String b = StarProfile.badge(uid, pulse);
+        if (b == null || b.isEmpty()) return;
+        float s = 1f;
+        if (pulse[0]) {
+            s = 1f + 0.14f * (float) Math.sin(System.currentTimeMillis() / 180.0);
+            if (cell != null) cell.postInvalidateDelayed(60);
+        }
+        float bx = cx + r * 0.70f, by = cy + r * 0.70f, br = AndroidUtilities.dp(10) * s;
+        badgeBg.setColor(org.telegram.ui.ActionBar.Theme.getColor(org.telegram.ui.ActionBar.Theme.key_windowBackgroundWhite));
+        canvas.drawCircle(bx, by, br, badgeBg);
+        badge.setTextAlign(Paint.Align.CENTER);
+        badge.setTextSize(AndroidUtilities.dp(12) * s);
+        canvas.drawText(b, bx, by + AndroidUtilities.dp(4.3f) * s, badge);
     }
 
     // ---------------------------------------------------------------- темы из магазина
@@ -487,6 +520,7 @@ public final class StarCosmetics {
                     public void ok(JSONObject res) {
                         saveState(res);
                         if (getParentActivity() != null) Toast.makeText(getParentActivity(), "🎉 Готово! Теперь это ваше", Toast.LENGTH_SHORT).show();
+                        if (id.startsWith("fr_")) StarAchieve.bump("frames", 1);
                         if (listView != null) listView.adapter.update(true);
                     }
 

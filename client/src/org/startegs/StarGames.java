@@ -40,6 +40,9 @@ public final class StarGames {
     private static void send(ChatActivity chat, String text) {
         SendMessagesHelper.SendMessageParams p = SendMessagesHelper.SendMessageParams.of(text, chat.getDialogId());
         StarSend.direct(chat.getCurrentAccount(), p);
+        StarAchieve.bump("games", 1);
+        StarQuest.progress("game", 1);
+        if (text.contains("🏆 Победа") || text.startsWith("✅ Угадал")) StarAchieve.bump("wins", 1);
     }
 
     private static String name(int account, long uid) {

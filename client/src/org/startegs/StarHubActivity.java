@@ -5,6 +5,7 @@
 package org.startegs;
 
 import android.view.View;
+import android.widget.Toast;
 
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
@@ -56,6 +57,11 @@ public class StarHubActivity extends UniversalFragment {
     private static final int[] UNDO_SECONDS = {0, 3, 5, 10};
     private static final int ID_GLASS = 2100;
     private static final int ID_SHOP = 2200;
+    private static final int ID_QUEST = 2210;
+    private static final int ID_ACHIEVE = 2211;
+    private static final int ID_SHOWCASE = 2212;
+    private static final int ID_STATUS = 2213;
+    private static final int ID_BIZ = 2220;
     private static final int ID_FRIENDS = 2201;
     private static final int ID_ASK = 2202;
     private static final int ID_GAMES = 2203;
@@ -132,7 +138,15 @@ public class StarHubActivity extends UniversalFragment {
                 }
             })));
         }
+        items.add(UItem.asButton(ID_BIZ, R.drawable.msg_stats, "💼 Бизнес-кабинет", StarBiz.on() ? "вкл" : StarBiz.paid() ? "выкл" : "Business"));
+        items.add(UItem.asHeader("🎯 Задание дня"));
+        items.add(UItem.asButton(ID_QUEST, R.drawable.msg_fave, StarQuest.title(),
+                StarQuest.claimed() ? "✓" : StarQuest.complete() ? "🎁 забрать" : "").accent());
+        items.add(UItem.asButton(ID_ACHIEVE, R.drawable.msg_premium_badge, "🏆 Достижения · уровень " + StarAchieve.level()));
+        items.add(UItem.asShadow("За задание дня и достижения бот @" + StarModConfig.ECO_BOT + " даёт ✦ монеты, опыт и 💎 кристаллы."));
         items.add(UItem.asHeader("🔥 Для друзей"));
+        items.add(UItem.asButton(ID_STATUS, R.drawable.msg_edit, "💭 Мой статус", StarProfile.statusTitle()));
+        items.add(UItem.asButton(ID_SHOWCASE, R.drawable.msg_fave, "🌟 Моя витрина"));
         items.add(UItem.asButton(ID_SHOP, R.drawable.msg_premium_badge, "🛍 Магазин: рамки, эффекты, темы, звуки").accent());
         items.add(UItem.asButton(ID_FRIENDS, R.drawable.msg_contacts, "💞 Лучшие друзья и стрики 🔥"));
         items.add(UItem.asButton(ID_ASK, R.drawable.msg_link, "🤫 Анонимные вопросы"));
@@ -364,6 +378,22 @@ public class StarHubActivity extends UniversalFragment {
             return;
         }
         switch (id) {
+            case ID_BIZ:
+                presentFragment(new StarBizActivity());
+                return;
+            case ID_QUEST:
+                if (StarQuest.complete() && !StarQuest.claimed()) StarQuest.claim(refresh);
+                else if (!StarQuest.claimed()) Toast.makeText(getParentActivity(), "Выполни задание — награда появится здесь 🎁", Toast.LENGTH_SHORT).show();
+                return;
+            case ID_ACHIEVE:
+                presentFragment(new StarAchieve.Screen());
+                return;
+            case ID_STATUS:
+                StarProfile.chooseStatus(this, refresh);
+                return;
+            case ID_SHOWCASE:
+                StarProfile.editShowcase(this, refresh);
+                return;
             case ID_SHOP:
                 presentFragment(new StarCosmetics.Shop());
                 return;

@@ -112,6 +112,10 @@ public final class StarSend {
             if (p.scheduleDate != 0 || p.retryMessageObject != null || p.quick_reply_shortcut != null) return false;
             if (Looper.myLooper() != Looper.getMainLooper()) return false;
             StarLook.sendFlash(top());
+            StarAchieve.bump("sent", 1);
+            StarQuest.progress("sent", 1);
+            if (p.photo != null || p.document != null && !MessageObject.isVoiceDocument(p.document) && !MessageObject.isStickerDocument(p.document)) StarQuest.progress("photo", 1);
+            if (p.document != null && MessageObject.isVoiceDocument(p.document)) StarQuest.progress("voice", 1);
             if (p.document != null && p.path != null && voiceToText() && MessageObject.isVoiceDocument(p.document)) {
                 voiceFlow(account, p);
                 return true;
@@ -167,6 +171,7 @@ public final class StarSend {
         if (!fx.isEmpty() && isPlainText(p) && StarCodec.read(p.message) == null) {
             p.message = StarCodec.attach(p.message, "fx|" + fx);
             StarFx.play(top(), fx);
+            StarQuest.progress("fx", 1);
         }
         direct(account, p);
     }
@@ -294,6 +299,7 @@ public final class StarSend {
                     if (args.length > 2 && args[2] instanceof Boolean && (Boolean) args[2]) return;
                     long dialogId = (Long) args[0];
                     @SuppressWarnings("unchecked") ArrayList<MessageObject> msgs = (ArrayList<MessageObject>) args[1];
+                    StarBiz.onIncoming(account, dialogId, msgs);
                     onNew(account, dialogId, msgs);
                 } catch (Exception e) {
                     FileLog.e(e);
