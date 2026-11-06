@@ -38,6 +38,7 @@ public class StarHubActivity extends UniversalFragment {
     private static final int ID_TEMPLATES = 1900;
     private static final int ID_DAILY = 1901;
     private static final int ID_BACKUP = 1902;
+    private static final int ID_BROADCAST = 1903;
     private static final int ID_AR_PROMPT = 1800;
     private static final int ID_AR_MARK = 1801;
     private static final int ID_AR_OFF = 1802;
@@ -168,6 +169,7 @@ public class StarHubActivity extends UniversalFragment {
         items.add(UItem.asButton(ID_DELETED_LIST, R.drawable.msg_delete, "Все удалённые сообщения"));
         items.add(UItem.asButton(ID_LABELS, R.drawable.msg_folders, "🏷 Метки чатов"));
         items.add(UItem.asButton(ID_TEMPLATES, R.drawable.msg_edit, "💬 Шаблоны ответов", StarMore.templatesCount() == 0 ? "" : String.valueOf(StarMore.templatesCount())));
+        items.add(UItem.asButton(ID_BROADCAST, R.drawable.msg_send, "📣 Рассылка по чатам"));
         items.add(UItem.asButton(ID_BACKUP, R.drawable.msg_download, "💾 Резервная копия настроек"));
         items.add(UItem.asButton(ID_NOTES, R.drawable.msg_edit, "📝 Мои заметки", StarTools.allNotes().isEmpty() ? "" : String.valueOf(StarTools.allNotes().size())));
         items.add(UItem.asShadow("Удалённые остаются в чате с пометкой «🗑 удалено», старые версии правок — в меню сообщения. Облачный архив отправляет удалённые в ваш бот StarTegs, где их можно искать."));
@@ -264,6 +266,9 @@ public class StarHubActivity extends UniversalFragment {
             return;
         }
         switch (id) {
+            case ID_BROADCAST:
+                presentFragment(new StarBroadcastActivity());
+                return;
             case ID_TEMPLATES:
                 StarMore.manageTemplates(this, refresh);
                 return;
