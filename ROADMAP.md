@@ -1,33 +1,27 @@
-# StarTegs — Roadmap
+# StarTegs 3.1 — Roadmap
 
-Актуальный план развития мода. Обновляется по мере выполнения.
-
----
-
-## ✅ Этап 0 — База (готово)
-
-- Сохранение удалённых сообщений
-- История изменений сообщений
-- Ghost-режим, скрытые чаты, ИИ
-- Оформление StarLook 2.2+
+*Обновлено: 14 ноября 2026, 22:24 CET*
 
 ---
 
-## 🟡 Этап 1 — WhiteGram: реклама, админы, прокси, каналы
+## ✅ Этап 0 — База
+
+Удалённые, правки, ghost, скрытые чаты, ИИ, StarLook 2.2+
+
+---
+
+## 🟡 Этап 1 — WhiteGram (реклама / админы / прокси)
 
 | Функция | Статус |
 |--------|--------|
-| `StarAds.java` — скрытие рекламы, админы, прокси, флаги каналов/историй | ✅ в репо |
-| Настройки в StarHub (UI) | ✅ готовы локально, пуш в процессе |
-| `filterMessage` → StarAds | ✅ патч готов |
-| Пункт «Администраторы» в профиле | ✅ патч в apply.py |
-| **StarMod.java** | ⚠️ временно stub — восстановить: `bash scripts/restore_starmod.sh` |
+| `StarAds.java` | ✅ |
+| Скрытие sponsored + keywords | ✅ |
+| `MENU_ADMINS` + filter | ✅ |
+| `StarMod.java` ядро восстановлено | ✅ |
+| UI в StarHub | ⏳ |
+| Хуки apply.py | ⏳ |
 
-**Восстановление StarMod:**
-```bash
-bash scripts/restore_starmod.sh
-git add client/src/org/startegs/StarMod.java && git commit -m "restore StarMod + Stage1"
-```
+В `startegs.properties` уже **mod_version=3.1**.
 
 ---
 
@@ -35,7 +29,3 @@ git add client/src/org/startegs/StarMod.java && git commit -m "restore StarMod +
 ## ⏳ Этап 3 — Двойное дно
 ## ⏳ Этап 4 — Аккаунты и камера
 ## ⏳ Этап 5 — Плагины
-
----
-
-*Обновлено: 14 ноября 2026, 21:45 CET*
