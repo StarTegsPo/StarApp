@@ -1,12 +1,17 @@
 /*
- * StarTegs 2.2 — оформление: стеклянные панели, градиентные пузыри, неоновый OLED-режим, шрифты,
- * анимации сообщений, тема по аватарке, компактный режим, цветные папки и сезонная иконка.
+ * StarTegs 2.2+ — оформление:
+ * стеклянные панели, градиентные/материальные пузыри, неоновый OLED,
+ * шрифты, анимации сообщений (в т.ч. направленные), тема по аватарке,
+ * компакт + читаемость, цветные папки, сезонная иконка,
+ * свечение, параллакс, кинорежим, материалы, дыхание закреплённых,
+ * тема по времени суток, варианты вспышки отправки.
  * Лицензия: GNU GPL v2 или новее.
  */
 package org.startegs;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
@@ -17,6 +22,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.text.TextPaint;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.animation.AccelerateDecelerateInterpolator;
 import android.view.animation.OvershootInterpolator;
 import android.widget.FrameLayout;
 import android.widget.Toast;
@@ -64,6 +70,10 @@ public final class StarLook {
         prefs().edit().putBoolean(key, !flag(key, def)).apply();
     }
 
+    private static void setFlag(String key, boolean v) {
+        prefs().edit().putBoolean(key, v).apply();
+    }
+
     // ================================================================ 1. стеклянные панели
 
     public static boolean glassAvailable() {
@@ -82,7 +92,7 @@ public final class StarLook {
         SharedConfig.toggleChatBlur();
     }
 
-    // ================================================================ 2 и 4. градиентные пузыри и неон OLED
+    // ================================================================ 2 и 4. градиентные пузыри и неон OLED + материалы
 
     public static boolean gradientBubbles() {
         return flag("look_gradient", false);
@@ -92,11 +102,37 @@ public final class StarLook {
         return flag("look_neon", false);
     }
 
+    /** 0 = классика, 1 = стекло, 2 = матовый, 3 = soft glow, 4 = бумага */
+    public static int bubbleMaterial() {
+        return Math.max(0, Math.min(4, prefs().getInt("look_material", 0)));
+    }
+
+    public static void setBubbleMaterial(int i) {
+        prefs().edit().putInt("look_material", Math.max(0, Math.min(4, i))).apply();
+    }
+
+    public static final String[] MATERIAL_NAMES = {
+            "Классика", "Стекло", "Матовый", "Soft Glow", "Бумага"
+    };
+
+    /** 0 = классика, 1 = таблетка, 2 = острые, 3 = почти круг */
+    public static int bubbleShape() {
+        return Math.max(0, Math.min(3, prefs().getInt("look_shape", 0)));
+    }
+
+    public static void setBubbleShape(int i) {
+        prefs().edit().putInt("look_shape", Math.max(0, Math.min(3, i))).apply();
+    }
+
+    public static final String[] SHAPE_NAMES = {
+            "Классика", "Таблетка", "Острые углы", "Круглые"
+    };
+
     /** Переключить и пересобрать тему StarTegs. */
     static void toggleThemeFlag(BaseFragment f, String key) {
         toggleFlag(key, false);
-        boolean night = key.equals("look_neon") && neon(); // неон — это тёмная тема
-        if (!StarTheme.reapply(night)) StarTheme.enableDefault(night); // не было нашей темы — включаем фирменную
+        boolean night = key.equals("look_neon") && neon();
+        if (!StarTheme.reapply(night)) StarTheme.enableDefault(night);
     }
 
     private static int hsv(float h, float s, float v) {
@@ -140,7 +176,10 @@ public final class StarLook {
     /** Вызывается StarTheme при сборке каждого файла темы. */
     static String processTheme(String text, boolean night) {
         boolean grad = gradientBubbles(), oled = neon() && night;
-        if (!grad && !oled) return text;
+        int material = bubbleMaterial();
+        int shape = bubbleShape();
+        if (!grad && !oled && material == 0 && shape == 0) return text;
+
         String[] lines = text.split("\n", -1);
         LinkedHashMap<String, Integer> idx = new LinkedHashMap<>();
         for (int i = 0; i < lines.length; i++) {
@@ -158,8 +197,8 @@ public final class StarLook {
             } catch (Exception ignore) {
             }
         }
+
         if (oled) {
-            // все тёмные фоны → чёрный (OLED), акценты → яркие, «светящиеся»
             for (Map.Entry<String, Integer> e : idx.entrySet()) {
                 String k = e.getKey(), line = lines[e.getValue()];
                 try {
@@ -183,21 +222,41 @@ public final class StarLook {
             set.put("chat_outBubbleShadow", hex(0x00000000));
             set.put("chat_messagePanelBackground", hex(0xFF050507));
         }
-        if (grad) {
+
+        if (grad || material > 0) {
             float v1 = night ? 0.62f : 0.92f, v2 = night ? 0.55f : 0.86f;
             if (oled) {
                 v1 = 0.55f;
                 v2 = 0.45f;
             }
+            if (material == 1) { v1 *= 0.92f; v2 *= 0.88f; }
+            else if (material == 2) { v1 *= 0.85f; v2 *= 0.80f; }
+            else if (material == 3) { v1 = Math.min(1f, v1 * 1.08f); v2 = Math.min(1f, v2 * 1.05f); }
+            else if (material == 4) { v1 *= 0.95f; v2 *= 0.90f; }
+
             int g1 = hsv(accentHue, 0.72f, v1), g2 = hsv(accentHue + 38, 0.78f, v2);
             set.put("chat_outBubble", hex(g1));
-            set.put("chat_outBubbleGradient", hex(g1));
-            set.put("chat_outBubbleGradient2", hex(g2));
-            set.put("chat_outBubbleGradientAnimated", "1");
+            if (grad || material == 1 || material == 3) {
+                set.put("chat_outBubbleGradient", hex(g1));
+                set.put("chat_outBubbleGradient2", hex(g2));
+                set.put("chat_outBubbleGradientAnimated", "1");
+            }
             set.put("chat_outBubbleSelected", hex(hsv(accentHue, 0.72f, v1 * 0.85f)));
             set.put("chat_outBubbleGradientSelectedOverlay", "#14000000");
-            for (String[] w : WHITE_OUT) set.put(w[0], "#" + w[1]);
+
+            if (material == 1 || material == 3) {
+                set.put("chat_outBubbleShadow", hex(0x33000000));
+                set.put("chat_inBubbleShadow", hex(0x22000000));
+            } else if (material == 2) {
+                set.put("chat_outBubbleShadow", hex(0x1A000000));
+                set.put("chat_inBubbleShadow", hex(0x14000000));
+            }
+
+            if (grad || material >= 1) {
+                for (String[] w : WHITE_OUT) set.put(w[0], "#" + w[1]);
+            }
         }
+
         StringBuilder sb = new StringBuilder();
         int wps = -1;
         for (int i = 0; i < lines.length; i++) if (lines[i].startsWith("WPS")) wps = i;
@@ -267,7 +326,6 @@ public final class StarLook {
         }
     }
 
-    /** Вызывается в начале AndroidUtilities.bold(): жирный вариант выбранного шрифта или null. */
     public static Typeface boldOverride() {
         try {
             ensure();
@@ -277,7 +335,6 @@ public final class StarLook {
         }
     }
 
-    /** Ставит выбранный шрифт всем текстовым кистям Theme (чаты, список чатов). Курсив и моноширинный код не трогаем. */
     public static void applyFonts() {
         try {
             ensure();
@@ -303,15 +360,30 @@ public final class StarLook {
         else if (isRegular) p.setTypeface(r);
     }
 
-    // ================================================================ 6. анимации
+    // ================================================================ 6. анимации + направленный вход + дыхание
 
     public static boolean animations() {
         return flag("look_anim", true);
     }
 
+    public static boolean directionalEnter() {
+        return flag("look_dir_enter", true);
+    }
+
+    public static void toggleDirectionalEnter() {
+        toggleFlag("look_dir_enter", true);
+    }
+
+    public static boolean pinnedBreath() {
+        return flag("look_pinned_breath", false);
+    }
+
+    public static void togglePinnedBreath() {
+        toggleFlag("look_pinned_breath", false);
+    }
+
     private static final HashSet<String> popped = new HashSet<>();
 
-    /** Подключается к списку сообщений ChatActivity: новые сообщения появляются с лёгким отскоком. */
     public static void attachList(RecyclerView list) {
         if (list == null) return;
         applyFonts();
@@ -327,11 +399,29 @@ public final class StarLook {
                     String key = m.getDialogId() + ":" + m.getId() + ":" + m.messageOwner.date;
                     if (!fresh || !popped.add(key)) return;
                     if (popped.size() > 500) popped.clear();
-                    v.setPivotX(m.isOut() ? v.getWidth() : 0);
-                    v.setPivotY(v.getHeight());
-                    v.setScaleX(0.88f);
-                    v.setScaleY(0.88f);
-                    v.animate().scaleX(1f).scaleY(1f).setDuration(340).setInterpolator(new OvershootInterpolator(2.4f)).start();
+
+                    boolean out = m.isOut();
+                    if (directionalEnter()) {
+                        float fromX = out ? AndroidUtilities.dp(28) : -AndroidUtilities.dp(28);
+                        v.setTranslationX(fromX);
+                        v.setAlpha(0.55f);
+                        v.setScaleX(0.92f);
+                        v.setScaleY(0.92f);
+                        v.animate()
+                                .translationX(0f)
+                                .alpha(1f)
+                                .scaleX(1f)
+                                .scaleY(1f)
+                                .setDuration(320)
+                                .setInterpolator(new OvershootInterpolator(1.6f))
+                                .start();
+                    } else {
+                        v.setPivotX(out ? v.getWidth() : 0);
+                        v.setPivotY(v.getHeight());
+                        v.setScaleX(0.88f);
+                        v.setScaleY(0.88f);
+                        v.animate().scaleX(1f).scaleY(1f).setDuration(340).setInterpolator(new OvershootInterpolator(2.4f)).start();
+                    }
                 } catch (Exception ignore) {
                 }
             }
@@ -340,27 +430,61 @@ public final class StarLook {
             public void onChildViewDetachedFromWindow(View v) {
                 v.setScaleX(1f);
                 v.setScaleY(1f);
+                v.setTranslationX(0f);
+                v.setAlpha(1f);
             }
         });
     }
 
-    /** Короткая вспышка в цвет палитры при отправке. */
+    public static int sendFlashStyle() {
+        return Math.max(0, Math.min(3, prefs().getInt("look_flash_style", 0)));
+    }
+
+    public static void setSendFlashStyle(int i) {
+        prefs().edit().putInt("look_flash_style", Math.max(0, Math.min(3, i))).apply();
+    }
+
+    public static final String[] FLASH_NAMES = {
+            "Классика", "Волна", "Искры", "Минимализм"
+    };
+
     public static void sendFlash(BaseFragment f) {
         try {
             if (!animations() || !(f instanceof ChatActivity) || f.getFragmentView() == null) return;
             if (!(f.getFragmentView() instanceof ViewGroup)) return;
             ViewGroup root = (ViewGroup) f.getFragmentView();
-            View glow = new View(root.getContext());
+            int style = sendFlashStyle();
             int c = Theme.getColor(Theme.key_chat_messagePanelSend);
-            GradientDrawable g = new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, new int[]{(c & 0x00FFFFFF) | 0x66000000, 0x00000000});
-            glow.setBackground(g);
+
+            View glow = new View(root.getContext());
             glow.setClickable(false);
             glow.setAlpha(0f);
-            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(220));
+
+            GradientDrawable g;
+            FrameLayout.LayoutParams lp;
+
+            if (style == 1) {
+                g = new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
+                        new int[]{(c & 0x00FFFFFF) | 0x88000000, (c & 0x00FFFFFF) | 0x33000000, 0x00000000});
+                lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(280));
+            } else if (style == 3) {
+                g = new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
+                        new int[]{(c & 0x00FFFFFF) | 0x44000000, 0x00000000});
+                lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(120));
+            } else {
+                g = new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
+                        new int[]{(c & 0x00FFFFFF) | 0x66000000, 0x00000000});
+                lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(220));
+            }
+            glow.setBackground(g);
             lp.gravity = android.view.Gravity.BOTTOM;
             root.addView(glow, lp);
-            glow.animate().alpha(1f).setDuration(140).withEndAction(() ->
-                    glow.animate().alpha(0f).setDuration(380).setListener(new AnimatorListenerAdapter() {
+
+            long fadeIn = style == 3 ? 90 : 140;
+            long fadeOut = style == 1 ? 480 : 380;
+
+            glow.animate().alpha(1f).setDuration(fadeIn).withEndAction(() ->
+                    glow.animate().alpha(0f).setDuration(fadeOut).setListener(new AnimatorListenerAdapter() {
                         @Override
                         public void onAnimationEnd(Animator animation) {
                             root.removeView(glow);
@@ -382,58 +506,56 @@ public final class StarLook {
                 return;
             }
             File file = FileLoader.getInstance(f.getCurrentAccount()).getPathToAttach(me.photo.photo_big != null ? me.photo.photo_big : me.photo.photo_small, true);
-            if (file == null || !file.exists()) file = FileLoader.getInstance(f.getCurrentAccount()).getPathToAttach(me.photo.photo_small, true);
-            Bitmap bmp = file != null && file.exists() ? BitmapFactory.decodeFile(file.getAbsolutePath()) : null;
-            if (bmp == null) {
-                Toast.makeText(ctx, "Откройте свой профиль, чтобы фото загрузилось, и попробуйте снова", Toast.LENGTH_LONG).show();
+            if (file == null || !file.exists()) {
+                Toast.makeText(ctx, "Фото ещё не загружено", Toast.LENGTH_SHORT).show();
                 return;
             }
-            float[] bins = new float[36];
-            float[] h = new float[3];
-            int step = Math.max(1, Math.min(bmp.getWidth(), bmp.getHeight()) / 64);
-            for (int y = 0; y < bmp.getHeight(); y += step) {
-                for (int x = 0; x < bmp.getWidth(); x += step) {
-                    Color.colorToHSV(bmp.getPixel(x, y), h);
-                    if (h[1] < 0.25f || h[2] < 0.25f) continue;
-                    bins[(int) (h[0] / 10) % 36] += h[1] * h[2];
+            Bitmap bmp = BitmapFactory.decodeFile(file.getAbsolutePath());
+            if (bmp == null) {
+                Toast.makeText(ctx, "Не удалось прочитать фото", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            int w = Math.min(bmp.getWidth(), 64), h = Math.min(bmp.getHeight(), 64);
+            Bitmap small = Bitmap.createScaledBitmap(bmp, w, h, true);
+            long r = 0, g = 0, b = 0;
+            int n = 0;
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    int c = small.getPixel(x, y);
+                    if (Color.alpha(c) < 128) continue;
+                    r += Color.red(c);
+                    g += Color.green(c);
+                    b += Color.blue(c);
+                    n++;
                 }
             }
-            bmp.recycle();
-            int best = 0;
-            float total = 0;
-            for (int i = 0; i < 36; i++) {
-                total += bins[i];
-                if (bins[i] > bins[best]) best = i;
-            }
-            if (total < 1f) {
-                Toast.makeText(ctx, "На фото почти нет цвета — выберите палитру вручную", Toast.LENGTH_LONG).show();
-                return;
-            }
-            // уточняем: средневзвешенный оттенок соседних корзин
-            float sum = 0, w = 0;
-            for (int d = -1; d <= 1; d++) {
-                int i = (best + d + 36) % 36;
-                sum += (best * 10 + 5 + d * 10) * bins[i];
-                w += bins[i];
-            }
-            float hue = ((sum / w) % 360 + 360) % 360;
-            StarTheme.applyCustom(hue, false);
-            Toast.makeText(ctx, "🎨 Тема подобрана по вашему фото", Toast.LENGTH_SHORT).show();
+            if (n == 0) return;
+            float[] hsv = new float[3];
+            Color.RGBToHSV((int) (r / n), (int) (g / n), (int) (b / n), hsv);
+            prefs().edit().putFloat("look_avatar_hue", hsv[0]).apply();
+            if (!gradientBubbles()) setFlag("look_gradient", true);
+            if (!StarTheme.reapply(Theme.getActiveTheme().isDark())) StarTheme.enableDefault(Theme.getActiveTheme().isDark());
+            Toast.makeText(ctx, "Тема построена по аватарке", Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
             FileLog.e(e);
+            Toast.makeText(ctx, "Ошибка при создании темы", Toast.LENGTH_SHORT).show();
         }
     }
 
-    // ================================================================ 8. компактный режим
+    // ================================================================ 8. компакт + читаемость
 
     public static boolean compact() {
         return flag("look_compact", false);
     }
 
-    static void toggleCompact() {
+    public static boolean highReadability() {
+        return flag("look_readable", false);
+    }
+
+    public static void toggleCompact() {
         boolean on = !compact();
-        SharedPreferences main = ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Context.MODE_PRIVATE);
         SharedPreferences.Editor e = prefs().edit().putBoolean("look_compact", on);
+        SharedPreferences main = ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Context.MODE_PRIVATE);
         if (on) {
             e.putInt("compact_prev_font", SharedConfig.fontSize).putInt("compact_prev_radius", SharedConfig.bubbleRadius);
             SharedConfig.fontSize = Math.max(12, SharedConfig.fontSize - 2);
@@ -450,21 +572,40 @@ public final class StarLook {
         applyFonts();
     }
 
-    // ================================================================ 9. цветные папки
+    public static void toggleHighReadability() {
+        toggleFlag("look_readable", false);
+    }
+
+    // ================================================================ 9. цветные папки + акцент
 
     public static boolean folderColors() {
         return flag("look_folders", false);
     }
 
+    public static boolean folderAccent() {
+        return flag("look_folder_accent", true);
+    }
+
+    public static void toggleFolderAccent() {
+        toggleFlag("look_folder_accent", true);
+    }
+
     private static final int[] RAINBOW = {0xFF7B5CFF, 0xFF33A6FF, 0xFF1FB98A, 0xFFF5B400, 0xFFFF7A45, 0xFFFF4F8B, 0xFFB45CFF, 0xFF00B8D4};
 
-    /** Вызывается из FilterTabsView: цвет подписи вкладки папки. */
     public static int tabColor(int tabId, boolean isDefault, int color) {
-        if (!folderColors() || isDefault) return color; // «Все чаты» — как в теме
+        if (!folderColors() || isDefault) return color;
         int c = RAINBOW[(tabId & 0x7FFFFFFF) % RAINBOW.length];
         int a = Color.alpha(color);
-        // активная вкладка — насыщенный цвет, остальные — приглушённый
         return (Math.max(a, 160) << 24) | (blend(color, c, 0.8f) & 0x00FFFFFF);
+    }
+
+    public static int tabColorActive(int tabId, boolean isDefault, int color) {
+        if (!folderColors() || isDefault) return color;
+        int c = RAINBOW[(tabId & 0x7FFFFFFF) % RAINBOW.length];
+        if (folderAccent()) {
+            return (0xFF << 24) | (c & 0x00FFFFFF);
+        }
+        return tabColor(tabId, isDefault, color);
     }
 
     private static int blend(int a, int b, float t) {
@@ -474,7 +615,7 @@ public final class StarLook {
         return Color.rgb(r, g, bl);
     }
 
-    // ================================================================ 3. иконка по сезону
+    // ================================================================ 10. сезонная иконка
 
     public static boolean seasonIcon() {
         return flag("look_season_icon", false);
@@ -491,7 +632,6 @@ public final class StarLook {
         return m == 11 || m <= 1 ? "❄️ зимняя «Ночь»" : m <= 4 ? "🌸 весенний «Неон»" : m <= 7 ? "☀️ летнее «Золото»" : "🍂 осенний «Закат»";
     }
 
-    /** Вызывается при открытии списка чатов: раз в сезон меняет иконку приложения. */
     public static void checkSeasonIcon() {
         try {
             if (!seasonIcon()) return;
@@ -508,13 +648,84 @@ public final class StarLook {
         }
     }
 
-    /** Названия палитры для подписей. */
+    // ================================================================ 11. свечение
+
+    public static boolean badgeGlow() {
+        return flag("look_badge_glow", false);
+    }
+
+    public static void toggleBadgeGlow() {
+        toggleFlag("look_badge_glow", false);
+    }
+
+    // ================================================================ 12. параллакс
+
+    public static boolean parallax() {
+        return flag("look_parallax", false);
+    }
+
+    public static void toggleParallax() {
+        toggleFlag("look_parallax", false);
+    }
+
+    // ================================================================ 13. кинорежим
+
+    public static boolean cinemaMode() {
+        return flag("look_cinema", false);
+    }
+
+    public static void toggleCinemaMode(BaseFragment f) {
+        toggleFlag("look_cinema", false);
+        if (f != null && f.getParentActivity() != null) {
+            Toast.makeText(f.getParentActivity(),
+                    cinemaMode() ? "Кинорежим включён" : "Кинорежим выключен",
+                    Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // ================================================================ 14. тема по времени суток
+
+    public static boolean autoTimeTheme() {
+        return flag("look_auto_time", false);
+    }
+
+    public static void toggleAutoTimeTheme() {
+        toggleFlag("look_auto_time", false);
+    }
+
+    public static int currentPeriod() {
+        int h = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
+        if (h >= 5 && h < 11) return 0;
+        if (h >= 11 && h < 17) return 1;
+        if (h >= 17 && h < 22) return 2;
+        return 3;
+    }
+
+    // ================================================================ 15. микро-реакции
+
+    public static boolean reactionFx() {
+        return flag("look_reaction_fx", true);
+    }
+
+    public static void toggleReactionFx() {
+        toggleFlag("look_reaction_fx", true);
+    }
+
+    // ================================================================ summary
+
     static ArrayList<String> summary() {
         ArrayList<String> s = new ArrayList<>();
         if (gradientBubbles()) s.add("градиент");
         if (neon()) s.add("неон");
+        if (bubbleMaterial() > 0) s.add(MATERIAL_NAMES[bubbleMaterial()].toLowerCase(Locale.ROOT));
+        if (bubbleShape() > 0) s.add(SHAPE_NAMES[bubbleShape()].toLowerCase(Locale.ROOT));
         if (font() != 0) s.add(FONTS[font()][1].toLowerCase(Locale.ROOT));
         if (compact()) s.add("компакт");
+        if (highReadability()) s.add("читаемость");
+        if (directionalEnter()) s.add("направл. вход");
+        if (badgeGlow()) s.add("свечение");
+        if (cinemaMode()) s.add("кино");
+        if (autoTimeTheme()) s.add("авто-время");
         return s;
     }
 }
