@@ -143,6 +143,38 @@ public final class StarAds {
     public static boolean autoProxy() { return flag("proxy_auto", false); }
     public static void toggleAutoProxy() { toggleFlag("proxy_auto", false); }
 
+    /**
+     * WhiteGram-style helper: перед открытием истории можно показать подтверждение.
+     * Если callback null, метод просто возвращает текущий флаг и не блокирует действие.
+     */
+    public static boolean confirmStoryOpen(BaseFragment fragment, Runnable continueAction) {
+        if (!confirmStoryView()) {
+            if (continueAction != null) continueAction.run();
+            return true;
+        }
+        if (fragment == null || fragment.getParentActivity() == null) {
+            if (continueAction != null) continueAction.run();
+            return true;
+        }
+        new AlertDialog.Builder(fragment.getParentActivity())
+                .setTitle("Открыть историю?")
+                .setMessage("Подтверждение просмотра включено в StarTegs.")
+                .setPositiveButton("Открыть", (dialog, which) -> {
+                    if (continueAction != null) continueAction.run();
+                })
+                .setNegativeButton("Отмена", null)
+                .show();
+        return false;
+    }
+
+    /**
+     * Блокирует запись истории свайпом, если пользователь включил это в настройках.
+     * В upstream-патче этот метод можно вызывать на самом месте, где Telegram открывает StoryRecorder.
+     */
+    public static boolean blockSwipeStoryRecord() {
+        return disableStorySwipeRecord();
+    }
+
     private static final AtomicBoolean proxyUpdating = new AtomicBoolean(false);
 
     public static void refreshProxies(BaseFragment fragment) {
