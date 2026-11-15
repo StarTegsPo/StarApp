@@ -1,0 +1,13 @@
+{
+  "name": "whitegram",
+  "version": "0.1.0",
+  "description": "WhiteGram — профиль и баланс в Telegram: бот + Mini App с пополнением через Stars и историей операций",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/index.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch src/index.js",
+    "test": "node --disable-warning=ExperimentalWarning --test \"test/**/*.test.js\""
+  }
+}
