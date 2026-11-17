@@ -40,6 +40,11 @@ final class StarHero {
     }
 
     static FrameLayout create(Context ctx, int account, Actions actions) {
+        return create(ctx, account, null, actions);
+    }
+
+    /** custom != null — свои кнопки {эмодзи, подпись}, номер кнопки = индекс. */
+    static FrameLayout create(Context ctx, int account, String[][] custom, Actions actions) {
         FrameLayout wrap = new FrameLayout(ctx);
         int m = AndroidUtilities.dp(12);
         wrap.setPadding(m, m, m, AndroidUtilities.dp(4));
@@ -65,10 +70,10 @@ final class StarHero {
         row.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         rowLp.topMargin = AndroidUtilities.dp(14);
-        String[][] btns = {{"🤖", "ИИ"}, {"🗑", "Удалённые"}, {"🙈", "Скрытые"}, {"🏷", "Метки"}, {"📝", "Заметки"}};
+        String[][] btns = custom != null ? custom : new String[][]{{"🤖", "ИИ"}, {"🗑", "Удалённые"}, {"🙈", "Скрытые"}, {"🏷", "Метки"}, {"📝", "Заметки"}};
         for (int i = 0; i < btns.length; i++) {
-            if (i == 0 && !StarAi.enabled()) continue;
-            if (i == 2 && StarPrivacy.hideEntry()) continue;
+            if (custom == null && i == 0 && !StarAi.enabled()) continue;
+            if (custom == null && i == 2 && StarPrivacy.hideEntry()) continue;
             final int which = i;
             LinearLayout b = new LinearLayout(ctx);
             b.setOrientation(LinearLayout.VERTICAL);

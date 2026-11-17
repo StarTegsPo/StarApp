@@ -93,7 +93,7 @@ public final class StarReply {
         }
         String question = StarCodec.strip(target.messageOwner.message);
         String prompt = "Ты помогаешь мне ответить в Telegram. Предложи РОВНО 3 разных варианта моего ответа на последнее сообщение собеседника: "
-                + "1) короткий, 2) тёплый/дружелюбный, 3) развёрнутый. Пиши от первого лица, на языке переписки, "
+                + "1) коротко и уверенно, 2) с юмором или дерзко (без грубости и оскорблений), 3) мило и по-дружески. Пиши от первого лица, на языке переписки, "
                 + "копируя мой стиль (длину фраз, эмодзи, строчные буквы, сленг) по примерам ниже. "
                 + "Формат ответа: три строки, каждая начинается с «1) », «2) », «3) », без пояснений.\n\n"
                 + (mine.length() > 0 ? "Мои сообщения (стиль):\n" + mine + "\n" : "")
@@ -142,7 +142,7 @@ public final class StarReply {
         }
         if (!StarMod.isPro()) markUsed();
         StarAchieve.bump("reply_ai", 1);
-        String[] labels = {"⚡ ", "🤗 ", "📝 "};
+        String[] labels = {"😎 ", "😏 ", "🥰 "};
         CharSequence[] items = new CharSequence[variants.size() + 1];
         for (int i = 0; i < variants.size(); i++) items[i] = labels[Math.min(i, 2)] + variants.get(i);
         items[variants.size()] = "🔄 Другие варианты";

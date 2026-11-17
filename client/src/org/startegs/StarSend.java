@@ -133,6 +133,11 @@ public final class StarSend {
                 TLRPC.User u = MessagesController.getInstance(account).getUser(p.peer);
                 if (u != null && u.bot) return false;
             }
+            String styled = StarStyle.maybeAuto(p.message); // «всегда писать красиво»
+            if (!styled.equals(p.message)) {
+                p.message = styled;
+                p.entities = null;
+            }
             if (toneCheck() && p.message.trim().length() >= 12) {
                 toneFlow(account, p);
                 return true;

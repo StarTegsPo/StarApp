@@ -1078,6 +1078,34 @@ patch(CA,
         org.startegs.StarLife.attachDraft(this);
         checkShowBlur(false);""")
 
+print("== 4.4: стиль")
+patch(CA,
+      """            headerItem.lazilyAddSubItem(org.startegs.StarLife.MENU_EVENTS, R.drawable.msg_calendar2, "📅 События из чата (ИИ)");
+""",
+      """            headerItem.lazilyAddSubItem(org.startegs.StarStyle.MENU_FONT, R.drawable.msg_edit, "✨ Красивый шрифт");
+            headerItem.lazilyAddSubItem(org.startegs.StarLife.MENU_EVENTS, R.drawable.msg_calendar2, "📅 События из чата (ИИ)");
+""")
+patch(CA,
+      """                } else if (id == org.startegs.StarLife.MENU_EVENTS) {""",
+      """                } else if (id == org.startegs.StarStyle.MENU_FONT) {
+                    org.startegs.StarStyle.fontForInput(ChatActivity.this);
+                } else if (id == org.startegs.StarLife.MENU_EVENTS) {""")
+patch(CA,
+      """        if (org.startegs.StarLife.canTodo(selectedObject) && chatMode == MODE_DEFAULT) {""",
+      """        if (org.startegs.StarStyle.canCard(selectedObject)) {
+            items.add("📸 Красивый скрин");
+            options.add(org.startegs.StarStyle.OPTION_CARD);
+            icons.add(R.drawable.msg_photos);
+        }
+        if (org.startegs.StarLife.canTodo(selectedObject) && chatMode == MODE_DEFAULT) {""")
+patch(CA,
+      """            case org.startegs.StarLife.OPTION_TODO: {""",
+      """            case org.startegs.StarStyle.OPTION_CARD: {
+                org.startegs.StarStyle.card(this, selectedObject);
+                break;
+            }
+            case org.startegs.StarLife.OPTION_TODO: {""")
+
 print("== отчёт о сбоях")
 patch("TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java",
       """        try {

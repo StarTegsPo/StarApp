@@ -43,6 +43,8 @@ public final class StarSections {
             {"🛡", "Безопасность", "устройства, новые входы, аварийный жест, фишинг"},
             {"💰", "Кошелёк", "баланс 💎, переводы, колесо бонусов, поддержать"},
             {"🌐", "Сервисы экосистемы", "боты StarTegs: архив, маркет, ИИ, аналитика"},
+            {"✨", "Стиль и крутость", "красивый шрифт, имя, «О себе», скрины"},
+            {"⚙️", "Ещё", "Premium, плагины, бизнес, сервисы, прочее"},
     };
 
     /** Порядок разделов на главном экране. */
@@ -56,28 +58,94 @@ public final class StarSections {
         return prefs().getBoolean(key, def);
     }
 
-    /** Список разделов. */
+    static boolean ghostAll() {
+        return raw("ghost_typing", false) && raw("ghost_read", false) && raw("ghost_online", false) && raw("ghost_stories", false);
+    }
+
+    static void setGhostAll(boolean on) {
+        prefs().edit().putBoolean("ghost_typing", on).putBoolean("ghost_read", on).putBoolean("ghost_online", on).putBoolean("ghost_stories", on).apply();
+    }
+
+    static final int[][] GROUPS = {{18, 9, 11, 16}, {3, 4, 5, 7}, {1, 2, 15}, {14, 6, 12}, {19}};
+    static final String[] GROUP_TITLES = {"🔥 Стиль и развлечения", "💬 Общение", "🔒 Приватность", "📚 Полезное", ""};
+
+    /** Главный экран StarTegs. */
     public static class Index extends UniversalFragment {
         @Override
         protected CharSequence getTitle() {
             return "⭐ StarTegs";
         }
 
+        private void refresh() {
+            if (listView != null) listView.adapter.update(true);
+        }
+
+        @Override
+        public void onResume() {
+            super.onResume();
+            refresh();
+        }
+
         @Override
         protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
-            items.add(UItem.asButton(99, "Тариф: " + StarMod.tierTitle(), StarMod.isPro() ? "" : StarTrial.available() ? "🎁 3 дня бесплатно" : "⭐ Premium").accent());
-            items.add(UItem.asHeader("Разделы"));
-            for (int i : ORDER) {
-                items.add(UItem.asButton(100 + i, SECTIONS[i][0] + "  " + SECTIONS[i][1], SECTIONS[i][2]));
+            if (getParentActivity() != null) {
+                String[][] btns = {{"👻", "Призрак"}, {"✨", "Шрифт"}, {"🪪", "Имя"}, {"🛍", "Магазин"}, {"🐾", "Питомец"}};
+                items.add(UItem.asCustom(StarHero.create(getParentActivity(), currentAccount, btns, which -> {
+                    switch (which) {
+                        case 0:
+                            if (!StarMod.requirePro(this, "Режим призрака")) return;
+                            setGhostAll(!ghostAll());
+                            android.widget.Toast.makeText(getParentActivity(), ghostAll() ? "👻 Призрак включён: тебя не видно в сети, «печатает» и «прочитано» не отправляются" : "👻 Призрак выключен", android.widget.Toast.LENGTH_LONG).show();
+                            refresh();
+                            break;
+                        case 1: StarStyle.chooseAuto(this, this::refresh); break;
+                        case 2: StarStyle.fancyName(this); break;
+                        case 3: presentFragment(new StarCosmetics.Shop()); break;
+                        default: StarFun.pet(this, this::refresh);
+                    }
+                })));
             }
-            items.add(UItem.asShadow("StarTegs " + StarModConfig.MOD_VERSION + ". Тариф: " + StarMod.tierTitle() + ". Функции с ⭐ — Premium."));
+            if (!StarMod.isPro()) {
+                items.add(UItem.asButton(99, R.drawable.msg_premium_badge, StarTrial.available() ? "🎁 Premium на 3 дня — бесплатно" : "⭐ Открыть всё с Premium").accent());
+            }
+            items.add(UItem.asHeader("⚡ Быстро"));
+            items.add(UItem.asCheck(901, "👻 Режим призрака" + (StarMod.isPro() ? "" : "  ⭐")).setChecked(ghostAll()));
+            items.add(UItem.asCheck(902, "🫥 Шторка приватности" + (StarMod.isPro() ? "" : "  ⭐")).setChecked(StarShade.enabled()));
+            items.add(UItem.asCheck(903, "🔕 Отправлять без звука").setChecked(StarMedia.silentDefault()));
+            items.add(UItem.asButton(904, R.drawable.msg_edit, "✨ Всегда писать красиво", StarStyle.autoStyleTitle()));
+            for (int g = 0; g < GROUPS.length; g++) {
+                if (!GROUP_TITLES[g].isEmpty()) items.add(UItem.asHeader(GROUP_TITLES[g]));
+                else items.add(UItem.asShadow(null));
+                for (int i : GROUPS[g]) items.add(UItem.asButton(100 + i, SECTIONS[i][0] + "  " + SECTIONS[i][1], SECTIONS[i][2]));
+            }
+            items.add(UItem.asShadow("StarTegs " + StarModConfig.MOD_VERSION + " · тариф " + StarMod.tierTitle() + ". Функции с ⭐ — в Premium."));
         }
 
         @Override
         protected void onClick(UItem item, View view, int position, float x, float y) {
-            if (item.id == 99) {
-                presentFragment(new Screen(0));
-                return;
+            switch (item.id) {
+                case 99:
+                    if (StarTrial.available()) StarTrial.offer(this, this::refresh);
+                    else presentFragment(new Screen(0));
+                    return;
+                case 901:
+                    if (!StarMod.requirePro(this, "Режим призрака")) return;
+                    setGhostAll(!ghostAll());
+                    refresh();
+                    return;
+                case 902:
+                    if (!StarMod.requirePro(this, "Шторка приватности")) return;
+                    StarMod.toggle("shade_on", false);
+                    StarShade.update();
+                    refresh();
+                    return;
+                case 903:
+                    StarMedia.toggle("media_silent", false);
+                    refresh();
+                    return;
+                case 904:
+                    StarStyle.chooseAuto(this, this::refresh);
+                    return;
             }
             int i = item.id - 100;
             if (i >= 0 && i < SECTIONS.length) presentFragment(new Screen(i));
@@ -298,6 +366,21 @@ public final class StarSections {
                     button(items, 201, "🫶 Поддержать StarTegs — значок навсегда");
                     items.add(UItem.asShadow("Перевести 💎 другу: чат с ним → ⋮ → «💎 Перевести кристаллы». Чаевые автору темы: магазин тем → долгое нажатие на тему. Нужен бот v62."));
                     break;
+                case 18:
+                    button(items, 210, "✨ Всегда писать красивым шрифтом", StarStyle.autoStyleTitle());
+                    button(items, 211, "🪪 Красивое имя в профиле");
+                    button(items, 212, "✍️ Крутое «О себе» от ИИ");
+                    button(items, 213, "🌟 Моя витрина: настроение, песня, эмодзи");
+                    button(items, 128, "💭 Мой статус", StarProfile.statusTitle());
+                    button(items, 100, "🛍 Рамки, значки и эффекты");
+                    items.add(UItem.asShadow("Красивый шрифт, имя и «О себе» видят ВСЕ — даже без StarTegs. "
+                            + "Шрифт для одного сообщения: меню ⋮ в чате → «✨ Красивый шрифт». "
+                            + "Скрин сообщения для истории: долгое нажатие → «📸 Красивый скрин». "
+                            + "«Ответь за меня» теперь отвечает уверенно, дерзко или мило 😎"));
+                    break;
+                case 19:
+                    for (int k : new int[]{0, 8, 10, 17, 13}) items.add(UItem.asButton(5000 + k, SECTIONS[k][0] + "  " + SECTIONS[k][1], SECTIONS[k][2]));
+                    break;
                 default:
                     if (StarModConfig.SERVICES.length == 0) items.add(UItem.asShadow("Сервисы не настроены в startegs.properties."));
                     for (int i = 0; i < StarModConfig.SERVICES.length; i++) {
@@ -327,6 +410,10 @@ public final class StarSections {
             if (id >= 2000 && id < 2100) {
                 org.json.JSONObject o = StarLife.later().optJSONObject(id - 2000);
                 if (o != null) StarLife.openMessage(this, o.optLong("d"), o.optInt("m"));
+                return;
+            }
+            if (id >= 5000 && id < 5000 + SECTIONS.length) {
+                presentFragment(new Screen(id - 5000));
                 return;
             }
             if (id >= 3000 && id < 3100) {
@@ -425,6 +512,10 @@ public final class StarSections {
                 case 143: StarMod.checkUpdate(this, true); return;
                 case 144: StarMod.confirmClear(this); return;
                 case 145: presentFragment(new StarHubActivity()); return;
+                case 210: StarStyle.chooseAuto(this, refresh); return;
+                case 211: StarStyle.fancyName(this); return;
+                case 212: StarStyle.aiBio(this); return;
+                case 213: StarProfile.editShowcase(this, refresh); return;
                 case 150: StarFun.pet(this, refresh); return;
                 case 151: StarFun.horoscope(this); return;
                 case 152: StarFun.spin(this, refresh); return;
