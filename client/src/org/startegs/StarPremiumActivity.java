@@ -57,8 +57,9 @@ public class StarPremiumActivity extends UniversalFragment {
                 + "✅ Теги для сохранённого — «Избранные сообщения ⭐» и метки чатов\n"
                 + "✅ До 10 аккаунтов вместо 3\n"
                 + "✅ Статус и витрина профиля для друзей с модом\n"
-                + "✅ Перевод сообщений и своего текста — в 🧪 «Новое в 4.0»"));
-        items.add(UItem.asButton(ID_PLUS, R.drawable.msg_fave, "🧪 Новое в 4.0").accent());
+                + "✅ Перевод сообщений и своего текста — в 🧪 «Новое»\n"
+                + "⭐ 4.1: «Ответь за меня» без лимита, поиск по смыслу, «отправить, когда появится в сети», шторка приватности"));
+        items.add(UItem.asButton(ID_PLUS, R.drawable.msg_fave, "🧪 Новое в StarTegs").accent());
 
         items.add(UItem.asHeader("Только с настоящим Premium"));
         items.add(UItem.asShadow("Эти функции проверяет сервер Telegram, поэтому никакой мод их не включит: "

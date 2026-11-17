@@ -89,7 +89,7 @@ public final class StarExtra {
             CharSequence out = l == 0 ? name : TextUtils.concat(LABELS[l][0], " ", name);
             String stage = StarBiz.stageEmoji(dialogId);
             if (!stage.isEmpty()) out = TextUtils.concat(stage, " ", out);
-            String streak = StarStreak.suffix(dialogId) + StarBiz.waitSuffix(dialogId);
+            String streak = StarBadges.suffix(dialogId) + StarStreak.suffix(dialogId) + StarBiz.waitSuffix(dialogId);
             return streak.isEmpty() ? out : TextUtils.concat(out, streak);
         } catch (Exception e) {
             return name;

@@ -105,6 +105,8 @@ public class StarHubActivity extends UniversalFragment {
     private static final int ID_HIDE_PROMO = 501;
     private static final int ID_PREMIUM = 2300;
     private static final int ID_PLUS = 2301;
+    private static final int ID_SEARCH = 2302;
+    private static final int ID_TRIAL = 2303;
     private static final int ID_STATS = 600;
     private static final int ID_CLEAR = 601;
 
@@ -141,7 +143,9 @@ public class StarHubActivity extends UniversalFragment {
             })));
         }
         items.add(UItem.asButton(ID_PREMIUM, R.drawable.msg_premium_badge, "⭐ Premium-функции", "4.0").accent());
-        items.add(UItem.asButton(ID_PLUS, R.drawable.msg_fave, "🧪 Новое в 4.0: перевод, плагины, двойное дно"));
+        if (StarTrial.available()) items.add(UItem.asButton(ID_TRIAL, R.drawable.msg_fave, "🎁 Premium 3 дня бесплатно").accent());
+        items.add(UItem.asButton(ID_PLUS, R.drawable.msg_fave, "🧪 Новое: «Ответь за меня», поиск по смыслу, темы", "4.1"));
+        items.add(UItem.asButton(ID_SEARCH, R.drawable.msg_search, "🔎 Поиск по смыслу во всех чатах"));
         items.add(UItem.asButton(ID_BIZ, R.drawable.msg_stats, "💼 Бизнес-кабинет", StarBiz.on() ? "вкл" : StarBiz.paid() ? "выкл" : "Business"));
         items.add(UItem.asHeader("🎯 Задание дня"));
         items.add(UItem.asButton(ID_QUEST, R.drawable.msg_fave, StarQuest.title(),
@@ -387,6 +391,12 @@ public class StarHubActivity extends UniversalFragment {
                 return;
             case ID_PLUS:
                 presentFragment(new StarPlusActivity());
+                return;
+            case ID_SEARCH:
+                presentFragment(new StarSearchActivity());
+                return;
+            case ID_TRIAL:
+                StarTrial.offer(this, () -> { if (listView != null) listView.adapter.update(true); });
                 return;
             case ID_BIZ:
                 presentFragment(new StarBizActivity());

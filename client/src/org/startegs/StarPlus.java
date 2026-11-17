@@ -80,7 +80,13 @@ public final class StarPlus {
     /** Вызывается из DialogsActivity.createView. */
     public static void init(Activity activity) {
         applyRecents(activity);
+        StarWhen.init();
+        StarShade.init(activity);
+        StarTrial.maybeOfferOnLaunch();
     }
+
+    /** Секретная клавиатура: просим клавиатуру не запоминать ввод (IME_FLAG_NO_PERSONALIZED_LEARNING). */
+    public static boolean incognitoKeyboard() { return flag("plus_incognito_kb", false); }
 
     static void applyRecents(Activity activity) {
         try {

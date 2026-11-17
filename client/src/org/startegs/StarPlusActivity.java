@@ -28,16 +28,33 @@ public class StarPlusActivity extends UniversalFragment {
     private static final int ID_RECENTS = 9;
     private static final int ID_PANIC = 10;
     private static final int ID_PREMIUM = 11;
+    private static final int ID_SEARCH = 12;
+    private static final int ID_SHADE = 13;
+    private static final int ID_KEYBOARD = 14;
+    private static final int ID_TRIAL = 15;
+    private static final int ID_STYLES = 16;
 
     @Override
     protected CharSequence getTitle() {
-        return "🧪 Новое в 4.0";
+        return "🧪 Новое в StarTegs";
     }
 
     @Override
     protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
         items.add(UItem.asButton(ID_PREMIUM, R.drawable.msg_premium_badge, "⭐ Premium-функции").accent());
+        if (StarTrial.available()) items.add(UItem.asButton(ID_TRIAL, R.drawable.msg_fave, "🎁 Premium 3 дня бесплатно").accent());
         items.add(UItem.asShadow(null));
+
+        items.add(UItem.asHeader("✨ Новое в 4.1"));
+        items.add(UItem.asButton(ID_SEARCH, R.drawable.msg_search, "🔎 Поиск по смыслу во всех чатах", StarMod.isPro() ? "" : "⭐"));
+        items.add(UItem.asCheck(ID_SHADE, "🫥 Шторка приватности" + (StarMod.isPro() ? "" : "  ⭐")).setChecked(StarShade.enabled()));
+        items.add(UItem.asCheck(ID_KEYBOARD, "⌨️ Секретная клавиатура").setChecked(StarPlus.incognitoKeyboard()));
+        items.add(UItem.asButton(ID_STYLES, R.drawable.msg_palette, "🎨 Темы от пользователей"));
+        items.add(UItem.asShadow("💡 «Ответь за меня»: долгое нажатие на сообщение — 3 варианта ответа в вашем стиле (" + StarReply.FREE_PER_DAY + " в день бесплатно). "
+                + "📨 «Отправить, когда появится в сети»: меню ⋮ в личном чате. "
+                + "🫥 Шторка закрывает экран, когда телефон кладут на стол или переворачивают. "
+                + "⌨️ Секретная клавиатура просит клавиатуру не запоминать ввод (не все клавиатуры это поддерживают; Samsung — нет). "
+                + "Шаблоны теперь можно вставлять, написав «/название»."));
 
         items.add(UItem.asHeader("🧩 Плагины-команды"));
         items.add(UItem.asCheck(ID_PLUGINS, "Команды в чате (.calc, .tr, .ai …)").setChecked(StarPlugins.enabled()));
@@ -71,6 +88,24 @@ public class StarPlusActivity extends UniversalFragment {
             case ID_PREMIUM:
                 presentFragment(new StarPremiumActivity());
                 return;
+            case ID_TRIAL:
+                StarTrial.offer(this, refresh);
+                return;
+            case ID_SEARCH:
+                presentFragment(new StarSearchActivity());
+                return;
+            case ID_STYLES:
+                presentFragment(new StarStyleShop());
+                return;
+            case ID_SHADE:
+                if (!StarMod.requirePro(this, "Шторка приватности")) return;
+                StarMod.toggle("shade_on", false);
+                StarShade.update();
+                break;
+            case ID_KEYBOARD:
+                StarPlus.toggle("plus_incognito_kb", false);
+                if (getParentActivity() != null) android.widget.Toast.makeText(getParentActivity(), "Применится в чатах, открытых заново", android.widget.Toast.LENGTH_SHORT).show();
+                break;
             case ID_PLUGINS:
                 StarMod.toggle("plugins_on", true);
                 break;

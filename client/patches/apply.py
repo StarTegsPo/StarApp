@@ -956,6 +956,45 @@ patch(DA,
         org.startegs.StarPlus.init(getParentActivity());
 """)
 
+print("== 4.1: «Ответь за меня», когда в сети, секретная клавиатура")
+patch(CA,
+      """            options.add(org.startegs.StarPlus.OPTION_TRANSLATE);
+            icons.add(R.drawable.msg_translate);
+        }
+""",
+      """            options.add(org.startegs.StarPlus.OPTION_TRANSLATE);
+            icons.add(R.drawable.msg_translate);
+        }
+        if (org.startegs.StarReply.canUse(selectedObject) && chatMode == MODE_DEFAULT) {
+            items.add(org.startegs.StarReply.title());
+            options.add(org.startegs.StarReply.OPTION_REPLY_FOR_ME);
+            icons.add(R.drawable.msg_bot);
+        }
+""")
+patch(CA,
+      """            case org.startegs.StarPlus.OPTION_REPEAT: {""",
+      """            case org.startegs.StarReply.OPTION_REPLY_FOR_ME: {
+                org.startegs.StarReply.suggest(this, selectedObject);
+                break;
+            }
+            case org.startegs.StarPlus.OPTION_REPEAT: {""")
+patch(CA,
+      """            headerItem.lazilyAddSubItem(org.startegs.StarPlus.MENU_TRANSLATE_INPUT, R.drawable.msg_translate, "🌍 Перевести мой текст");
+""",
+      """            headerItem.lazilyAddSubItem(org.startegs.StarPlus.MENU_TRANSLATE_INPUT, R.drawable.msg_translate, "🌍 Перевести мой текст");
+            if (currentUser != null && !currentUser.bot && !currentUser.self) {
+                headerItem.lazilyAddSubItem(org.startegs.StarWhen.MENU_WHEN_ONLINE, R.drawable.msg_online, "📨 Отправить, когда будет в сети");
+            }
+""")
+patch(CA,
+      """                } else if (id == org.startegs.StarPlus.MENU_FIRST) {""",
+      """                } else if (id == org.startegs.StarWhen.MENU_WHEN_ONLINE) {
+                    org.startegs.StarWhen.ask(ChatActivity.this);
+                } else if (id == org.startegs.StarPlus.MENU_FIRST) {""")
+patch("TMessagesProj/src/main/java/org/telegram/ui/Components/ChatActivityEnterView.java",
+      """        if (isKeyboardSupportIncognitoMode() && encryptedChat != null) {""",
+      """        if (isKeyboardSupportIncognitoMode() && (encryptedChat != null || org.startegs.StarPlus.incognitoKeyboard())) {""")
+
 print("== отчёт о сбоях")
 patch("TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java",
       """        try {

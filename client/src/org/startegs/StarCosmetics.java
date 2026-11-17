@@ -209,6 +209,10 @@ public final class StarCosmetics {
             case "fr_rainbow": return new int[]{0xFFFF3B3B, 0xFFFFB300, 0xFF3BD16F, 0xFF2D9CFF, 0xFFA24CFF, 0xFFFF3B3B};
             case "fr_gold": return new int[]{0xFFFFE082, 0xFFC99A2E, 0xFFFFF3C4, 0xFFFFE082};
             case "fr_galaxy": return new int[]{0xFF2B1B6E, 0xFF8A4CFF, 0xFF00C2FF, 0xFF2B1B6E};
+            case "fr_ny": return new int[]{0xFFE53935, 0xFFFFD54F, 0xFF2E7D32, 0xFFFFFFFF, 0xFFE53935};
+            case "fr_val": return new int[]{0xFFFF2D6F, 0xFFFFB3C7, 0xFFD5004F, 0xFFFF2D6F};
+            case "fr_hw": return new int[]{0xFFFF8C00, 0xFF6A1B9A, 0xFF111111, 0xFFFF8C00};
+            case "fr_spring": return new int[]{0xFF7CD67C, 0xFFFFC1E3, 0xFFFFF59D, 0xFF7CD67C};
             default: return new int[]{0xFF8E6BFF, 0xFF33A6FF, 0xFF8E6BFF};
         }
     }
@@ -279,6 +283,16 @@ public final class StarCosmetics {
             {"th_sakura", 335f, true, false}, {"th_cyber", 290f, true, true}, {"th_ocean", 200f, true, false},
             {"th_matcha", 110f, false, false}, {"th_lava", 12f, true, true},
     };
+
+    /** Тема из набора: оттенок + градиентные пузыри + неон (используется и магазином тем пользователей). */
+    static void applyStyle(float hue, boolean gradient, boolean neon) {
+        prefs().edit().putBoolean("look_gradient", gradient).putBoolean("look_neon", neon).apply();
+        try {
+            StarTheme.applyCustom(hue, neon);
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+    }
 
     private static void applyTheme(String id) {
         for (Object[] t : THEMES) {
@@ -384,6 +398,8 @@ public final class StarCosmetics {
         private static final int ID_REFRESH = 101;
         private static final int ID_FX_OFF = 102;
         private static final int ID_FRAME_OFF = 103;
+        private static final int ID_BADGE_OFF = 104;
+        private static final int ID_STYLES = 105;
         private static final int ID_ITEM = 1000;
         private final ArrayList<JSONObject> items = new ArrayList<>();
         private boolean loading = true;
@@ -425,6 +441,7 @@ public final class StarCosmetics {
                 case "frame": return "Рамки на аватарку";
                 case "effect": return "Эффекты при отправке";
                 case "theme": return "Темы";
+                case "badge": return "Значки у имени";
                 default: return "Звуки";
             }
         }
@@ -447,11 +464,24 @@ public final class StarCosmetics {
             list.add(UItem.asShadow(premium ? "У вас Premium — весь магазин открыт ✨"
                     : "Кристаллы покупаются за ⭐ Stars в боте @" + StarModConfig.ECO_BOT + ". Premium открывает всё сразу."));
             JSONArray cat = s.optJSONArray("catalog");
-            String frame = myFrame(), fx = myEffect();
-            String[] kinds = {"frame", "effect", "theme", "sound"};
+            String frame = myFrame(), fx = myEffect(), badgeId = s.optString("badge", "");
+            boolean hot = false;
+            for (int i = 0; cat != null && i < cat.length(); i++) {
+                JSONObject it = cat.optJSONObject(i);
+                if (it == null || it.optLong("until") <= 0 || owns(it.optString("id"))) continue;
+                if (!hot) {
+                    list.add(UItem.asHeader("🔥 Только сейчас"));
+                    hot = true;
+                }
+                list.add(UItem.asButton(ID_ITEM + items.size(), it.optString("emoji") + "  " + it.optString("title"), priceText(it)).accent());
+                items.add(it);
+            }
+            if (hot) list.add(UItem.asShadow("Сезонные предметы и товар недели продаются ограниченное время — потом исчезнут из магазина до следующего года. Купленное остаётся навсегда."));
+            String[] kinds = {"frame", "badge", "effect", "theme", "sound"};
             for (String k : kinds) {
                 list.add(UItem.asHeader(kindTitle(k)));
                 if (k.equals("frame")) list.add(UItem.asRadio(ID_FRAME_OFF, "Без рамки").setChecked(frame.isEmpty()));
+                if (k.equals("badge")) list.add(UItem.asRadio(ID_BADGE_OFF, "Без значка").setChecked(badgeId.isEmpty()));
                 if (k.equals("effect")) list.add(UItem.asRadio(ID_FX_OFF, "Без эффекта").setChecked(fx.isEmpty()));
                 for (int i = 0; cat != null && i < cat.length(); i++) {
                     JSONObject it = cat.optJSONObject(i);
@@ -459,17 +489,19 @@ public final class StarCosmetics {
                     String id = it.optString("id");
                     boolean own = owns(id);
                     String title = it.optString("emoji") + "  " + it.optString("title");
-                    String value = own ? (id.equals(frame) || id.equals(fx) ? "✓ надето" : k.equals("sound") ? "✓ есть" : "надеть")
-                            : it.optInt("price") == 0 ? "бесплатно" : it.optInt("price") + " 💎";
+                    String value = own ? (id.equals(frame) || id.equals(fx) || id.equals(badgeId) ? "✓ надето" : k.equals("sound") ? "✓ есть" : "надеть")
+                            : priceText(it);
                     if (k.equals("theme") && own) value = "применить";
-                    if (k.equals("frame") || k.equals("effect")) {
-                        list.add(UItem.asRadio(ID_ITEM + items.size(), title, value).setChecked(id.equals(frame) || id.equals(fx)));
+                    if (k.equals("frame") || k.equals("effect") || k.equals("badge")) {
+                        list.add(UItem.asRadio(ID_ITEM + items.size(), title, value).setChecked(id.equals(frame) || id.equals(fx) || id.equals(badgeId)));
                     } else {
                         list.add(UItem.asButton(ID_ITEM + items.size(), title, value));
                     }
                     items.add(it);
                 }
                 if (k.equals("frame")) list.add(UItem.asShadow("Рамку видят друзья, у которых тоже StarTegs, — в своём списке чатов. Пригласи друзей 😉"));
+                if (k.equals("badge")) list.add(UItem.asShadow("Значок стоит справа от вашего имени в списке чатов у друзей со StarTegs (нужен бот v61)."));
+                if (k.equals("theme")) list.add(UItem.asButton(ID_STYLES, R.drawable.msg_palette, "🎨 Темы от пользователей — купить или продать свою").accent());
                 if (k.equals("effect")) list.add(UItem.asShadow("Эффект проигрывается при отправке у вас и у друга с модом, когда он в этом чате."));
                 if (k.equals("sound")) list.add(UItem.asShadow("Поставить звук другу: профиль → ⋮ → «Свой звук для чата»."));
             }
@@ -486,6 +518,14 @@ public final class StarCosmetics {
                 load();
                 return;
             }
+            if (item.id == ID_STYLES) {
+                presentFragment(new StarStyleShop());
+                return;
+            }
+            if (item.id == ID_BADGE_OFF) {
+                equipBadge("");
+                return;
+            }
             if (item.id == ID_FRAME_OFF || item.id == ID_FX_OFF) {
                 equip(item.id == ID_FRAME_OFF ? "" : myFrame(), item.id == ID_FX_OFF ? "" : myEffect());
                 return;
@@ -497,13 +537,15 @@ public final class StarCosmetics {
             if (!owns(id)) {
                 new AlertDialog.Builder(getParentActivity())
                         .setTitle(it.optString("emoji") + " " + it.optString("title"))
-                        .setMessage("Купить за " + it.optInt("price") + " 💎? Покупка навсегда.")
+                        .setMessage("Купить за " + it.optInt("price") + " 💎? Покупка навсегда."
+                                + (it.optLong("until") > 0 ? "\n\n⏳ Предмет доступен ограниченное время." : ""))
                         .setPositiveButton("Купить", (d, w) -> buy(id))
                         .setNegativeButton("Отмена", null)
                         .show();
                 return;
             }
             if (kind.equals("frame")) equip(id, myEffect());
+            else if (kind.equals("badge")) equipBadge(id);
             else if (kind.equals("effect")) equip(myFrame(), id);
             else if (kind.equals("theme")) {
                 applyTheme(id);
@@ -533,6 +575,38 @@ public final class StarCosmetics {
                                 .setPositiveButton("Пополнить", (d, w) -> Browser.openUrl(getParentActivity(), "https://t.me/" + StarModConfig.ECO_BOT + "?start=crystals"))
                                 .setNegativeButton("Закрыть", null)
                                 .show();
+                    }
+                });
+            } catch (Exception ignore) {
+            }
+        }
+
+        private static String priceText(JSONObject it) {
+            int price = it.optInt("price");
+            String v = price == 0 ? "бесплатно" : price + " 💎";
+            if (it.optInt("old") > price) v += " (было " + it.optInt("old") + ")";
+            long until = it.optLong("until");
+            if (until > 0) {
+                long left = until * 1000L - System.currentTimeMillis();
+                long d = left / 86400_000L, h = left / 3600_000L;
+                v += " · ⏳ " + (d >= 1 ? d + " дн." : Math.max(1, h) + " ч");
+            }
+            return v;
+        }
+
+        private void equipBadge(String badge) {
+            try {
+                StarCloud.call(currentAccount, "badge_set", new JSONObject().put("badge", badge), new StarCloud.Result() {
+                    @Override
+                    public void ok(JSONObject res) {
+                        saveState(res);
+                        NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.dialogsNeedReload);
+                        if (listView != null) listView.adapter.update(true);
+                    }
+
+                    @Override
+                    public void fail(String why) {
+                        if (getParentActivity() != null) Toast.makeText(getParentActivity(), why, Toast.LENGTH_SHORT).show();
                     }
                 });
             } catch (Exception ignore) {

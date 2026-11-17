@@ -128,10 +128,11 @@ public final class StarMod {
 
     /** Есть ли у пользователя Premium или VIP в боте StarTegs. Без указанного бота всё бесплатно. */
     public static boolean isPro() {
-        return TextUtils.isEmpty(StarModConfig.ECO_BOT) || !"free".equals(StarCloud.tier());
+        return TextUtils.isEmpty(StarModConfig.ECO_BOT) || !"free".equals(StarCloud.tier()) || StarTrial.active();
     }
 
     static String tierTitle() {
+        if ("free".equals(StarCloud.tier()) && StarTrial.active()) return "Premium ⭐ (пробный до " + StarTrial.untilText() + ")";
         switch (StarCloud.tier()) {
             case "vip": return "VIP 👑";
             case "pro": return "Premium ⭐";

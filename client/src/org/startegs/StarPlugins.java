@@ -49,6 +49,7 @@ public final class StarPlugins {
             + ".up текст — БОЛЬШИМИ БУКВАМИ\n"
             + ".mock текст — ТеКсТ ВоТ ТаК\n"
             + ".id — ID этого чата\n"
+            + "/название_шаблона — вставить шаблон ответа\n"
             + "Свои команды — в StarTegs → Новое в 4.0 → Мои команды.";
 
     // ---------------------------------------------------------------- свои команды
@@ -116,6 +117,7 @@ public final class StarPlugins {
         try {
             if (!enabled() || p == null || p.message == null) return false;
             String msg = p.message.trim();
+            if (msg.length() >= 2 && msg.charAt(0) == '/' && template(account, p, msg.substring(1))) return false;
             if (msg.length() < 2 || msg.charAt(0) != '.' || !Character.isLetter(msg.charAt(1))) return false;
             int sp = indexOfSpace(msg);
             String cmd = (sp < 0 ? msg.substring(1) : msg.substring(1, sp)).toLowerCase(Locale.ROOT);
@@ -256,6 +258,27 @@ public final class StarPlugins {
             FileLog.e(e);
             return false;
         }
+    }
+
+    /** «/реквизиты» → текст шаблона «Реквизиты» ({имя} — имя собеседника). Команды ботов не трогаем: только точное совпадение с шаблоном. */
+    private static boolean template(int account, SendMessagesHelper.SendMessageParams p, String name) {
+        String want = name.trim().toLowerCase(Locale.ROOT).replace('_', ' ');
+        if (want.isEmpty() || want.contains("@")) return false;
+        org.json.JSONArray a = StarMore.templates();
+        for (int i = 0; i < a.length(); i++) {
+            org.json.JSONObject t = a.optJSONObject(i);
+            if (t == null || !want.equals(t.optString("t").trim().toLowerCase(Locale.ROOT))) continue;
+            String who = "";
+            if (p.peer > 0) {
+                org.telegram.tgnet.TLRPC.User u = org.telegram.messenger.MessagesController.getInstance(account).getUser(p.peer);
+                if (u != null && u.bot) return false; // в чате с ботом «/…» — это команда бота
+                if (u != null) who = org.telegram.messenger.UserObject.getFirstName(u);
+            }
+            p.message = t.optString("x").replace("{имя}", who).replace("{name}", who);
+            p.entities = null;
+            return true;
+        }
+        return false;
     }
 
     private static int indexOfSpace(String s) {
