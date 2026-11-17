@@ -64,6 +64,15 @@ export async function render(el, app) {
         </div>
         <button class="btn small" data-bot="${i}">Открыть</button>
       </section>`).join('')}
+    <h3>Игры</h3>
+    <section class="card eco-bot">
+      <div class="ic" style="background:linear-gradient(135deg,#3b2a63,#0b0912)">🦗</div>
+      <div class="main">
+        <div class="title">Тоннели Роя</div>
+        <div class="meta">Хоррор-выживание: собери энергоячейки в тёмном лабиринте и уйди от роя</div>
+      </div>
+      <button class="btn small" data-act="game">Играть</button>
+    </section>
     <h3>Android-версия</h3>
     <section class="card eco-android">
       <div class="row" style="padding:0;border:0;align-items:flex-start">
@@ -237,6 +246,7 @@ export async function render(el, app) {
 
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (act === 'android') { tap(); openExternal(data.android); }
+    if (act === 'game') { tap(); location.href = '/game/index.html'; }
     if (act === 'note-new') { tap(); noteEditor(null); }
     if (act === 'tpl-add') {
       const title = el.querySelector('#tpl-title').value.trim();

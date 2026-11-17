@@ -1,0 +1,12 @@
+{
+  "name": "Тоннели Роя",
+  "short_name": "Рой",
+  "description": "Хоррор-выживание в тёмных тоннелях: собери энергоячейки и уйди от роя.",
+  "start_url": "/game/index.html",
+  "scope": "/game/",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#07060c",
+  "theme_color": "#07060c",
+  "icons": [{ "src": "/game/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

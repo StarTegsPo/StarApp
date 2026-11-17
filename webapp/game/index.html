@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#07060c" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>Тоннели Роя</title>
+  <link rel="manifest" href="/game/manifest.json" />
+  <link rel="stylesheet" href="/game/game.css" />
+</head>
+<body>
+  <canvas id="c"></canvas>
+
+  <div id="hud" hidden>
+    <div class="hp"><div id="hpbar"></div></div>
+    <div class="stam"><div id="stambar"></div></div>
+    <div class="info"><span id="lvl"></span><span id="cells"></span><span id="flares"></span></div>
+  </div>
+  <div id="msg" hidden></div>
+
+  <div id="touch" hidden>
+    <div id="stick"><div id="knob"></div></div>
+    <button id="btnRun" class="tbtn">🏃</button>
+    <button id="btnFlare" class="tbtn">🔥</button>
+  </div>
+
+  <div id="menu" class="screen">
+    <div class="logo">🦗</div>
+    <h1>Тоннели Роя</h1>
+    <p>Ты застрял в тёмных тоннелях. По ним ползёт гудящий рой.<br>
+      Собери все <b>⚡ энергоячейки</b>, чтобы открыть шлюз, и выберись живым.</p>
+    <button id="play" class="big">Играть</button>
+    <div id="best" class="muted"></div>
+    <details>
+      <summary>Как играть</summary>
+      <ul>
+        <li><b>Движение</b> — WASD / стрелки, на телефоне — джойстик слева</li>
+        <li><b>Бег</b> — Shift / 🏃 (тратит выносливость, рой слышит шаги дальше)</li>
+        <li><b>Факел</b> — Пробел / 🔥 отпугивает рой на несколько секунд</li>
+        <li><b>➕</b> аптечка, <b>🔥</b> запасной факел, <b>🚪</b> шлюз — откроется, когда собраны все ячейки</li>
+        <li>Пауза — Esc / P</li>
+      </ul>
+    </details>
+    <button id="back" class="link">← В StarApp</button>
+  </div>
+
+  <div id="over" class="screen" hidden>
+    <div class="logo" id="overIcon">💀</div>
+    <h1 id="overTitle">Рой настиг тебя</h1>
+    <p id="overText"></p>
+    <button id="again" class="big">Ещё раз</button>
+    <button id="toMenu" class="link">Меню</button>
+  </div>
+
+  <div id="pause" class="screen" hidden>
+    <h1>Пауза</h1>
+    <button id="resume" class="big">Продолжить</button>
+    <button id="quit" class="link">Выйти в меню</button>
+  </div>
+
+  <script type="module" src="/game/game.js"></script>
+</body>
+</html>
