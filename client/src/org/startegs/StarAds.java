@@ -194,42 +194,10 @@ public final class StarAds {
         });
     }
 
-    /** Панель настроек Stage 1. */
+    /** Панель настроек этапа 1 — отдельный экран с переключателями. */
     public static void showSettings(BaseFragment fragment) {
-        if (fragment == null || fragment.getParentActivity() == null) return;
-        final String[] labels = {
-                "Скрывать официальную рекламу",
-                "Скрывать рекламу по словам",
-                "Просмотр админов без прав",
-                "Широкие посты в каналах",
-                "Скрывать нижнюю панель канала",
-                "Подтверждение просмотра историй",
-                "Не записывать истории свайпом",
-                "Авто-прокси",
-                "Обновить список прокси…"
-        };
-        final boolean[] checked = {
-                hideSponsored(), hideKeywordAds(), viewAdminsAlways(),
-                wideChannelPosts(), hideChannelBottomPanel(),
-                confirmStoryView(), disableStorySwipeRecord(), autoProxy(), false
-        };
-        new AlertDialog.Builder(fragment.getParentActivity())
-                .setTitle("Реклама и каналы")
-                .setMultiChoiceItems(labels, checked, (d, which, isChecked) -> {
-                    switch (which) {
-                        case 0: if (isChecked != hideSponsored()) toggleHideSponsored(); break;
-                        case 1: if (isChecked != hideKeywordAds()) toggleHideKeywordAds(); break;
-                        case 2: if (isChecked != viewAdminsAlways()) toggleViewAdminsAlways(); break;
-                        case 3: if (isChecked != wideChannelPosts()) toggleWideChannelPosts(); break;
-                        case 4: if (isChecked != hideChannelBottomPanel()) toggleHideChannelBottomPanel(); break;
-                        case 5: if (isChecked != confirmStoryView()) toggleConfirmStoryView(); break;
-                        case 6: if (isChecked != disableStorySwipeRecord()) toggleDisableStorySwipeRecord(); break;
-                        case 7: if (isChecked != autoProxy()) toggleAutoProxy(); break;
-                        case 8: refreshProxies(fragment); break;
-                    }
-                })
-                .setPositiveButton("OK", null)
-                .show();
+        if (fragment == null) return;
+        fragment.presentFragment(new StarAdsActivity());
     }
 
     public static ArrayList<String> summary() {

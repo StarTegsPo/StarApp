@@ -62,6 +62,10 @@ public final class StarPrivacy {
      * Настоящий код — обычный режим, фальшивый — «чистый» режим.
      */
     public static boolean unlock(String password) {
+        if (!SharedConfig.checkPasscode(password) && StarPlus.panic(password)) {
+            setDecoy(true); // тревожный код: архив стёрт, открываем «пустой» режим
+            return true;
+        }
         String d = prefs().getString("pin_decoy", null);
         if (d != null && d.equals(sha(password)) && !SharedConfig.checkPasscode(password)) {
             setDecoy(true);

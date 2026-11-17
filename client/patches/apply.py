@@ -849,6 +849,113 @@ patch(PA,
                     org.startegs.StarBiz.editClient(ProfileActivity.this, getDialogId());
                 } else if (id == org.startegs.StarCosmetics.MENU_SOUND) {""")
 
+print("== 4.0 Nova: Premium-функции и WhiteGram")
+# быстрая загрузка как у Premium
+patch("TMessagesProj/src/main/java/org/telegram/messenger/FileLoadOperation.java",
+      """            boolean premium = UserConfig.getInstance(currentAccount).isPremium();
+            downloadConnectionsCount""",
+      """            boolean premium = UserConfig.getInstance(currentAccount).isPremium() || org.startegs.StarPremium.fastDownload();
+            downloadConnectionsCount""")
+# сохранение историй в галерею без Premium (только если автор разрешил пересылку)
+patch("TMessagesProj/src/main/java/org/telegram/ui/Stories/PeerStoriesView.java",
+      """                        if (!unsupported && allowShare && !currentStory.isLive) {
+                            if (UserConfig.getInstance(currentAccount).isPremium()) {""",
+      """                        if (!unsupported && allowShare && !currentStory.isLive) {
+                            if (UserConfig.getInstance(currentAccount).isPremium() || org.startegs.StarPremium.saveStories()) {""")
+# история профиля
+patch(MC,
+      """        TLRPC.User oldUser = users.get(user.id);
+        if (oldUser == user && !force) {""",
+      """        TLRPC.User oldUser = users.get(user.id);
+        org.startegs.StarPlus.onUser(currentAccount, oldUser, user, fromCache);
+        if (oldUser == user && !force) {""")
+patch(PA,
+      """            otherItem.addSubItem(org.startegs.StarMod.MENU_PEER_INFO, R.drawable.msg_info, "ID и дата регистрации");
+""",
+      """            otherItem.addSubItem(org.startegs.StarMod.MENU_PEER_INFO, R.drawable.msg_info, "ID и дата регистрации");
+            if (userId != 0) {
+                otherItem.addSubItem(org.startegs.StarPlus.MENU_PROFILE_HISTORY, R.drawable.msg_recent, "🕓 История профиля");
+            }
+""")
+patch(PA,
+      """                } else if (id == org.startegs.StarMod.MENU_PEER_INFO) {""",
+      """                } else if (id == org.startegs.StarPlus.MENU_PROFILE_HISTORY) {
+                    org.startegs.StarPlus.showProfileHistory(ProfileActivity.this, getDialogId());
+                } else if (id == org.startegs.StarMod.MENU_PEER_INFO) {""")
+# запрет скриншотов в закрытых и скрытых чатах
+patch(CA,
+      """            currentEncryptedChat != null ||
+            isPeerNoForwards()
+        );""",
+      """            currentEncryptedChat != null ||
+            isPeerNoForwards() ||
+            org.startegs.StarPlus.secureChat(dialog_id)
+        );""")
+# меню чата: к первому сообщению, перевод своего текста
+patch(CA,
+      """                headerItem.lazilyAddSubItem(org.startegs.StarVoice.MENU_VOICE, R.drawable.msg_voice_unmuted, "🎙 Голос в голосовых");
+            }
+""",
+      """                headerItem.lazilyAddSubItem(org.startegs.StarVoice.MENU_VOICE, R.drawable.msg_voice_unmuted, "🎙 Голос в голосовых");
+            }
+            headerItem.lazilyAddSubItem(org.startegs.StarPlus.MENU_FIRST, R.drawable.msg_go_up, "⬆️ К первому сообщению");
+            headerItem.lazilyAddSubItem(org.startegs.StarPlus.MENU_TRANSLATE_INPUT, R.drawable.msg_translate, "🌍 Перевести мой текст");
+""")
+patch(CA,
+      """                } else if (id == org.startegs.StarAi.MENU_SUMMARY) {""",
+      """                } else if (id == org.startegs.StarPlus.MENU_FIRST) {
+                    org.startegs.StarPlus.jumpToFirst(ChatActivity.this);
+                } else if (id == org.startegs.StarPlus.MENU_TRANSLATE_INPUT) {
+                    org.startegs.StarPlus.translateInput(ChatActivity.this);
+                } else if (id == org.startegs.StarAi.MENU_SUMMARY) {""")
+# меню сообщения: повторить (+1), перевести
+patch(CA,
+      """            options.add(org.startegs.StarExtra.OPTION_REMIND);
+            icons.add(R.drawable.msg_mute);
+        }
+""",
+      """            options.add(org.startegs.StarExtra.OPTION_REMIND);
+            icons.add(R.drawable.msg_mute);
+        }
+        if (org.startegs.StarPlus.canRepeat(selectedObject) && chatMode == MODE_DEFAULT) {
+            items.add("🔁 Повторить (+1)");
+            options.add(org.startegs.StarPlus.OPTION_REPEAT);
+            icons.add(R.drawable.msg_retry);
+        }
+        if (org.startegs.StarPlus.canTranslate(selectedObject)) {
+            items.add("🌍 Перевести (StarTegs)");
+            options.add(org.startegs.StarPlus.OPTION_TRANSLATE);
+            icons.add(R.drawable.msg_translate);
+        }
+""")
+patch(CA,
+      """            case org.startegs.StarExtra.OPTION_REMIND: {""",
+      """            case org.startegs.StarPlus.OPTION_REPEAT: {
+                org.startegs.StarPlus.repeat(this, selectedObject);
+                break;
+            }
+            case org.startegs.StarPlus.OPTION_TRANSLATE: {
+                org.startegs.StarPlus.translateMessage(this, selectedObject);
+                break;
+            }
+            case org.startegs.StarExtra.OPTION_REMIND: {""")
+# цензор мата
+patch("TMessagesProj/src/main/java/org/telegram/messenger/MessageObject.java",
+      """        if (org.startegs.StarMod.filterMessage(this)) {
+            messageText = "🚫 Скрыто фильтром StarTegs";
+        } else if""",
+      """        messageText = org.startegs.StarPlus.censor(messageText);
+        if (org.startegs.StarMod.filterMessage(this)) {
+            messageText = "🚫 Скрыто фильтром StarTegs";
+        } else if""")
+# скрытие из «Недавних»
+patch(DA,
+      """        org.startegs.StarSend.init();
+""",
+      """        org.startegs.StarSend.init();
+        org.startegs.StarPlus.init(getParentActivity());
+""")
+
 print("== отчёт о сбоях")
 patch("TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java",
       """        try {

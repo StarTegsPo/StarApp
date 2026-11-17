@@ -103,6 +103,8 @@ public class StarHubActivity extends UniversalFragment {
     private static final int ID_GHOST_READ = 401;
     private static final int ID_HIDE_STORIES = 500;
     private static final int ID_HIDE_PROMO = 501;
+    private static final int ID_PREMIUM = 2300;
+    private static final int ID_PLUS = 2301;
     private static final int ID_STATS = 600;
     private static final int ID_CLEAR = 601;
 
@@ -138,6 +140,8 @@ public class StarHubActivity extends UniversalFragment {
                 }
             })));
         }
+        items.add(UItem.asButton(ID_PREMIUM, R.drawable.msg_premium_badge, "⭐ Premium-функции", "4.0").accent());
+        items.add(UItem.asButton(ID_PLUS, R.drawable.msg_fave, "🧪 Новое в 4.0: перевод, плагины, двойное дно"));
         items.add(UItem.asButton(ID_BIZ, R.drawable.msg_stats, "💼 Бизнес-кабинет", StarBiz.on() ? "вкл" : StarBiz.paid() ? "выкл" : "Business"));
         items.add(UItem.asHeader("🎯 Задание дня"));
         items.add(UItem.asButton(ID_QUEST, R.drawable.msg_fave, StarQuest.title(),
@@ -378,6 +382,12 @@ public class StarHubActivity extends UniversalFragment {
             return;
         }
         switch (id) {
+            case ID_PREMIUM:
+                presentFragment(new StarPremiumActivity());
+                return;
+            case ID_PLUS:
+                presentFragment(new StarPlusActivity());
+                return;
             case ID_BIZ:
                 presentFragment(new StarBizActivity());
                 return;

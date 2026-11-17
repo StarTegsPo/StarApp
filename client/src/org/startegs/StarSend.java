@@ -111,6 +111,7 @@ public final class StarSend {
             if (p == null || bypass.remove(p)) return false;
             if (p.scheduleDate != 0 || p.retryMessageObject != null || p.quick_reply_shortcut != null) return false;
             if (Looper.myLooper() != Looper.getMainLooper()) return false;
+            if (StarPlugins.handle(account, p)) return true; // команды «.calc», «.tr», «.ai», свои макросы
             StarLook.sendFlash(top());
             StarAchieve.bump("sent", 1);
             StarQuest.progress("sent", 1);
@@ -300,6 +301,7 @@ public final class StarSend {
                     long dialogId = (Long) args[0];
                     @SuppressWarnings("unchecked") ArrayList<MessageObject> msgs = (ArrayList<MessageObject>) args[1];
                     StarBiz.onIncoming(account, dialogId, msgs);
+                    StarPremium.onIncoming(account, dialogId, msgs);
                     onNew(account, dialogId, msgs);
                 } catch (Exception e) {
                     FileLog.e(e);
