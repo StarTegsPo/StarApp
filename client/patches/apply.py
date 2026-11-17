@@ -338,7 +338,7 @@ patch(DA,
                 if ((id == SearchViewPager.forwardItemId""",
       """            public void onItemClick(int id) {
                 if (id == org.startegs.StarMod.MENU_HUB) {
-                    DialogsActivity.this.presentFragment(new org.startegs.StarHubActivity());
+                    DialogsActivity.this.presentFragment(new org.startegs.StarSections.Index());
                     return;
                 }
                 if ((id == SearchViewPager.forwardItemId""")
@@ -417,11 +417,11 @@ patch(DA,
             }""")
 patch(DA,
       """                if (id == org.startegs.StarMod.MENU_HUB) {
-                    DialogsActivity.this.presentFragment(new org.startegs.StarHubActivity());
+                    DialogsActivity.this.presentFragment(new org.startegs.StarSections.Index());
                     return;
                 }""",
       """                if (id == org.startegs.StarMod.MENU_HUB) {
-                    DialogsActivity.this.presentFragment(new org.startegs.StarHubActivity());
+                    DialogsActivity.this.presentFragment(new org.startegs.StarSections.Index());
                     return;
                 }
                 if (id == org.startegs.StarMod.MENU_AI) {
@@ -1023,6 +1023,60 @@ patch(CA,
       """                } else if (id == org.startegs.StarMedia.MENU_SAVE_ALL) {
                     org.startegs.StarMedia.saveAll(ChatActivity.this);
                 } else if (id == org.startegs.StarPlus.MENU_FIRST) {""")
+
+print("== 4.3: продуктивность, лента, кошелёк")
+patch(CA,
+      """        if (org.startegs.StarReply.canUse(selectedObject) && chatMode == MODE_DEFAULT) {""",
+      """        if (org.startegs.StarLife.canTodo(selectedObject) && chatMode == MODE_DEFAULT) {
+            items.add("✅ В дела");
+            options.add(org.startegs.StarLife.OPTION_TODO);
+            icons.add(R.drawable.msg_calendar2);
+            items.add(org.startegs.StarLife.laterTitle(currentAccount, selectedObject));
+            options.add(org.startegs.StarLife.OPTION_LATER);
+            icons.add(R.drawable.msg_fave);
+        }
+        if (org.startegs.StarReply.canUse(selectedObject) && chatMode == MODE_DEFAULT) {""")
+patch(CA,
+      """            case org.startegs.StarReply.OPTION_REPLY_FOR_ME: {""",
+      """            case org.startegs.StarLife.OPTION_TODO: {
+                org.startegs.StarLife.addTodo(this, selectedObject);
+                break;
+            }
+            case org.startegs.StarLife.OPTION_LATER: {
+                org.startegs.StarLife.toggleLater(this, selectedObject);
+                break;
+            }
+            case org.startegs.StarReply.OPTION_REPLY_FOR_ME: {""")
+patch(CA,
+      """            headerItem.lazilyAddSubItem(org.startegs.StarMedia.MENU_SAVE_ALL, R.drawable.msg_download, "📥 Скачать все медиа");
+""",
+      """            headerItem.lazilyAddSubItem(org.startegs.StarMedia.MENU_SAVE_ALL, R.drawable.msg_download, "📥 Скачать все медиа");
+            headerItem.lazilyAddSubItem(org.startegs.StarLife.MENU_EVENTS, R.drawable.msg_calendar2, "📅 События из чата (ИИ)");
+            headerItem.lazilyAddSubItem(org.startegs.StarLife.MENU_CAPSULE, R.drawable.msg_mute, "⏳ Капсула времени");
+            headerItem.lazilyAddSubItem(org.startegs.StarLife.MENU_DRAFTS, R.drawable.msg_edit, "📝 Стёртые черновики");
+            if (currentUser != null && !currentUser.bot && !currentUser.self) {
+                headerItem.lazilyAddSubItem(org.startegs.StarFun.MENU_SEND_CRYSTALS, R.drawable.msg_premium_badge, "💎 Перевести кристаллы");
+            }
+""")
+patch(CA,
+      """                } else if (id == org.startegs.StarMedia.MENU_SAVE_ALL) {""",
+      """                } else if (id == org.startegs.StarLife.MENU_EVENTS) {
+                    org.startegs.StarLife.events(ChatActivity.this);
+                } else if (id == org.startegs.StarLife.MENU_CAPSULE) {
+                    org.startegs.StarLife.capsule(ChatActivity.this);
+                } else if (id == org.startegs.StarLife.MENU_DRAFTS) {
+                    org.startegs.StarLife.showDrafts(ChatActivity.this);
+                } else if (id == org.startegs.StarFun.MENU_SEND_CRYSTALS) {
+                    org.startegs.StarFun.sendCrystals(ChatActivity.this);
+                } else if (id == org.startegs.StarMedia.MENU_SAVE_ALL) {""")
+patch(CA,
+      """    public void onResume() {
+        super.onResume();
+        checkShowBlur(false);""",
+      """    public void onResume() {
+        super.onResume();
+        org.startegs.StarLife.attachDraft(this);
+        checkShowBlur(false);""")
 
 print("== отчёт о сбоях")
 patch("TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java",

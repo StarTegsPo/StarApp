@@ -150,6 +150,7 @@ public final class StarExtra {
                 TLRPC.User u = MessagesController.getInstance(m.currentAccount).getUser(from);
                 if (u != null && (u.contact || u.verified || u.id == 777000)) return false; // контакты, официальные и сервисные — не трогаем
             }
+            if (StarGuard.phishing(t)) return true; // поддельные домены Telegram, punycode
             for (Pattern p : SCAM) if (p.matcher(t).find()) return true;
         } catch (Exception e) {
             FileLog.e(e);

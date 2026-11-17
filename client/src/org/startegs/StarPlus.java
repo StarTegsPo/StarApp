@@ -83,6 +83,8 @@ public final class StarPlus {
         StarWhen.init();
         StarShade.init(activity);
         StarTrial.maybeOfferOnLaunch();
+        StarLife.init(activity);
+        StarGuard.init(activity);
     }
 
     /** Секретная клавиатура: просим клавиатуру не запоминать ввод (IME_FLAG_NO_PERSONALIZED_LEARNING). */

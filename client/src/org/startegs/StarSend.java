@@ -114,6 +114,7 @@ public final class StarSend {
             if (p.scheduleDate != 0 || p.retryMessageObject != null || p.quick_reply_shortcut != null) return false;
             if (Looper.myLooper() != Looper.getMainLooper()) return false;
             if (StarPlugins.handle(account, p)) return true; // команды «.calc», «.tr», «.ai», свои макросы
+            if (p.message != null && p.document == null && p.photo == null) StarLife.noteSent(p.message);
             StarLook.sendFlash(top());
             StarAchieve.bump("sent", 1);
             StarQuest.progress("sent", 1);

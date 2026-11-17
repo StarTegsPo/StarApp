@@ -119,7 +119,7 @@ public class StarStyleShop extends UniversalFragment {
                     : t.optBoolean("owned") || t.optInt("price") == 0 ? "применить" : t.optInt("price") + " 💎";
             items.add(UItem.asButton(ID_ITEM + i, title, value));
         }
-        items.add(UItem.asShadow("Купленные темы остаются навсегда. Нажмите на свою или купленную тему, чтобы применить."));
+        items.add(UItem.asShadow("Купленные темы остаются навсегда. Нажмите на свою или купленную тему, чтобы применить. Долгое нажатие — 💎 чаевые автору."));
     }
 
     @Override
@@ -242,6 +242,9 @@ public class StarStyleShop extends UniversalFragment {
 
     @Override
     protected boolean onLongClick(UItem item, View view, int position, float x, float y) {
-        return false;
+        int i = item.id - ID_ITEM;
+        if (i < 0 || i >= themes.size() || themes.get(i).optBoolean("mine")) return false;
+        StarFun.tipTheme(this, themes.get(i).optLong("id"));
+        return true;
     }
 }

@@ -36,10 +36,17 @@ public final class StarSections {
             {"🧩", "Плагины", "команды .calc, .tr, .ai и свои"},
             {"🎨", "Оформление", "магазин, темы, значки, иконки"},
             {"💼", "Бизнес", "кабинет, «Нет на месте», приветствие"},
-            {"🎮", "Друзья и игры", "игры, друзья, достижения, итоги"},
-            {"🚫", "Реклама и каналы", "реклама, админы, прокси"},
+            {"🎉", "Развлечения и друзья", "питомец, гороскоп, колесо, игры, друзья"},
+            {"📢", "Каналы и реклама", "лента каналов, фильтр постов, реклама, прокси"},
             {"⚙️", "Прочее", "резервная копия, очистка, обновления"},
+            {"📚", "Продуктивность", "дела, прочитать позже, капсула, экранное время"},
+            {"🛡", "Безопасность", "устройства, новые входы, аварийный жест, фишинг"},
+            {"💰", "Кошелёк", "баланс 💎, переводы, колесо бонусов, поддержать"},
+            {"🌐", "Сервисы экосистемы", "боты StarTegs: архив, маркет, ИИ, аналитика"},
     };
+
+    /** Порядок разделов на главном экране. */
+    static final int[] ORDER = {0, 1, 2, 3, 4, 5, 6, 7, 14, 11, 16, 9, 12, 15, 8, 10, 17, 13};
 
     private static SharedPreferences prefs() {
         return ApplicationLoader.applicationContext.getSharedPreferences("startegs_mod", Context.MODE_PRIVATE);
@@ -53,13 +60,14 @@ public final class StarSections {
     public static class Index extends UniversalFragment {
         @Override
         protected CharSequence getTitle() {
-            return "⭐ StarTegs — все разделы";
+            return "⭐ StarTegs";
         }
 
         @Override
         protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
+            items.add(UItem.asButton(99, "Тариф: " + StarMod.tierTitle(), StarMod.isPro() ? "" : StarTrial.available() ? "🎁 3 дня бесплатно" : "⭐ Premium").accent());
             items.add(UItem.asHeader("Разделы"));
-            for (int i = 0; i < SECTIONS.length; i++) {
+            for (int i : ORDER) {
                 items.add(UItem.asButton(100 + i, SECTIONS[i][0] + "  " + SECTIONS[i][1], SECTIONS[i][2]));
             }
             items.add(UItem.asShadow("StarTegs " + StarModConfig.MOD_VERSION + ". Тариф: " + StarMod.tierTitle() + ". Функции с ⭐ — Premium."));
@@ -67,6 +75,10 @@ public final class StarSections {
 
         @Override
         protected void onClick(UItem item, View view, int position, float x, float y) {
+            if (item.id == 99) {
+                presentFragment(new Screen(0));
+                return;
+            }
             int i = item.id - 100;
             if (i >= 0 && i < SECTIONS.length) presentFragment(new Screen(i));
         }
@@ -117,6 +129,7 @@ public final class StarSections {
                     if (StarTrial.available()) button(items, 1, "🎁 Premium 3 дня бесплатно");
                     button(items, 2, "⭐ Все Premium-функции");
                     button(items, 3, "Оформить Premium за ⭐ Stars");
+                    button(items, 4, "🧪 Что нового в StarTegs");
                     break;
                 case 1:
                     check(items, 10, pro("Не показывать «печатает…»"), raw("ghost_typing", false));
@@ -212,6 +225,9 @@ public final class StarSections {
                     button(items, 114, "Текст приветствия");
                     break;
                 case 11:
+                    button(items, 150, "🐾 Мой питомец", StarFun.petTitle());
+                    button(items, 151, "🔮 Гороскоп дня", StarFun.sign() >= 0 ? StarFun.SIGNS[StarFun.sign()] : "");
+                    button(items, 152, "🎡 Колесо бонусов", "раз в день");
                     button(items, 120, "🎮 Игры в чате");
                     button(items, 121, "💞 Лучшие друзья и стрики");
                     button(items, 122, "🤫 Анонимные вопросы");
@@ -223,14 +239,72 @@ public final class StarSections {
                     button(items, 128, "💭 Мой статус", StarProfile.statusTitle());
                     break;
                 case 12:
+                    button(items, 160, pro("📰 Лента каналов"));
+                    button(items, 161, pro("🙈 Фильтр постов по словам"), StarGuard.channelWordsCount() > 0 ? String.valueOf(StarGuard.channelWordsCount()) : "");
                     button(items, 130, "🚫 Реклама, админы, каналы, истории, прокси");
+                    items.add(UItem.asShadow("Фильтр скрывает посты каналов со словами из списка (например, «крипта», «ставки») — и в каналах, и в ленте."));
                     break;
-                default:
+                case 13:
                     check(items, 140, "⭐ Кнопка StarTegs над списком чатов", StarMod.showChatsButton());
                     button(items, 141, "💾 Резервная копия настроек");
                     button(items, 142, "📊 Что сохранил мод");
                     button(items, 143, "🔄 Проверить обновления");
+                    button(items, 145, "Старый экран StarTegs (всё одним списком)");
                     items.add(UItem.asButton(144, "Очистить сохранённое модом", "").red());
+                    break;
+                case 14:
+                    button(items, 170, "✅ Мои дела", StarLife.openTodos() > 0 ? String.valueOf(StarLife.openTodos()) : "");
+                    {
+                        org.json.JSONArray t = StarLife.todos();
+                        for (int i = 0; i < t.length() && i < 30; i++) {
+                            org.json.JSONObject o = t.optJSONObject(i);
+                            String due = o.optInt("due") > 0 ? "до " + StarLife.fmt(o.optInt("due")) : "";
+                            items.add(UItem.asCheck(1000 + i, o.optString("t")).setChecked(o.optBoolean("done")));
+                            if (!due.isEmpty()) items.add(UItem.asShadow(due));
+                        }
+                        if (t.length() > 0) button(items, 171, "Убрать выполненные");
+                    }
+                    items.add(UItem.asShadow("Добавить: долгое нажатие на сообщение → «✅ В дела». Напоминание придёт в «Избранное». Долгое нажатие на дело — удалить."));
+                    items.add(UItem.asHeader("📌 Прочитать позже"));
+                    {
+                        org.json.JSONArray l = StarLife.later();
+                        for (int i = 0; i < l.length() && i < 50; i++) {
+                            org.json.JSONObject o = l.optJSONObject(i);
+                            items.add(UItem.asButton(2000 + i, "💬 " + o.optString("c") + "\n" + o.optString("t"), ""));
+                        }
+                        if (l.length() == 0) items.add(UItem.asShadow("Пусто. Долгое нажатие на сообщение или пост → «📌 Прочитать позже»."));
+                        else items.add(UItem.asShadow("Нажмите — открыть, долгое нажатие — убрать."));
+                    }
+                    items.add(UItem.asHeader("⏱ Экранное время"));
+                    button(items, 172, "Сегодня в Telegram: " + StarLife.human(StarLife.secondsOn(System.currentTimeMillis())), "за неделю");
+                    for (int i = 0; i < StarLife.GOALS.length; i++) {
+                        int g = StarLife.GOALS[i];
+                        items.add(UItem.asRadio(180 + i, g == 0 ? "Без цели" : "Цель: не больше " + (g < 60 ? g + " мин" : g / 60 + " ч") + " в день")
+                                .setChecked(StarLife.goal() == g));
+                    }
+                    items.add(UItem.asShadow("Меню ⋮ в чате: «📅 События из чата (ИИ)» ⭐, «⏳ Капсула времени», «📝 Стёртые черновики». Фокус-режим — в разделе «Чаты»."));
+                    break;
+                case 15:
+                    button(items, 190, "🛡 Устройства аккаунта");
+                    check(items, 191, "Предупреждать о новом входе", StarGuard.loginAlerts());
+                    check(items, 192, pro("📳 Аварийный жест: встряхнуть — закрыть StarTegs"), raw("guard_shake", false));
+                    check(items, 193, "⚠️ Метка на подозрительных сообщениях и ссылках", StarExtra.guardEnabled());
+                    items.add(UItem.asShadow("Аварийный жест: встряхните телефон 3 раза — StarTegs закроется на код-пароль Telegram (если он включён) и уйдёт с экрана. "
+                            + "Фишинг: ссылки на поддельные домены Telegram и ссылки вида xn-- помечаются ⚠️. Тревожный код и шторка — в «Двойном дне»."));
+                    break;
+                case 16:
+                    button(items, 200, "💰 Баланс и пополнение");
+                    button(items, 152, "🎡 Колесо бонусов", "раз в день");
+                    button(items, 201, "🫶 Поддержать StarTegs — значок навсегда");
+                    items.add(UItem.asShadow("Перевести 💎 другу: чат с ним → ⋮ → «💎 Перевести кристаллы». Чаевые автору темы: магазин тем → долгое нажатие на тему. Нужен бот v62."));
+                    break;
+                default:
+                    if (StarModConfig.SERVICES.length == 0) items.add(UItem.asShadow("Сервисы не настроены в startegs.properties."));
+                    for (int i = 0; i < StarModConfig.SERVICES.length; i++) {
+                        String[] sv = StarModConfig.SERVICES[i];
+                        if (sv[2].isEmpty()) continue;
+                        items.add(UItem.asButton(3000 + i, sv[0], sv[1]));
+                    }
             }
         }
 
@@ -245,10 +319,30 @@ public final class StarSections {
                 refresh.run();
                 return;
             }
+            if (id >= 1000 && id < 1100) {
+                StarLife.toggleTodo(id - 1000);
+                refresh.run();
+                return;
+            }
+            if (id >= 2000 && id < 2100) {
+                org.json.JSONObject o = StarLife.later().optJSONObject(id - 2000);
+                if (o != null) StarLife.openMessage(this, o.optLong("d"), o.optInt("m"));
+                return;
+            }
+            if (id >= 3000 && id < 3100) {
+                StarMod.openService(this, id - 3000);
+                return;
+            }
+            if (id >= 180 && id < 180 + StarLife.GOALS.length) {
+                StarLife.setGoal(StarLife.GOALS[id - 180]);
+                refresh.run();
+                return;
+            }
             switch (id) {
                 case 1: StarTrial.offer(this, refresh); return;
                 case 2: presentFragment(new StarPremiumActivity()); return;
                 case 3: org.telegram.messenger.browser.Browser.openUrl(getParentActivity(), "https://t.me/" + StarModConfig.ECO_BOT + "?start=premium"); return;
+                case 4: presentFragment(new StarPlusActivity()); return;
                 case 10: StarMod.toggle("ghost_typing", false); break;
                 case 11: StarMod.toggle("ghost_read", false); break;
                 case 12: StarMod.toggle("ghost_online", false); break;
@@ -330,6 +424,26 @@ public final class StarSections {
                 case 142: StarMod.showStats(this); return;
                 case 143: StarMod.checkUpdate(this, true); return;
                 case 144: StarMod.confirmClear(this); return;
+                case 145: presentFragment(new StarHubActivity()); return;
+                case 150: StarFun.pet(this, refresh); return;
+                case 151: StarFun.horoscope(this); return;
+                case 152: StarFun.spin(this, refresh); return;
+                case 160: presentFragment(new StarFeedActivity()); return;
+                case 161: if (StarMod.requirePro(this, "Фильтр постов каналов")) StarGuard.editChannelWords(this, refresh); return;
+                case 171: StarLife.clearDone(); break;
+                case 172:
+                    if (getParentActivity() != null) new AlertDialog.Builder(getParentActivity()).setTitle("⏱ Экранное время").setMessage(StarLife.weekReport()).setPositiveButton("OK", null).show();
+                    return;
+                case 190: StarGuard.showDevices(this); return;
+                case 191: StarMod.toggle("guard_logins", true); break;
+                case 192:
+                    if (!StarMod.requirePro(this, "Аварийный жест")) return;
+                    StarMod.toggle("guard_shake", false);
+                    StarGuard.update();
+                    break;
+                case 193: StarMod.toggle("scam_guard", true); break;
+                case 200: StarFun.balance(this); return;
+                case 201: StarFun.donate(this); return;
                 default: return;
             }
             refresh.run();
@@ -337,7 +451,15 @@ public final class StarSections {
 
         @Override
         protected boolean onLongClick(UItem item, View view, int position, float x, float y) {
-            return false;
+            if (item.id >= 1000 && item.id < 1100) {
+                StarLife.removeAt("life_todos", item.id - 1000);
+            } else if (item.id >= 2000 && item.id < 2100) {
+                StarLife.removeAt("life_later", item.id - 2000);
+            } else {
+                return false;
+            }
+            if (listView != null) listView.adapter.update(true);
+            return true;
         }
     }
 }

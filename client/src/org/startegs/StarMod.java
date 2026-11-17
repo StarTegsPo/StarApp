@@ -401,18 +401,10 @@ public final class StarMod {
     /** Добавляет раздел в начало экрана настроек (вызывается из SettingsActivity.fillItems). */
     public static void fillSettings(BaseFragment fragment, ArrayList<UItem> items) {
         checkUpdate(fragment, false);
+        if (StarPrivacy.decoy()) return;
         items.add(UItem.asHeader("⭐ StarTegs"));
-        for (int i = 0; i < StarModConfig.SERVICES.length; i++) {
-            String[] s = StarModConfig.SERVICES[i];
-            if (TextUtils.isEmpty(s[2])) continue; // бот не указан в startegs.properties
-            items.add(SettingsActivity.SettingCell.Factory.of(ID_BASE + i, color(s[3]), color(s[4]), iconFor(s[5]), s[0], s[1]));
-        }
-        if (!StarPrivacy.decoy()) items.add(SettingsActivity.SettingCell.Factory.of(ID_HUB, 0xFF9B6BFF, 0xFF5A7BFF, R.drawable.settings_features,
-                "Оформление и настройки StarTegs", updateAvailable() ? "🔔 Доступна новая версия" : StarTheme.isActive() ? "Фирменный дизайн включён" : "Дизайн, приватность, сохранение сообщений"));
-        if (!StarPrivacy.decoy()) items.add(SettingsActivity.SettingCell.Factory.of(ID_SECTIONS, 0xFF33A6FF, 0xFF5A7BFF, R.drawable.settings_features,
-                "Все разделы StarTegs", "Приватность, чаты, отправка, медиа, ИИ и ещё 9"));
-        if (!StarPrivacy.decoy()) items.add(SettingsActivity.SettingCell.Factory.of(ID_ADS_SETTINGS, 0xFFFF6B6B, 0xFFE0475B, R.drawable.settings_features,
-                "Реклама, каналы, прокси", "Скрытие рекламы, админы, прокси, истории"));
+        items.add(SettingsActivity.SettingCell.Factory.of(ID_SECTIONS, 0xFF9B6BFF, 0xFF5A7BFF, R.drawable.settings_features,
+                "StarTegs " + StarModConfig.MOD_VERSION, updateAvailable() ? "🔔 Доступна новая версия" : "Все функции, сервисы и настройки мода"));
         items.add(UItem.asShadow(null));
     }
 
@@ -792,6 +784,7 @@ public final class StarMod {
         try {
             if (m == null || m.messageOwner == null) return false;
             if (StarAds.shouldHideMessage(m)) return true; // реклама (этап 1)
+            if (StarGuard.channelFiltered(m)) return true; // стоп-слова в каналах (4.3)
             if (!filterEnabled() || m.messageOwner.out) return false;
             if (m.type != MessageObject.TYPE_TEXT) return false;
             if (!users().isEmpty() && users().contains(m.getFromChatId())) return true;
