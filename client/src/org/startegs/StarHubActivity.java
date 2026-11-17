@@ -107,6 +107,7 @@ public class StarHubActivity extends UniversalFragment {
     private static final int ID_PLUS = 2301;
     private static final int ID_SEARCH = 2302;
     private static final int ID_TRIAL = 2303;
+    private static final int ID_SECTIONS = 2304;
     private static final int ID_STATS = 600;
     private static final int ID_CLEAR = 601;
 
@@ -142,7 +143,8 @@ public class StarHubActivity extends UniversalFragment {
                 }
             })));
         }
-        items.add(UItem.asButton(ID_PREMIUM, R.drawable.msg_premium_badge, "⭐ Premium-функции", "4.0").accent());
+        items.add(UItem.asButton(ID_SECTIONS, R.drawable.msg_list, "📂 Все разделы", String.valueOf(StarSections.SECTIONS.length)).accent());
+        items.add(UItem.asButton(ID_PREMIUM, R.drawable.msg_premium_badge, "⭐ Premium-функции"));
         if (StarTrial.available()) items.add(UItem.asButton(ID_TRIAL, R.drawable.msg_fave, "🎁 Premium 3 дня бесплатно").accent());
         items.add(UItem.asButton(ID_PLUS, R.drawable.msg_fave, "🧪 Новое: «Ответь за меня», поиск по смыслу, темы", "4.1"));
         items.add(UItem.asButton(ID_SEARCH, R.drawable.msg_search, "🔎 Поиск по смыслу во всех чатах"));
@@ -394,6 +396,9 @@ public class StarHubActivity extends UniversalFragment {
                 return;
             case ID_SEARCH:
                 presentFragment(new StarSearchActivity());
+                return;
+            case ID_SECTIONS:
+                presentFragment(new StarSections.Index());
                 return;
             case ID_TRIAL:
                 StarTrial.offer(this, () -> { if (listView != null) listView.adapter.update(true); });

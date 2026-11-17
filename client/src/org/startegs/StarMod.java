@@ -396,6 +396,7 @@ public final class StarMod {
     private static final int ID_BASE = 9100;
     private static final int ID_HUB = ID_BASE + 99;
     private static final int ID_ADS_SETTINGS = ID_BASE + 90;
+    private static final int ID_SECTIONS = ID_BASE + 91;
 
     /** Добавляет раздел в начало экрана настроек (вызывается из SettingsActivity.fillItems). */
     public static void fillSettings(BaseFragment fragment, ArrayList<UItem> items) {
@@ -408,6 +409,8 @@ public final class StarMod {
         }
         if (!StarPrivacy.decoy()) items.add(SettingsActivity.SettingCell.Factory.of(ID_HUB, 0xFF9B6BFF, 0xFF5A7BFF, R.drawable.settings_features,
                 "Оформление и настройки StarTegs", updateAvailable() ? "🔔 Доступна новая версия" : StarTheme.isActive() ? "Фирменный дизайн включён" : "Дизайн, приватность, сохранение сообщений"));
+        if (!StarPrivacy.decoy()) items.add(SettingsActivity.SettingCell.Factory.of(ID_SECTIONS, 0xFF33A6FF, 0xFF5A7BFF, R.drawable.settings_features,
+                "Все разделы StarTegs", "Приватность, чаты, отправка, медиа, ИИ и ещё 9"));
         if (!StarPrivacy.decoy()) items.add(SettingsActivity.SettingCell.Factory.of(ID_ADS_SETTINGS, 0xFFFF6B6B, 0xFFE0475B, R.drawable.settings_features,
                 "Реклама, каналы, прокси", "Скрытие рекламы, админы, прокси, истории"));
         items.add(UItem.asShadow(null));
@@ -432,6 +435,10 @@ public final class StarMod {
     public static boolean onSettingsClick(BaseFragment fragment, int id, Runnable refresh) {
         if (id == ID_HUB) {
             fragment.presentFragment(new StarHubActivity());
+            return true;
+        }
+        if (id == ID_SECTIONS) {
+            fragment.presentFragment(new StarSections.Index());
             return true;
         }
         if (id == ID_ADS_SETTINGS) {

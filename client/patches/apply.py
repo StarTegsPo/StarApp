@@ -995,6 +995,35 @@ patch("TMessagesProj/src/main/java/org/telegram/ui/Components/ChatActivityEnterV
       """        if (isKeyboardSupportIncognitoMode() && encryptedChat != null) {""",
       """        if (isKeyboardSupportIncognitoMode() && (encryptedChat != null || org.startegs.StarPlus.incognitoKeyboard())) {""")
 
+print("== 4.2: разделы, медиа, отправка")
+patch(CELL,
+      """    protected boolean checkNeedDrawShareButton(MessageObject messageObject) {
+        if (isReportChat) return false;""",
+      """    protected boolean checkNeedDrawShareButton(MessageObject messageObject) {
+        if (isReportChat || org.startegs.StarMedia.hideShareButton()) return false;""")
+ICV = "TMessagesProj/src/main/java/org/telegram/ui/Components/InstantCameraView.java"
+patch(ICV,
+      """    private boolean isFrontface = true;""",
+      """    private boolean isFrontface = org.startegs.StarMedia.roundFront();""")
+patch(ICV,
+      """            if (!useCamera2) {
+                isFrontface = true;
+            }""",
+      """            if (!useCamera2) {
+                isFrontface = org.startegs.StarMedia.roundFront();
+            }""")
+patch(CA,
+      """            headerItem.lazilyAddSubItem(org.startegs.StarPlus.MENU_FIRST, R.drawable.msg_go_up, "⬆️ К первому сообщению");
+""",
+      """            headerItem.lazilyAddSubItem(org.startegs.StarPlus.MENU_FIRST, R.drawable.msg_go_up, "⬆️ К первому сообщению");
+            headerItem.lazilyAddSubItem(org.startegs.StarMedia.MENU_SAVE_ALL, R.drawable.msg_download, "📥 Скачать все медиа");
+""")
+patch(CA,
+      """                } else if (id == org.startegs.StarPlus.MENU_FIRST) {""",
+      """                } else if (id == org.startegs.StarMedia.MENU_SAVE_ALL) {
+                    org.startegs.StarMedia.saveAll(ChatActivity.this);
+                } else if (id == org.startegs.StarPlus.MENU_FIRST) {""")
+
 print("== отчёт о сбоях")
 patch("TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java",
       """        try {

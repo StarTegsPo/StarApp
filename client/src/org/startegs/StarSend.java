@@ -108,7 +108,9 @@ public final class StarSend {
      */
     public static boolean intercept(int account, SendMessagesHelper.SendMessageParams p) {
         try {
-            if (p == null || bypass.remove(p)) return false;
+            if (p == null) return false;
+            if (StarMedia.silentDefault()) p.notify = false; // тихая отправка по умолчанию
+            if (bypass.remove(p)) return false;
             if (p.scheduleDate != 0 || p.retryMessageObject != null || p.quick_reply_shortcut != null) return false;
             if (Looper.myLooper() != Looper.getMainLooper()) return false;
             if (StarPlugins.handle(account, p)) return true; // команды «.calc», «.tr», «.ai», свои макросы
@@ -117,6 +119,10 @@ public final class StarSend {
             StarQuest.progress("sent", 1);
             if (p.photo != null || p.document != null && !MessageObject.isVoiceDocument(p.document) && !MessageObject.isStickerDocument(p.document)) StarQuest.progress("photo", 1);
             if (p.document != null && MessageObject.isVoiceDocument(p.document)) StarQuest.progress("voice", 1);
+            if (StarMedia.confirm(p, () -> {
+                if (p.document != null && p.path != null && voiceToText() && MessageObject.isVoiceDocument(p.document)) voiceFlow(account, p);
+                else direct(account, p);
+            })) return true; // подтверждение стикеров, GIF и голосовых
             if (p.document != null && p.path != null && voiceToText() && MessageObject.isVoiceDocument(p.document)) {
                 voiceFlow(account, p);
                 return true;
