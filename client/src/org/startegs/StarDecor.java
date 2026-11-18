@@ -295,7 +295,9 @@ public final class StarDecor {
                 tp.setTextSize(q[3]);
                 canvas.drawText(set[i % set.length], q[0], q[1], tp);
             }
-            postInvalidateOnAnimation();
+            // 30 кадров в секунду вместо 60 и полная пауза при энергосбережении или когда фон не виден
+            if (isShown() && StarPro.anim(org.telegram.messenger.LiteMode.FLAG_PARTICLES)) postInvalidateDelayed(33);
+            else last = 0;
         }
     }
 

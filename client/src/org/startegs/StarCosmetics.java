@@ -242,10 +242,12 @@ public final class StarCosmetics {
             if (f == null || f.isEmpty()) return;
             ring.setStyle(Paint.Style.STROKE);
             ring.setStrokeWidth(AndroidUtilities.dp(2.6f));
-            SweepGradient sweep = new SweepGradient(cx, cy, colors(f), null);
-            if (f.equals("fr_pulse") || f.equals("fr_spin") || f.equals("fr_flame")) { // анимированные рамки (4.5)
+            SweepGradient sweep = sweepFor(f, cx, cy);
+            boolean animated = (f.equals("fr_pulse") || f.equals("fr_spin") || f.equals("fr_flame"))
+                    && StarPro.anim(org.telegram.messenger.LiteMode.FLAG_ANIMATED_EMOJI_CHAT);
+            if (animated) { // анимированные рамки (4.5); при энергосбережении — неподвижные
                 long t = System.currentTimeMillis();
-                android.graphics.Matrix mx = new android.graphics.Matrix();
+                android.graphics.Matrix mx = FRAME_MATRIX;
                 mx.setRotate((t / (f.equals("fr_spin") ? 6f : 18f)) % 360f, cx, cy);
                 sweep.setLocalMatrix(mx);
                 if (f.equals("fr_pulse")) {
@@ -254,7 +256,9 @@ public final class StarCosmetics {
                     r += AndroidUtilities.dp(1.5f) * k;
                 }
                 if (f.equals("fr_flame")) ring.setStrokeWidth(AndroidUtilities.dp(2.6f + 1.2f * (float) Math.abs(Math.sin(t / 130.0))));
-                if (cell != null) cell.postInvalidateDelayed(40);
+                if (cell != null) cell.postInvalidateDelayed(50);
+            } else {
+                sweep.setLocalMatrix(null);
             }
             ring.setShader(sweep);
             int shape = StarMod.avatarShape();
@@ -276,13 +280,28 @@ public final class StarCosmetics {
 
     private static final Paint badgeBg = new Paint(Paint.ANTI_ALIAS_FLAG);
 
+    // Градиент рамки создаётся один раз на рамку и позицию, а не при каждой перерисовке каждой ячейки (4.6)
+    private static final android.graphics.Matrix FRAME_MATRIX = new android.graphics.Matrix();
+    private static final java.util.HashMap<String, SweepGradient> SWEEPS = new java.util.HashMap<>();
+
+    private static SweepGradient sweepFor(String f, float cx, float cy) {
+        String k = f + ':' + (int) cx + ':' + (int) cy;
+        SweepGradient g = SWEEPS.get(k);
+        if (g == null) {
+            if (SWEEPS.size() > 96) SWEEPS.clear();
+            g = new SweepGradient(cx, cy, colors(f), null);
+            SWEEPS.put(k, g);
+        }
+        return g;
+    }
+
     /** Статус друга или его эмодзи (пульсирует, когда он в сети) — в правом нижнем углу аватарки. */
     private static void drawBadge(Canvas canvas, long uid, float cx, float cy, float r, View cell) {
         boolean[] pulse = {false};
         String b = StarProfile.badge(uid, pulse);
         if (b == null || b.isEmpty()) return;
         float s = 1f;
-        if (pulse[0]) {
+        if (pulse[0] && StarPro.anim(org.telegram.messenger.LiteMode.FLAG_ANIMATED_EMOJI_CHAT)) {
             s = 1f + 0.14f * (float) Math.sin(System.currentTimeMillis() / 180.0);
             if (cell != null) cell.postInvalidateDelayed(60);
         }

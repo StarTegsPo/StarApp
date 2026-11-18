@@ -1126,6 +1126,38 @@ patch(CA,
                     org.startegs.StarDecor.chooseEmojiAvatar(ChatActivity.this);
                 } else if (id == org.startegs.StarStyle.MENU_FONT) {""")
 
+print("== 4.6: удобства из популярных модов")
+patch("TMessagesProj/src/main/java/org/telegram/ui/Components/voip/VoIPHelper.java",
+      """	public static void startCall(TLRPC.User user, boolean videoCall, boolean canVideoCall, final Activity activity, TLRPC.UserFull userFull, AccountInstance accountInstance) {
+""",
+      """	public static void startCall(TLRPC.User user, boolean videoCall, boolean canVideoCall, final Activity activity, TLRPC.UserFull userFull, AccountInstance accountInstance) {
+		if (org.startegs.StarPro.askBeforeCall(user, videoCall, canVideoCall, activity, userFull, accountInstance)) return;
+""")
+patch(CA,
+      """if (allowPullingDownScroll && dy > 0 && scrolled == 0 &&""",
+      """if (allowPullingDownScroll && !org.startegs.StarPro.noNextChannel() && dy > 0 && scrolled == 0 &&""")
+patch(CA,
+      """                    } else if (newState == RecyclerView.SCROLL_STATE_DRAGGING) {
+                        pollHintCell = null;""",
+      """                    } else if (newState == RecyclerView.SCROLL_STATE_DRAGGING) {
+                        org.startegs.StarPro.onChatDrag(ChatActivity.this);
+                        pollHintCell = null;""")
+patch(CA,
+      """        if (org.startegs.StarLife.canTodo(selectedObject) && chatMode == MODE_DEFAULT) {""",
+      """        if (org.startegs.StarPro.canDetails(selectedObject)) {
+            items.add("🔍 Подробности");
+            options.add(org.startegs.StarPro.OPTION_DETAILS);
+            icons.add(R.drawable.msg_info);
+        }
+        if (org.startegs.StarLife.canTodo(selectedObject) && chatMode == MODE_DEFAULT) {""")
+patch(CA,
+      """            case org.startegs.StarStyle.OPTION_CARD: {""",
+      """            case org.startegs.StarPro.OPTION_DETAILS: {
+                org.startegs.StarPro.details(this, selectedObject);
+                break;
+            }
+            case org.startegs.StarStyle.OPTION_CARD: {""")
+
 print("== отчёт о сбоях")
 patch("TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java",
       """        try {

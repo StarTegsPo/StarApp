@@ -47,6 +47,7 @@ public final class StarSections {
             {"✨", "Стиль и крутость", "красивый шрифт, имя, «О себе», скрины"},
             {"⚙️", "Ещё", "Premium, плагины, бизнес, сервисы, прочее"},
             {"🎨", "Дизайн", "конструктор темы, фон чата, кнопка, звуки, стиль для друзей"},
+            {"🧰", "Удобство", "папки по типам, клавиатура, звонки, подробности, батарея"},
     };
 
     /** Порядок разделов на главном экране. */
@@ -68,7 +69,7 @@ public final class StarSections {
         prefs().edit().putBoolean("ghost_typing", on).putBoolean("ghost_read", on).putBoolean("ghost_online", on).putBoolean("ghost_stories", on).apply();
     }
 
-    static final int[][] GROUPS = {{20, 18, 9, 11, 16}, {3, 4, 5, 7}, {1, 2, 15}, {14, 6, 12}, {19}};
+    static final int[][] GROUPS = {{20, 18, 9, 11, 16}, {3, 21, 4, 5, 7}, {1, 2, 15}, {14, 6, 12}, {19}};
     static final String[] GROUP_TITLES = {"🔥 Стиль и развлечения", "💬 Общение", "🔒 Приватность", "📚 Полезное", ""};
 
     /** Главный экран StarTegs. */
@@ -107,6 +108,7 @@ public final class StarSections {
                     }
                 })));
             }
+            items.add(UItem.asButton(905, R.drawable.msg_search, "🔎 Поиск по настройкам StarTegs"));
             if (!StarMod.isPro()) {
                 items.add(UItem.asButton(99, R.drawable.msg_premium_badge, StarTrial.available() ? "🎁 Premium на 3 дня — бесплатно" : "⭐ Открыть всё с Premium").accent());
             }
@@ -148,9 +150,92 @@ public final class StarSections {
                 case 904:
                     StarStyle.chooseAuto(this, this::refresh);
                     return;
+                case 905:
+                    presentFragment(new Search());
+                    return;
             }
             int i = item.id - 100;
             if (i >= 0 && i < SECTIONS.length) presentFragment(new Screen(i));
+        }
+
+        @Override
+        protected boolean onLongClick(UItem item, View view, int position, float x, float y) {
+            return false;
+        }
+    }
+
+    /** Поиск по всем настройкам StarTegs. */
+    public static class Search extends UniversalFragment {
+        private String query = "";
+        private final ArrayList<Object[]> index = new ArrayList<>(); // {раздел, текст}
+
+        @Override
+        protected CharSequence getTitle() {
+            return "🔎 Поиск";
+        }
+
+        @Override
+        public android.view.View createView(Context context) {
+            android.view.View v = super.createView(context);
+            org.telegram.ui.ActionBar.ActionBarMenuItem s = actionBar.createMenu().addItem(0, R.drawable.outline_header_search).setIsSearchField(true)
+                    .setActionBarMenuItemSearchListener(new org.telegram.ui.ActionBar.ActionBarMenuItem.ActionBarMenuItemSearchListener() {
+                        @Override
+                        public void onTextChanged(android.widget.EditText e) {
+                            query = e.getText().toString().trim().toLowerCase();
+                            if (listView != null) listView.adapter.update(true);
+                        }
+
+                        @Override
+                        public void onSearchCollapse() {
+                            finishFragment();
+                        }
+                    });
+            s.setSearchFieldHint("Например: призрак, шрифт, папки");
+            org.telegram.messenger.AndroidUtilities.runOnUIThread(() -> s.openSearch(true), 300);
+            return v;
+        }
+
+        private void build() {
+            if (!index.isEmpty()) return;
+            for (int sec = 0; sec < SECTIONS.length; sec++) {
+                if (sec == 19 || sec == 17) continue;
+                index.add(new Object[]{sec, SECTIONS[sec][1] + " " + SECTIONS[sec][2]});
+                ArrayList<UItem> tmp = new ArrayList<>();
+                try {
+                    new Screen(sec).fillItems(tmp, null);
+                } catch (Throwable ignore) {
+                }
+                for (UItem it : tmp) {
+                    if (it.text == null || it.viewType == UniversalAdapter.VIEW_TYPE_SHADOW) continue;
+                    String t = it.text.toString().replace("  ⭐", "").trim();
+                    if (t.length() > 1 && t.length() < 120) index.add(new Object[]{sec, t});
+                }
+            }
+        }
+
+        @Override
+        protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
+            build();
+            if (query.length() < 2) {
+                items.add(UItem.asShadow("Введите хотя бы 2 буквы — найдём настройку в любом разделе StarTegs."));
+                return;
+            }
+            int n = 0;
+            for (int k = 0; k < index.size() && n < 60; k++) {
+                Object[] e = index.get(k);
+                String t = (String) e[1];
+                if (!t.toLowerCase().contains(query)) continue;
+                int sec = (Integer) e[0];
+                items.add(UItem.asButton(10000 + k, t, SECTIONS[sec][0] + " " + SECTIONS[sec][1]));
+                n++;
+            }
+            if (n == 0) items.add(UItem.asShadow("Ничего не нашлось. Попробуйте другое слово."));
+        }
+
+        @Override
+        protected void onClick(UItem item, View view, int position, float x, float y) {
+            int k = item.id - 10000;
+            if (k >= 0 && k < index.size()) presentFragment(new Screen((Integer) index.get(k)[0]));
         }
 
         @Override
@@ -422,6 +507,17 @@ public final class StarSections {
                             + "Цвет чата для двоих и обои для отдельного чата уже есть в самом Telegram: меню ⋮ в чате → «Изменить цвета» / «Обои». "
                             + "Ночная тема по расписанию — Настройки → Оформление → Ночная тема."));
                     break;
+                case 21:
+                    button(items, 300, "📂 Папки по типам чатов", "в один тап");
+                    items.add(UItem.asShadow("Личные, группы, каналы, боты и непрочитанные — настоящие папки Telegram, работают на всех устройствах."));
+                    check(items, 301, "⌨️ Прятать клавиатуру при прокрутке чата", StarPro.hideKeyboardOnScroll());
+                    check(items, 302, "⛔ Не переходить к следующему каналу свайпом", StarPro.noNextChannel());
+                    check(items, 303, "📞 Спрашивать перед звонком", StarPro.confirmCalls());
+                    check(items, 304, "🔍 «Подробности» в меню сообщения", StarPro.detailsOn());
+                    items.add(UItem.asShadow("«Подробности»: ID, точное время с секундами, кто переслал, размер файла и дата-центр. Долгое нажатие на сообщение."));
+                    check(items, 305, "🔋 Экономия батареи для анимаций StarTegs", StarPro.batterySaver());
+                    items.add(UItem.asShadow("Если включено, рамки, частицы и эмодзи-дождь замирают, когда в Telegram включено энергосбережение (Настройки → Энергосбережение)."));
+                    break;
                 case 19:
                     for (int k : new int[]{0, 8, 10, 17, 13}) items.add(UItem.asButton(5000 + k, SECTIONS[k][0] + "  " + SECTIONS[k][1], SECTIONS[k][2]));
                     break;
@@ -615,6 +711,12 @@ public final class StarSections {
                     StarGuard.update();
                     break;
                 case 193: StarMod.toggle("scam_guard", true); break;
+                case 300: StarPro.autoFolders(this, refresh); return;
+                case 301: StarPro.toggle("pro_kb_scroll", false); break;
+                case 302: StarPro.toggle("pro_no_next", false); break;
+                case 303: StarPro.toggle("pro_confirm_call", false); break;
+                case 304: StarPro.toggle("pro_details", true); break;
+                case 305: StarPro.toggle("pro_battery", true); break;
                 case 200: StarFun.balance(this); return;
                 case 201: StarFun.donate(this); return;
                 default: return;

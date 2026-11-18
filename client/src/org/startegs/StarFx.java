@@ -39,6 +39,7 @@ final class StarFx {
 
     static void play(BaseFragment f, String id) {
         try {
+            if (!StarPro.anim(org.telegram.messenger.LiteMode.FLAG_PARTICLES)) return; // энергосбережение
             Object[] sp = spec(id);
             if (sp == null || !(f instanceof ChatActivity) || !(f.getFragmentView() instanceof ViewGroup)) return;
             ViewGroup root = (ViewGroup) f.getFragmentView();
