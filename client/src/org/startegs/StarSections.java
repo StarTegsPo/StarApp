@@ -47,7 +47,7 @@ public final class StarSections {
             {"✨", "Стиль и крутость", "красивый шрифт, имя, «О себе», скрины"},
             {"⚙️", "Ещё", "Premium, плагины, бизнес, сервисы, прочее"},
             {"🎨", "Дизайн", "конструктор темы, фон чата, кнопка, звуки, стиль для друзей"},
-            {"🧰", "Удобство", "папки по типам, клавиатура, звонки, подробности, батарея"},
+            {"🧰", "Удобство", "папки, тихие часы, ключевые слова, стример, чистые ссылки"},
     };
 
     /** Порядок разделов на главном экране. */
@@ -517,6 +517,18 @@ public final class StarSections {
                     items.add(UItem.asShadow("«Подробности»: ID, точное время с секундами, кто переслал, размер файла и дата-центр. Долгое нажатие на сообщение."));
                     check(items, 305, "🔋 Экономия батареи для анимаций StarTegs", StarPro.batterySaver());
                     items.add(UItem.asShadow("Если включено, рамки, частицы и эмодзи-дождь замирают, когда в Telegram включено энергосбережение (Настройки → Энергосбережение)."));
+                    items.add(UItem.asHeader("Уведомления"));
+                    check(items, 306, "🌙 Тихие часы: без звука и вибрации", StarX.quietOn());
+                    button(items, 307, "Время тишины", StarX.quietTitle());
+                    check(items, 308, "🔔 Уведомлять о ключевых словах", StarX.keywordsOn());
+                    button(items, 309, "Слова", StarX.keywordsCount() > 0 ? String.valueOf(StarX.keywordsCount()) : "");
+                    items.add(UItem.asShadow("Ключевые слова: если в заглушённой группе напишут твоё имя или слово из списка, придёт отдельное уведомление. Видишь только ты."));
+                    items.add(UItem.asHeader("Приватность и полезное"));
+                    check(items, 310, "🧹 Чистые ссылки: убирать utm, fbclid, si=", StarX.cleanLinksOn());
+                    check(items, 311, "🎥 Режим стримера: скрыть номер телефона", StarX.streamer());
+                    button(items, 312, "😴 Таймер сна для музыки", StarX.sleepTitle());
+                    items.add(UItem.asShadow("Режим стримера прячет цифры номера в настройках и профилях — можно спокойно делать скрины и стримы. "
+                            + "В чате, меню ⋮: «⌨️ Исправить раскладку» (ghbdtn → привет) и «📄 Сохранить переписку в файл»."));
                     break;
                 case 19:
                     for (int k : new int[]{0, 8, 10, 17, 13}) items.add(UItem.asButton(5000 + k, SECTIONS[k][0] + "  " + SECTIONS[k][1], SECTIONS[k][2]));
@@ -717,6 +729,19 @@ public final class StarSections {
                 case 303: StarPro.toggle("pro_confirm_call", false); break;
                 case 304: StarPro.toggle("pro_details", true); break;
                 case 305: StarPro.toggle("pro_battery", true); break;
+                case 306: StarX.toggle("x_quiet", false); break;
+                case 307: StarX.chooseQuiet(this, refresh); return;
+                case 308:
+                    if (!StarX.keywordsOn() && StarX.keywordsCount() == 0) {
+                        StarX.editKeywords(this, refresh);
+                        return;
+                    }
+                    StarX.toggle("x_kw", false);
+                    break;
+                case 309: StarX.editKeywords(this, refresh); return;
+                case 310: StarX.toggle("x_clean_links", true); break;
+                case 311: StarX.toggle("x_streamer", false); break;
+                case 312: StarX.chooseSleep(this, refresh); return;
                 case 200: StarFun.balance(this); return;
                 case 201: StarFun.donate(this); return;
                 default: return;

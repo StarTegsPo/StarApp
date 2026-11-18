@@ -1158,6 +1158,44 @@ patch(CA,
             }
             case org.startegs.StarStyle.OPTION_CARD: {""")
 
+print("== 4.7: ещё удобства")
+patch("TMessagesProj/src/main/java/org/telegram/messenger/NotificationsController.java",
+      """            if (notifyDisabled) {
+                vibrate = 0;
+                importance = 0;""",
+      """            if (!notifyDisabled && org.startegs.StarX.quietNow()) {
+                notifyDisabled = true; // тихие часы StarTegs
+            }
+            if (notifyDisabled) {
+                vibrate = 0;
+                importance = 0;""")
+patch("TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java",
+      """            sb.append(PhoneFormat.getInstance().format("+" + user.phone));""",
+      """            sb.append(org.startegs.StarX.phone(PhoneFormat.getInstance().format("+" + user.phone)));""")
+patch(PA,
+      """                            text = PhoneFormat.getInstance().format("+" + user.phone);""",
+      """                            text = org.startegs.StarX.phone(PhoneFormat.getInstance().format("+" + user.phone));""")
+patch(PA,
+      """                            value = PhoneFormat.getInstance().format("+" + user.phone);""",
+      """                            value = org.startegs.StarX.phone(PhoneFormat.getInstance().format("+" + user.phone));""")
+patch(PA,
+      """                    nameTextView[a].setText(PhoneFormat.getInstance().format("+" + user.phone));""",
+      """                    nameTextView[a].setText(org.startegs.StarX.phone(PhoneFormat.getInstance().format("+" + user.phone)));""")
+patch(CA,
+      """            headerItem.lazilyAddSubItem(org.startegs.StarDecor.MENU_EMOJI_AVATAR, R.drawable.msg_emoji_cat, "😀 Эмодзи-аватарка");
+""",
+      """            headerItem.lazilyAddSubItem(org.startegs.StarDecor.MENU_EMOJI_AVATAR, R.drawable.msg_emoji_cat, "😀 Эмодзи-аватарка");
+            headerItem.lazilyAddSubItem(org.startegs.StarX.MENU_FIX_LAYOUT, R.drawable.msg_edit, "⌨️ Исправить раскладку");
+            headerItem.lazilyAddSubItem(org.startegs.StarX.MENU_EXPORT_TXT, R.drawable.msg_download, "📄 Сохранить переписку в файл");
+""")
+patch(CA,
+      """                } else if (id == org.startegs.StarDecor.MENU_EMOJI_AVATAR) {""",
+      """                } else if (id == org.startegs.StarX.MENU_FIX_LAYOUT) {
+                    org.startegs.StarX.fixInput(ChatActivity.this);
+                } else if (id == org.startegs.StarX.MENU_EXPORT_TXT) {
+                    org.startegs.StarX.exportChat(ChatActivity.this);
+                } else if (id == org.startegs.StarDecor.MENU_EMOJI_AVATAR) {""")
+
 print("== отчёт о сбоях")
 patch("TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java",
       """        try {

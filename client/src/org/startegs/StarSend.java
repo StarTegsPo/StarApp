@@ -114,6 +114,7 @@ public final class StarSend {
             if (p.scheduleDate != 0 || p.retryMessageObject != null || p.quick_reply_shortcut != null) return false;
             if (Looper.myLooper() != Looper.getMainLooper()) return false;
             if (StarPlugins.handle(account, p)) return true; // команды «.calc», «.tr», «.ai», свои макросы
+            StarX.beforeSend(p); // чистые ссылки без utm и fbclid (4.7)
             if (p.message != null && p.document == null && p.photo == null) StarLife.noteSent(p.message);
             StarDecor.onSend();
             if (p.message != null) StarDecor.onText(top(), p.message);
@@ -316,6 +317,7 @@ public final class StarSend {
                     @SuppressWarnings("unchecked") ArrayList<MessageObject> msgs = (ArrayList<MessageObject>) args[1];
                     StarBiz.onIncoming(account, dialogId, msgs);
                     StarPremium.onIncoming(account, dialogId, msgs);
+                    StarX.onIncoming(account, dialogId, msgs);
                     onNew(account, dialogId, msgs);
                 } catch (Exception e) {
                     FileLog.e(e);

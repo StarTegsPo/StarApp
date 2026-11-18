@@ -46,6 +46,10 @@ public final class StarPlugins {
             + ".flip — орёл или решка\n"
             + ".shrug текст — ¯\\_(ツ)_/¯\n"
             + ".rev текст — задом наперёд\n"
+            + ".fix ghbdtn — исправить раскладку\n"
+            + ".choose пицца, суши, бургер — выбрать за тебя\n"
+            + ".ball вопрос — шар судьбы\n"
+            + ".love Маша Петя — совместимость\n"
             + ".up текст — БОЛЬШИМИ БУКВАМИ\n"
             + ".mock текст — ТеКсТ ВоТ ТаК\n"
             + ".id — ID этого чата\n"
@@ -176,6 +180,30 @@ public final class StarPlugins {
                 case "shrug":
                     out = (arg.isEmpty() ? "" : arg + " ") + "¯\\_(ツ)_/¯";
                     break;
+                case "fix": // 4.7: ghbdtn → привет
+                    if (arg.isEmpty()) return false;
+                    out = StarX.fixLayout(arg);
+                    break;
+                case "choose": {
+                    String[] v = arg.split("\\s*(,|\\sили\\s)\\s*");
+                    if (v.length < 2) return false;
+                    out = "🎯 Выбираю: " + v[new java.util.Random().nextInt(v.length)].trim();
+                    break;
+                }
+                case "ball": {
+                    String[] a = {"Да ✅", "Нет ❌", "Скорее да 🙂", "Скорее нет 🙃", "Без сомнений 💯", "Спроси позже ⏳", "Даже не думай 🙅", "Звёзды говорят «да» ✨"};
+                    out = (arg.isEmpty() ? "" : "❓ " + arg + "\n") + "🎱 " + a[new java.util.Random().nextInt(a.length)];
+                    break;
+                }
+                case "love": {
+                    String[] v = arg.split("\\s*(\\+|,|\\sи\\s)\\s*|\\s+");
+                    if (v.length < 2) return false;
+                    String x = v[0].toLowerCase(Locale.ROOT), y = v[1].toLowerCase(Locale.ROOT);
+                    String key = x.compareTo(y) < 0 ? x + "|" + y : y + "|" + x;
+                    int pct = Math.abs(key.hashCode() % 101);
+                    out = "💞 " + v[0] + " + " + v[1] + " = " + pct + "% " + (pct > 80 ? "🔥" : pct > 50 ? "💖" : pct > 25 ? "🙂" : "🥶");
+                    break;
+                }
                 case "rev":
                     if (arg.isEmpty()) return false;
                     out = new StringBuilder(arg).reverse().toString();
