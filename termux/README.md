@@ -35,6 +35,14 @@ BOT_TOKEN=123456:ABC...
 
 Перезапуск после правки кода: `bash ~/startegs-run/stop_all.sh startegs && bash ~/startegs-run/start_all.sh`.
 
+## Обновить бота под приложение StarTegs 4.5 (нейросеть «Звёздочка»)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/StarTegsPo/StarApp/claude/startegs-whitegram-features-cdjfn9/termux/update_bot.sh -o ~/startegs-run/update_bot.sh && bash ~/startegs-run/update_bot.sh
+```
+
+Скрипт делает резервную копию бота и вставляет недостающие дополнения v58–v63. Если файл после этого не проходит проверку, копия возвращается на место. Потом скрипт ставит пакеты, спрашивает ключ нейросети (сохраняет его в `.env` рядом с ботом) и перезапускает бота.
+
 ## Чтобы Android не убивал ботов
 
 1. Настройки → Приложения → Termux → Батарея → **Без ограничений**.

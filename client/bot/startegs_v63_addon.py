@@ -2,7 +2,7 @@
 # Вставляется после аддона v62, перед строкой «def _single_instance():».
 #
 # Нейросеть (вариант А): мод отправляет вопрос сюда, бот сам обращается к Claude через официальный SDK.
-#   pip install anthropic
+#   pip install anthropic   (если не ставится — не страшно, бот обратится к API напрямую через aiohttp)
 #   ANTHROPIC_API_KEY=...            — ключ ТОЛЬКО на сервере, никогда не кладите его в APK
 #   STARTEGS_AI_MODEL=claude-opus-5-5 (по умолчанию; можно, например, claude-haiku-5-5 — дешевле)
 #   STARTEGS_AI_EFFORT=low           (low/medium/high — глубина размышлений)
@@ -19,7 +19,7 @@ import uuid as _uuid
 
 try:
     import anthropic as _anthropic
-except Exception:  # пакет не установлен — нейросеть вернёт понятную ошибку
+except Exception:  # пакет не установлен — тогда запрос идёт напрямую через aiohttp
     _anthropic = None
 
 db.executescript("""
@@ -65,9 +65,50 @@ def _ai_count(uid: int):
     db.commit()
 
 
+async def _ai_run_http(job: dict, prompt: str):
+    """Запасной путь без пакета anthropic (например, если он не ставится в Termux): прямой запрос к API."""
+    import aiohttp
+    key = _os.environ.get("ANTHROPIC_API_KEY", "")
+    if not key:
+        job["err"] = "На сервере не задан ключ нейросети (ANTHROPIC_API_KEY)"
+        return
+    body = {"model": AI_MODEL, "max_tokens": 4000, "system": AI_SYSTEM,
+            "output_config": {"effort": AI_EFFORT}, "messages": [{"role": "user", "content": prompt}]}
+    headers = {"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=140)) as s:
+        async with s.post("https://api.anthropic.com/v1/messages", json=body, headers=headers) as r:
+            data = await r.json(content_type=None)
+            if r.status == 401:
+                job["err"] = "На сервере неверный ключ нейросети"
+                return
+            if r.status in (429, 529):
+                job["err"] = "Нейросеть сейчас перегружена, попробуй через минуту"
+                return
+            if r.status != 200:
+                log.warning("ai http %s: %s", r.status, str(data)[:300])
+                job["err"] = "Нейросеть временно недоступна"
+                return
+    if data.get("stop_reason") == "refusal":
+        job["text"] = "Прости, с этим я помочь не могу 🙏"
+        return
+    job["text"] = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
+    if data.get("stop_reason") == "max_tokens":
+        job["text"] += "…"
+
+
 async def _ai_run(job_id: str, prompt: str):
     job = _ai_jobs[job_id]
     client = _ai_get_client()
+    if client is None:
+        try:
+            await _ai_run_http(job, prompt)
+        except Exception:
+            log.exception("ai job http")
+            job["err"] = "Нейросеть временно недоступна"
+        finally:
+            job["done"] = True
+            job["ts"] = time.time()
+        return
     try:
         params = dict(
             model=AI_MODEL,
@@ -202,9 +243,7 @@ async def _v63_api(body: dict):
     now = int(time.time())
 
     if a == "ai_start":
-        if _ai_get_client() is None:
-            return js({"ok": False, "err": "nokey", "msg": "На сервере StarTegs не установлена нейросеть (pip install anthropic)"}, 503)
-        if not _os.environ.get("ANTHROPIC_API_KEY") and not _os.environ.get("ANTHROPIC_AUTH_TOKEN"):
+        if not _os.environ.get("ANTHROPIC_API_KEY") and not (_anthropic is not None and _os.environ.get("ANTHROPIC_AUTH_TOKEN")):
             return js({"ok": False, "err": "nokey", "msg": "На сервере StarTegs не задан ключ нейросети"}, 503)
         prompt = str(body.get("prompt", "")).strip()
         if not prompt:
