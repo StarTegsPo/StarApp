@@ -5,7 +5,7 @@
 #   3) скачивает дополнения v58…v63 и вставляет недостающие перед «def _single_instance():»;
 #   4) проверяет, что файл без ошибок (иначе возвращает копию);
 #   5) ставит aiohttp и, если получится, anthropic;
-#   6) спрашивает, какую нейросеть подключить (DeepSeek или Claude), и сохраняет ключ в .env рядом с ботом;
+#   6) спрашивает, какую нейросеть подключить (бесплатный OpenRouter, DeepSeek или Claude), и сохраняет ключ в .env рядом с ботом;
 #   7) перезапускает бота.
 # Запуск: bash ~/startegs-run/update_bot.sh            (или с путём: bash update_bot.sh ~/startegs_v56.py)
 set -u
@@ -67,7 +67,7 @@ say "📦 Ставлю пакеты…"
 if "$PY" -m pip install -q anthropic 2>/dev/null; then
   echo "anthropic установлен"
 else
-  echo "anthropic не поставился — это нормально для Termux (для DeepSeek он вообще не нужен)"
+  echo "anthropic не поставился — это нормально для Termux (для OpenRouter и DeepSeek он вообще не нужен)"
 fi
 
 # 6. Нейросеть и ключ
@@ -75,13 +75,22 @@ ENV="$DIR/.env"
 touch "$ENV" && chmod 600 "$ENV"
 setenv() { grep -v "^$1=" "$ENV" > "$ENV.tmp"; mv "$ENV.tmp" "$ENV"; echo "$1=$2" >> "$ENV"; chmod 600 "$ENV"; }
 say "🧠 Какую нейросеть подключить к «Звёздочке»?"
-echo "  1 — DeepSeek  (работает из России, дёшево — советую)"
-echo "  2 — Claude    (Anthropic; из России не работает)"
+echo "  1 — OpenRouter  БЕСПЛАТНО (около 50 вопросов в день на весь бот, карта не нужна)"
+echo "  2 — DeepSeek    (платно, но дёшево; работает из России)"
+echo "  3 — Claude      (платно; из России не работает)"
 echo "  0 — пропустить, ключ уже настроен"
-read -r -p "1, 2 или 0: " prov
+read -r -p "1, 2, 3 или 0: " prov
 case "${prov:-1}" in
   0) echo "Пропускаю" ;;
-  2)
+  1)
+    echo "Вставь ключ OpenRouter (начинается с sk-or-). Его не будет видно на экране — это нормально. Потом нажми Enter:"
+    read -r -s KEY; echo; KEY="${KEY//[[:space:]]/}"
+    case "$KEY" in sk-or-*) ;; *) die "Это не похоже на ключ OpenRouter (должен начинаться с sk-or-). Запусти скрипт ещё раз." ;; esac
+    setenv OPENROUTER_API_KEY "$KEY"; setenv STARTEGS_AI_PROVIDER openrouter
+    grep -q '^STARTEGS_AI_FREE=' "$ENV" || setenv STARTEGS_AI_FREE 5
+    grep -q '^STARTEGS_AI_PRO=' "$ENV" || setenv STARTEGS_AI_PRO 20
+    echo "Ключ сохранён в $ENV. Бот сам выберет бесплатные модели. Лимит на человека: 5 вопросов в день (Premium — 20)" ;;
+  3)
     echo "Вставь ключ Claude (начинается с sk-ant-). Его не будет видно на экране — это нормально. Потом нажми Enter:"
     read -r -s KEY; echo; KEY="${KEY//[[:space:]]/}"
     case "$KEY" in sk-ant-*) ;; *) die "Это не похоже на ключ Anthropic (должен начинаться с sk-ant-). Запусти скрипт ещё раз." ;; esac
@@ -90,7 +99,7 @@ case "${prov:-1}" in
     read -r -p "1 или 2: " m
     if [ "${m:-1}" = "2" ]; then setenv STARTEGS_AI_MODEL claude-opus-5-5; else setenv STARTEGS_AI_MODEL claude-haiku-5-5; fi
     echo "Ключ сохранён в $ENV (виден только этому боту)" ;;
-  *)
+  2)
     echo "Вставь ключ DeepSeek (начинается с sk-). Его не будет видно на экране — это нормально. Потом нажми Enter:"
     read -r -s KEY; echo; KEY="${KEY//[[:space:]]/}"
     case "$KEY" in sk-*) ;; *) die "Это не похоже на ключ DeepSeek (должен начинаться с sk-). Запусти скрипт ещё раз." ;; esac
@@ -99,6 +108,7 @@ case "${prov:-1}" in
     read -r -p "1 или 2: " m
     if [ "${m:-1}" = "2" ]; then setenv STARTEGS_DEEPSEEK_MODEL deepseek-v4-pro; else setenv STARTEGS_DEEPSEEK_MODEL deepseek-v4-flash; fi
     echo "Ключ сохранён в $ENV (виден только этому боту)" ;;
+  *) die "Нужно ввести 1, 2, 3 или 0. Запусти скрипт ещё раз." ;;
 esac
 
 # 7. Перезапуск

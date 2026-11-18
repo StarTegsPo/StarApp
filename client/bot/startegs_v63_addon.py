@@ -8,7 +8,10 @@
 # Или DeepSeek (работает из России, оплата проще):
 #   DEEPSEEK_API_KEY=sk-...          — ключ с platform.deepseek.com, тоже ТОЛЬКО на сервере
 #   STARTEGS_DEEPSEEK_MODEL=deepseek-v4-flash (по умолчанию, быстро и дёшево; умнее — deepseek-v4-pro)
-#   STARTEGS_AI_PROVIDER=deepseek | claude — кого спрашивать, если заданы оба ключа (иначе — у кого есть ключ)
+# Или бесплатно через OpenRouter (бесплатные модели с пометкой :free, около 50 запросов в день на весь бот):
+#   OPENROUTER_API_KEY=sk-or-...     — ключ с openrouter.ai, карта не нужна
+#   STARTEGS_OPENROUTER_MODEL=auto   (по умолчанию бот сам выбирает бесплатные модели; можно указать свою)
+#   STARTEGS_AI_PROVIDER=deepseek | claude | openrouter — кого спрашивать, если задано несколько ключей
 #   STARTEGS_AI_EFFORT=low           (low/medium/high — глубина размышлений)
 #   STARTEGS_AI_FREE=30, STARTEGS_AI_PRO=300 — запросов в день (бесплатно / Premium)
 # ai_start {prompt} → {job}; ai_job {id} → {text, done} (ответ набирается по словам).
@@ -36,6 +39,9 @@ db.commit()
 AI_MODEL = _os.environ.get("STARTEGS_AI_MODEL", "claude-opus-5-5")
 DS_MODEL = _os.environ.get("STARTEGS_DEEPSEEK_MODEL", "deepseek-v4-flash")
 DS_URL = _os.environ.get("STARTEGS_DEEPSEEK_URL", "https://api.deepseek.com/chat/completions")
+OR_MODEL = _os.environ.get("STARTEGS_OPENROUTER_MODEL", "auto")
+OR_URL = "https://openrouter.ai/api/v1/chat/completions"
+_or_free = {"ids": [], "ts": 0}
 
 
 def _ai_provider() -> str:
@@ -47,7 +53,35 @@ def _ai_provider() -> str:
         return "deepseek"
     if p == "claude" and has_cl:
         return "claude"
-    return "claude" if has_cl else "deepseek" if has_ds else ""
+    has_or = bool(_os.environ.get("OPENROUTER_API_KEY"))
+    if p == "openrouter" and has_or:
+        return "openrouter"
+    return "claude" if has_cl else "deepseek" if has_ds else "openrouter" if has_or else ""
+
+
+async def _or_free_models() -> list:
+    """Список бесплатных моделей OpenRouter (обновляется раз в 6 часов): лучшие для чата — первыми."""
+    import aiohttp
+    if _or_free["ids"] and time.time() - _or_free["ts"] < 6 * 3600:
+        return _or_free["ids"]
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as s:
+            async with s.get("https://openrouter.ai/api/v1/models") as r:
+                data = await r.json(content_type=None)
+        ids = [m["id"] for m in data.get("data", []) if str(m.get("id", "")).endswith(":free")]
+        pref = ("deepseek", "qwen", "llama", "gemma", "mistral", "glm", "kimi")
+
+        def rank(i):
+            for n, k in enumerate(pref):
+                if k in i:
+                    return n
+            return len(pref)
+        ids.sort(key=rank)
+        if ids:
+            _or_free.update(ids=ids, ts=time.time())
+    except Exception:
+        log.warning("openrouter models list failed", exc_info=True)
+    return _or_free["ids"]
 AI_EFFORT = _os.environ.get("STARTEGS_AI_EFFORT", "low")
 AI_FREE = int(_os.environ.get("STARTEGS_AI_FREE", "30"))
 AI_PRO = int(_os.environ.get("STARTEGS_AI_PRO", "300"))
@@ -116,20 +150,43 @@ async def _ai_run_http(job: dict, prompt: str):
 
 async def _ai_run_deepseek(job: dict, prompt: str):
     """DeepSeek (формат OpenAI): ответ приходит потоком, как у Claude."""
+    await _ai_run_openai(job, prompt, DS_URL, _os.environ.get("DEEPSEEK_API_KEY", ""), {"model": DS_MODEL}, {
+        401: "На сервере неверный ключ DeepSeek",
+        402: "На счёте DeepSeek закончились деньги — пополни баланс",
+        429: "Нейросеть сейчас перегружена, попробуй через минуту"})
+
+
+async def _ai_run_openrouter(job: dict, prompt: str):
+    """Бесплатные модели OpenRouter. Если одна занята — OpenRouter сам пробует следующую из списка."""
+    if OR_MODEL and OR_MODEL != "auto":
+        pick = {"model": OR_MODEL}
+    else:
+        ids = await _or_free_models()
+        if not ids:
+            job["err"] = "Не получилось найти бесплатную нейросеть, попробуй позже"
+            return
+        pick = {"model": ids[0], "models": ids[:3]}
+    await _ai_run_openai(job, prompt, OR_URL, _os.environ.get("OPENROUTER_API_KEY", ""), pick, {
+        401: "На сервере неверный ключ OpenRouter",
+        402: "Бесплатный лимит нейросети на сегодня закончился — попробуй завтра",
+        429: "Бесплатный лимит нейросети исчерпан — попробуй через минуту или завтра"},
+        {"HTTP-Referer": "https://t.me/StarTegsEcosistem_bot", "X-Title": "StarTegs"})
+
+
+async def _ai_run_openai(job: dict, prompt: str, url: str, key: str, pick: dict, errors: dict, extra_headers: dict = None):
+    """Общий потоковый запрос в формате OpenAI (DeepSeek, OpenRouter)."""
     import aiohttp
     import json as _json
-    body = {"model": DS_MODEL, "max_tokens": 4000, "stream": True,
+    body = {**pick, "max_tokens": 4000, "stream": True,
             "messages": [{"role": "system", "content": AI_SYSTEM}, {"role": "user", "content": prompt}]}
-    headers = {"Authorization": "Bearer " + _os.environ.get("DEEPSEEK_API_KEY", ""), "Content-Type": "application/json"}
+    headers = {"Authorization": "Bearer " + key, "Content-Type": "application/json", **(extra_headers or {})}
     finish = None
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=140)) as s:
-        async with s.post(DS_URL, json=body, headers=headers) as r:
+        async with s.post(url, json=body, headers=headers) as r:
             if r.status != 200:
                 txt = (await r.text())[:300]
-                log.warning("deepseek http %s: %s", r.status, txt)
-                job["err"] = {401: "На сервере неверный ключ DeepSeek",
-                              402: "На счёте DeepSeek закончились деньги — пополни баланс",
-                              429: "Нейросеть сейчас перегружена, попробуй через минуту"}.get(r.status, "Нейросеть временно недоступна")
+                log.warning("ai http %s %s: %s", url, r.status, txt)
+                job["err"] = errors.get(r.status, "Нейросеть временно недоступна")
                 return
             async for raw in r.content:
                 line = raw.decode("utf-8", "ignore").strip()
@@ -139,7 +196,13 @@ async def _ai_run_deepseek(job: dict, prompt: str):
                 if data == "[DONE]":
                     break
                 try:
-                    ch = _json.loads(data)["choices"][0]
+                    obj = _json.loads(data)
+                    if obj.get("error"):
+                        log.warning("ai stream error: %s", str(obj["error"])[:300])
+                        if not job["text"]:
+                            job["err"] = "Нейросеть временно недоступна, попробуй ещё раз"
+                        break
+                    ch = obj["choices"][0]
                 except Exception:
                     continue
                 piece = (ch.get("delta") or {}).get("content")
@@ -155,9 +218,10 @@ async def _ai_run_deepseek(job: dict, prompt: str):
 async def _ai_run(job_id: str, prompt: str):
     job = _ai_jobs[job_id]
     client = _ai_get_client()
-    if _ai_provider() == "deepseek":
+    prov = _ai_provider()
+    if prov in ("deepseek", "openrouter"):
         try:
-            await _ai_run_deepseek(job, prompt)
+            await (_ai_run_deepseek if prov == "deepseek" else _ai_run_openrouter)(job, prompt)
         except Exception:
             log.exception("ai job deepseek")
             job["err"] = "Нейросеть временно недоступна"

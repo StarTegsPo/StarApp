@@ -217,7 +217,9 @@ client/
 дешевле — `claude-haiku-5-5`), `STARTEGS_AI_EFFORT` (`low`), `STARTEGS_AI_FREE` / `STARTEGS_AI_PRO` (30 / 300 запросов в день).
 Вместо Claude можно подключить **DeepSeek**: `DEEPSEEK_API_KEY` (ключ с platform.deepseek.com), модель `STARTEGS_DEEPSEEK_MODEL`
 (по умолчанию `deepseek-v4-flash`, умнее — `deepseek-v4-pro`). Если заданы оба ключа, выбор — `STARTEGS_AI_PROVIDER=deepseek|claude`.
-Пакет `anthropic` для DeepSeek не нужен.
+Бесплатно — **OpenRouter**: `OPENROUTER_API_KEY` (ключ с openrouter.ai, без карты). Бот сам берёт модели с пометкой `:free`
+(`STARTEGS_OPENROUTER_MODEL=auto`), лимит OpenRouter — около 50 запросов в день на ключ. Выбор: `STARTEGS_AI_PROVIDER=openrouter`.
+Пакет `anthropic` для DeepSeek и OpenRouter не нужен.
 Также: `look_set` / `look_get` (стиль имени, обложка, уровень, день рождения), анимированные рамки и тема недели.
 
 ## Бот StarTegs v62
