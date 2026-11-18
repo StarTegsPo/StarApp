@@ -5,7 +5,7 @@
 #   3) скачивает дополнения v58…v63 и вставляет недостающие перед «def _single_instance():»;
 #   4) проверяет, что файл без ошибок (иначе возвращает копию);
 #   5) ставит aiohttp и, если получится, anthropic;
-#   6) спрашивает ключ нейросети и сохраняет его в .env рядом с ботом;
+#   6) спрашивает, какую нейросеть подключить (DeepSeek или Claude), и сохраняет ключ в .env рядом с ботом;
 #   7) перезапускает бота.
 # Запуск: bash ~/startegs-run/update_bot.sh            (или с путём: bash update_bot.sh ~/startegs_v56.py)
 set -u
@@ -67,33 +67,39 @@ say "📦 Ставлю пакеты…"
 if "$PY" -m pip install -q anthropic 2>/dev/null; then
   echo "anthropic установлен"
 else
-  echo "anthropic не поставился — это нормально для Termux, бот будет обращаться к нейросети напрямую"
+  echo "anthropic не поставился — это нормально для Termux (для DeepSeek он вообще не нужен)"
 fi
 
-# 6. Ключ нейросети
+# 6. Нейросеть и ключ
 ENV="$DIR/.env"
 touch "$ENV" && chmod 600 "$ENV"
-if grep -q '^ANTHROPIC_API_KEY=.' "$ENV"; then
-  say "🔑 Ключ нейросети уже сохранён в $ENV"
-  read -r -p "Заменить его? (y/N) " re
-else
-  re=y
-fi
-if [ "${re:-n}" = "y" ] || [ "${re:-n}" = "Y" ]; then
-  echo "Вставь ключ (начинается с sk-ant-). Его не будет видно на экране — это нормально. Потом нажми Enter:"
-  read -r -s KEY; echo
-  KEY="${KEY//[[:space:]]/}"
-  case "$KEY" in sk-ant-*) ;; *) die "Это не похоже на ключ Anthropic (должен начинаться с sk-ant-). Запусти скрипт ещё раз." ;; esac
-  grep -v '^ANTHROPIC_API_KEY=' "$ENV" > "$ENV.tmp"; mv "$ENV.tmp" "$ENV"
-  echo "ANTHROPIC_API_KEY=$KEY" >> "$ENV"
-  chmod 600 "$ENV"
-  echo "Ключ сохранён в $ENV (виден только этому боту)"
-fi
-if ! grep -q '^STARTEGS_AI_MODEL=' "$ENV"; then
-  echo "Какую модель ставить?  1 — claude-haiku-5-5 (быстро и дёшево, советую)   2 — claude-opus-5-5 (самая умная, дороже)"
-  read -r -p "1 или 2: " m
-  if [ "${m:-1}" = "2" ]; then echo "STARTEGS_AI_MODEL=claude-opus-5-5" >> "$ENV"; else echo "STARTEGS_AI_MODEL=claude-haiku-5-5" >> "$ENV"; fi
-fi
+setenv() { grep -v "^$1=" "$ENV" > "$ENV.tmp"; mv "$ENV.tmp" "$ENV"; echo "$1=$2" >> "$ENV"; chmod 600 "$ENV"; }
+say "🧠 Какую нейросеть подключить к «Звёздочке»?"
+echo "  1 — DeepSeek  (работает из России, дёшево — советую)"
+echo "  2 — Claude    (Anthropic; из России не работает)"
+echo "  0 — пропустить, ключ уже настроен"
+read -r -p "1, 2 или 0: " prov
+case "${prov:-1}" in
+  0) echo "Пропускаю" ;;
+  2)
+    echo "Вставь ключ Claude (начинается с sk-ant-). Его не будет видно на экране — это нормально. Потом нажми Enter:"
+    read -r -s KEY; echo; KEY="${KEY//[[:space:]]/}"
+    case "$KEY" in sk-ant-*) ;; *) die "Это не похоже на ключ Anthropic (должен начинаться с sk-ant-). Запусти скрипт ещё раз." ;; esac
+    setenv ANTHROPIC_API_KEY "$KEY"; setenv STARTEGS_AI_PROVIDER claude
+    echo "Модель:  1 — claude-haiku-5-5 (быстро и дёшево)   2 — claude-opus-5-5 (самая умная, дороже)"
+    read -r -p "1 или 2: " m
+    if [ "${m:-1}" = "2" ]; then setenv STARTEGS_AI_MODEL claude-opus-5-5; else setenv STARTEGS_AI_MODEL claude-haiku-5-5; fi
+    echo "Ключ сохранён в $ENV (виден только этому боту)" ;;
+  *)
+    echo "Вставь ключ DeepSeek (начинается с sk-). Его не будет видно на экране — это нормально. Потом нажми Enter:"
+    read -r -s KEY; echo; KEY="${KEY//[[:space:]]/}"
+    case "$KEY" in sk-*) ;; *) die "Это не похоже на ключ DeepSeek (должен начинаться с sk-). Запусти скрипт ещё раз." ;; esac
+    setenv DEEPSEEK_API_KEY "$KEY"; setenv STARTEGS_AI_PROVIDER deepseek
+    echo "Модель:  1 — deepseek-v4-flash (быстро и дёшево)   2 — deepseek-v4-pro (умнее, дороже)"
+    read -r -p "1 или 2: " m
+    if [ "${m:-1}" = "2" ]; then setenv STARTEGS_DEEPSEEK_MODEL deepseek-v4-pro; else setenv STARTEGS_DEEPSEEK_MODEL deepseek-v4-flash; fi
+    echo "Ключ сохранён в $ENV (виден только этому боту)" ;;
+esac
 
 # 7. Перезапуск
 if [ -x "$HOME/startegs-run/stop_all.sh" ]; then

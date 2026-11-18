@@ -215,6 +215,9 @@ client/
 `client/bot/startegs_v63_addon.py` вставляется после v62. Нужны `pip install anthropic` и переменная окружения
 `ANTHROPIC_API_KEY` на сервере бота (никогда не в APK). Необязательно: `STARTEGS_AI_MODEL` (по умолчанию `claude-opus-5-5`;
 дешевле — `claude-haiku-5-5`), `STARTEGS_AI_EFFORT` (`low`), `STARTEGS_AI_FREE` / `STARTEGS_AI_PRO` (30 / 300 запросов в день).
+Вместо Claude можно подключить **DeepSeek**: `DEEPSEEK_API_KEY` (ключ с platform.deepseek.com), модель `STARTEGS_DEEPSEEK_MODEL`
+(по умолчанию `deepseek-v4-flash`, умнее — `deepseek-v4-pro`). Если заданы оба ключа, выбор — `STARTEGS_AI_PROVIDER=deepseek|claude`.
+Пакет `anthropic` для DeepSeek не нужен.
 Также: `look_set` / `look_get` (стиль имени, обложка, уровень, день рождения), анимированные рамки и тема недели.
 
 ## Бот StarTegs v62

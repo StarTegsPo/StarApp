@@ -5,6 +5,10 @@
 #   pip install anthropic   (если не ставится — не страшно, бот обратится к API напрямую через aiohttp)
 #   ANTHROPIC_API_KEY=...            — ключ ТОЛЬКО на сервере, никогда не кладите его в APK
 #   STARTEGS_AI_MODEL=claude-opus-5-5 (по умолчанию; можно, например, claude-haiku-5-5 — дешевле)
+# Или DeepSeek (работает из России, оплата проще):
+#   DEEPSEEK_API_KEY=sk-...          — ключ с platform.deepseek.com, тоже ТОЛЬКО на сервере
+#   STARTEGS_DEEPSEEK_MODEL=deepseek-v4-flash (по умолчанию, быстро и дёшево; умнее — deepseek-v4-pro)
+#   STARTEGS_AI_PROVIDER=deepseek | claude — кого спрашивать, если заданы оба ключа (иначе — у кого есть ключ)
 #   STARTEGS_AI_EFFORT=low           (low/medium/high — глубина размышлений)
 #   STARTEGS_AI_FREE=30, STARTEGS_AI_PRO=300 — запросов в день (бесплатно / Premium)
 # ai_start {prompt} → {job}; ai_job {id} → {text, done} (ответ набирается по словам).
@@ -30,6 +34,20 @@ CREATE TABLE IF NOT EXISTS mod_look(uid INTEGER PRIMARY KEY, name_color INTEGER 
 db.commit()
 
 AI_MODEL = _os.environ.get("STARTEGS_AI_MODEL", "claude-opus-5-5")
+DS_MODEL = _os.environ.get("STARTEGS_DEEPSEEK_MODEL", "deepseek-v4-flash")
+DS_URL = _os.environ.get("STARTEGS_DEEPSEEK_URL", "https://api.deepseek.com/chat/completions")
+
+
+def _ai_provider() -> str:
+    """deepseek / claude / '' (нет ключа)."""
+    p = _os.environ.get("STARTEGS_AI_PROVIDER", "").strip().lower()
+    has_ds = bool(_os.environ.get("DEEPSEEK_API_KEY"))
+    has_cl = bool(_os.environ.get("ANTHROPIC_API_KEY")) or (_anthropic is not None and bool(_os.environ.get("ANTHROPIC_AUTH_TOKEN")))
+    if p == "deepseek" and has_ds:
+        return "deepseek"
+    if p == "claude" and has_cl:
+        return "claude"
+    return "claude" if has_cl else "deepseek" if has_ds else ""
 AI_EFFORT = _os.environ.get("STARTEGS_AI_EFFORT", "low")
 AI_FREE = int(_os.environ.get("STARTEGS_AI_FREE", "30"))
 AI_PRO = int(_os.environ.get("STARTEGS_AI_PRO", "300"))
@@ -96,9 +114,57 @@ async def _ai_run_http(job: dict, prompt: str):
         job["text"] += "…"
 
 
+async def _ai_run_deepseek(job: dict, prompt: str):
+    """DeepSeek (формат OpenAI): ответ приходит потоком, как у Claude."""
+    import aiohttp
+    import json as _json
+    body = {"model": DS_MODEL, "max_tokens": 4000, "stream": True,
+            "messages": [{"role": "system", "content": AI_SYSTEM}, {"role": "user", "content": prompt}]}
+    headers = {"Authorization": "Bearer " + _os.environ.get("DEEPSEEK_API_KEY", ""), "Content-Type": "application/json"}
+    finish = None
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=140)) as s:
+        async with s.post(DS_URL, json=body, headers=headers) as r:
+            if r.status != 200:
+                txt = (await r.text())[:300]
+                log.warning("deepseek http %s: %s", r.status, txt)
+                job["err"] = {401: "На сервере неверный ключ DeepSeek",
+                              402: "На счёте DeepSeek закончились деньги — пополни баланс",
+                              429: "Нейросеть сейчас перегружена, попробуй через минуту"}.get(r.status, "Нейросеть временно недоступна")
+                return
+            async for raw in r.content:
+                line = raw.decode("utf-8", "ignore").strip()
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    ch = _json.loads(data)["choices"][0]
+                except Exception:
+                    continue
+                piece = (ch.get("delta") or {}).get("content")
+                if piece:
+                    job["text"] += piece
+                finish = ch.get("finish_reason") or finish
+    if finish == "content_filter":
+        job["text"] = "Прости, с этим я помочь не могу 🙏"
+    elif finish == "length":
+        job["text"] += "…"
+
+
 async def _ai_run(job_id: str, prompt: str):
     job = _ai_jobs[job_id]
     client = _ai_get_client()
+    if _ai_provider() == "deepseek":
+        try:
+            await _ai_run_deepseek(job, prompt)
+        except Exception:
+            log.exception("ai job deepseek")
+            job["err"] = "Нейросеть временно недоступна"
+        finally:
+            job["done"] = True
+            job["ts"] = time.time()
+        return
     if client is None:
         try:
             await _ai_run_http(job, prompt)
@@ -243,7 +309,7 @@ async def _v63_api(body: dict):
     now = int(time.time())
 
     if a == "ai_start":
-        if not _os.environ.get("ANTHROPIC_API_KEY") and not (_anthropic is not None and _os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+        if not _ai_provider():
             return js({"ok": False, "err": "nokey", "msg": "На сервере StarTegs не задан ключ нейросети"}, 503)
         prompt = str(body.get("prompt", "")).strip()
         if not prompt:
