@@ -2,7 +2,7 @@
 # Обновляет бота StarTegs (@StarTegsEcosistem_bot) под приложение StarTegs 4.5:
 #   1) находит файл бота (из ~/startegs-run/bots.conf или из первого аргумента);
 #   2) делает резервную копию;
-#   3) скачивает дополнения v58…v63 и вставляет недостающие перед «def _single_instance():»;
+#   3) скачивает дополнения v58…v63 и вставляет недостающие (v58…v64) перед «def _single_instance():»;
 #   4) проверяет, что файл без ошибок (иначе возвращает копию);
 #   5) ставит aiohttp и, если получится, anthropic;
 #   6) спрашивает, какую нейросеть подключить (бесплатный OpenRouter, DeepSeek или Claude), и сохраняет ключ в .env рядом с ботом;
@@ -32,7 +32,7 @@ echo "Копия: $BAK"
 
 # 3. Дополнения
 TMP=$(mktemp -d)
-for v in 58 59 60 61 62 63; do
+for v in 58 59 60 61 62 63 64; do
   curl -fsSL "$RAW/client/bot/startegs_v${v}_addon.py" -o "$TMP/v$v.py" || die "Не скачалось дополнение v$v (нет интернета?)"
 done
 "$PY" - "$BOT" "$TMP" <<'EOF' || { cp "$BAK" "$BOT"; die "Не получилось вставить дополнения — файл бота возвращён как был"; }
@@ -40,7 +40,7 @@ import sys
 bot, tmp = sys.argv[1], sys.argv[2]
 src = open(bot, encoding="utf-8").read()
 added = []
-for v in range(58, 64):
+for v in range(58, 65):
     mark = "_api_handler_v%d = api_handler" % (v - 1)
     if mark in src:
         print("  v%d — уже есть" % v)
@@ -128,3 +128,4 @@ else
   say "Перезапусти бота сам (останови и запусти заново), чтобы изменения заработали"
 fi
 say "🎉 Готово! Открой StarTegs → ⭐ StarTegs → 🎨 Дизайн → «Звёздочка» и задай вопрос."
+echo "🤖 Чтобы подключить бота к Claude, напиши боту StarTegs команду /claude — он пришлёт адрес коннектора."

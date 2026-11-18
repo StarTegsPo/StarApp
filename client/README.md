@@ -222,6 +222,15 @@ client/
 Пакет `anthropic` для DeepSeek и OpenRouter не нужен.
 Также: `look_set` / `look_get` (стиль имени, обложка, уровень, день рождения), анимированные рамки и тема недели.
 
+## Бот StarTegs v64 — подключение к Claude
+
+`client/bot/startegs_v64_addon.py` вставляется после v63 (или скриптом `termux/update_bot.sh`). Бот становится MCP-сервером
+по тому же адресу API: админ пишет боту `/claude` и получает адрес коннектора с секретным ключом. Его добавляют в claude.ai
+(Настройки → Коннекторы → «Добавить свой коннектор») или в Claude Code (`claude mcp add --transport http startegs <адрес>`).
+Инструменты: `overview`, `db_schema`, `db_query` (только SELECT, база открыта только для чтения), `user_info`, `bot_logs`,
+`ai_status`, `give_crystals`, `gift_premium`, `ban_user`, `send_message`, `broadcast` (только с `confirm=true`).
+О каждом изменении бот пишет админу. `/claude new` — новый ключ, `/claude off` — выключить.
+
 ## Бот StarTegs v62
 
 `client/bot/startegs_v62_addon.py` вставляется после аддона v61, перед строкой «def _single_instance():». Добавляет: переводы 💎 между
