@@ -1106,6 +1106,26 @@ patch(CA,
             }
             case org.startegs.StarLife.OPTION_TODO: {""")
 
+print("== 4.5: дизайн")
+patch(CA,
+      """        org.startegs.StarWall.attach(contentView);""",
+      """        org.startegs.StarWall.attach(contentView);
+        org.startegs.StarDecor.attachChat(contentView, dialog_id, currentAccount);""")
+patch("TMessagesProj/src/main/java/org/telegram/messenger/NotificationsController.java",
+      """soundOut = soundPool.load(ApplicationLoader.applicationContext, R.raw.sound_out, 1);""",
+      """soundOut = soundPool.load(ApplicationLoader.applicationContext, org.startegs.StarDecor.sendSound(), 1);""")
+patch(CA,
+      """            headerItem.lazilyAddSubItem(org.startegs.StarStyle.MENU_FONT, R.drawable.msg_edit, "✨ Красивый шрифт");
+""",
+      """            headerItem.lazilyAddSubItem(org.startegs.StarStyle.MENU_FONT, R.drawable.msg_edit, "✨ Красивый шрифт");
+            headerItem.lazilyAddSubItem(org.startegs.StarDecor.MENU_EMOJI_AVATAR, R.drawable.msg_emoji_cat, "😀 Эмодзи-аватарка");
+""")
+patch(CA,
+      """                } else if (id == org.startegs.StarStyle.MENU_FONT) {""",
+      """                } else if (id == org.startegs.StarDecor.MENU_EMOJI_AVATAR) {
+                    org.startegs.StarDecor.chooseEmojiAvatar(ChatActivity.this);
+                } else if (id == org.startegs.StarStyle.MENU_FONT) {""")
+
 print("== отчёт о сбоях")
 patch("TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java",
       """        try {

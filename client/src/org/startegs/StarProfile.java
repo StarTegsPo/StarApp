@@ -248,6 +248,7 @@ public final class StarProfile {
         if (sb.length() == 0) sb.append("У друга пока нет витрины StarTegs. Позови его в мод — тогда увидишь его настроение, статус и песню на повторе 😉");
         new AlertDialog.Builder(ctx)
                 .setTitle("🌟 Витрина")
+                .setTopView(StarDecor.coverView(ctx, uid))
                 .setMessage(sb.toString().trim())
                 .setPositiveButton("Ок", null)
                 .show();

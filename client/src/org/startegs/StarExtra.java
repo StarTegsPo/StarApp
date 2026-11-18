@@ -85,6 +85,7 @@ public final class StarExtra {
     public static CharSequence decorateName(long dialogId, CharSequence name) {
         try {
             if (name == null || dialogId == 0) return name;
+            name = StarDecor.decorate(dialogId, name); // цвет/шрифт имени друга, медаль, 🎂 (4.5)
             int l = label(dialogId);
             CharSequence out = l == 0 ? name : TextUtils.concat(LABELS[l][0], " ", name);
             String stage = StarBiz.stageEmoji(dialogId);

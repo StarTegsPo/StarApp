@@ -11,6 +11,7 @@ import android.content.SharedPreferences;
 import android.view.View;
 
 import org.telegram.messenger.ApplicationLoader;
+import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.Components.UItem;
@@ -45,6 +46,7 @@ public final class StarSections {
             {"🌐", "Сервисы экосистемы", "боты StarTegs: архив, маркет, ИИ, аналитика"},
             {"✨", "Стиль и крутость", "красивый шрифт, имя, «О себе», скрины"},
             {"⚙️", "Ещё", "Premium, плагины, бизнес, сервисы, прочее"},
+            {"🎨", "Дизайн", "конструктор темы, фон чата, кнопка, звуки, стиль для друзей"},
     };
 
     /** Порядок разделов на главном экране. */
@@ -66,7 +68,7 @@ public final class StarSections {
         prefs().edit().putBoolean("ghost_typing", on).putBoolean("ghost_read", on).putBoolean("ghost_online", on).putBoolean("ghost_stories", on).apply();
     }
 
-    static final int[][] GROUPS = {{18, 9, 11, 16}, {3, 4, 5, 7}, {1, 2, 15}, {14, 6, 12}, {19}};
+    static final int[][] GROUPS = {{20, 18, 9, 11, 16}, {3, 4, 5, 7}, {1, 2, 15}, {14, 6, 12}, {19}};
     static final String[] GROUP_TITLES = {"🔥 Стиль и развлечения", "💬 Общение", "🔒 Приватность", "📚 Полезное", ""};
 
     /** Главный экран StarTegs. */
@@ -183,6 +185,21 @@ public final class StarSections {
 
         private void button(ArrayList<UItem> items, int id, String title, String value) {
             items.add(UItem.asButton(id, title, value));
+        }
+
+        private interface Pick {
+            void run(int which);
+        }
+
+        private void choose(String title, String[] items, Pick cb) {
+            if (getParentActivity() == null) return;
+            new AlertDialog.Builder(getParentActivity()).setTitle(title).setItems(items, (d, w) -> cb.run(w)).show();
+        }
+
+        private static Integer[] toObj(int[] a) {
+            Integer[] r = new Integer[a.length];
+            for (int i = 0; i < a.length; i++) r[i] = a[i];
+            return r;
         }
 
         private String pro(String s) {
@@ -378,6 +395,33 @@ public final class StarSections {
                             + "Скрин сообщения для истории: долгое нажатие → «📸 Красивый скрин». "
                             + "«Ответь за меня» теперь отвечает уверенно, дерзко или мило 😎"));
                     break;
+                case 20:
+                    button(items, 220, pro("🎨 Конструктор темы с предпросмотром"));
+                    items.add(UItem.asHeader("Чат"));
+                    for (int i = 0; i < StarDecor.BG.length; i++) {
+                        items.add(UItem.asRadio(230 + i, "Фон: " + StarDecor.BG[i] + (i >= 2 && !StarMod.isPro() ? "  ⭐" : "")).setChecked(StarDecor.bg() == i));
+                    }
+                    check(items, 221, "🎉 Эмодзи-дождь по словам и пасхалки", StarDecor.rainOn());
+                    items.add(UItem.asShadow("«С днём рождения» — конфетти, «люблю» — сердечки, «ура» — звёзды. А ещё в StarTegs спрятаны пасхалки: найдено "
+                            + StarDecor.eggsFound() + " из " + StarDecor.eggsTotal() + ". Фон применяется к вновь открытым чатам."));
+                    items.add(UItem.asHeader("Список чатов"));
+                    check(items, 222, "Цветная полоска у закреплённых и отмеченных чатов", StarDecor.stripeOn());
+                    items.add(UItem.asShadow("Эмодзи вместо аватарки любого чата: меню ⋮ в чате → «😀 Эмодзи-аватарка» (видишь только ты)."));
+                    items.add(UItem.asHeader("Интерфейс"));
+                    check(items, 223, "⭐ Плавающая кнопка StarTegs со Звёздочкой (ИИ)", StarDecor.bubbleOn());
+                    button(items, 224, "📳 Вибро при отправке", StarDecor.HAPTICS[StarDecor.haptic()]);
+                    button(items, 225, "🔊 Звук отправки", StarDecor.sendSoundIndex() < 0 ? "как в Telegram" : (String) StarCosmetics.SOUNDS[StarDecor.sendSoundIndex()][0]);
+                    check(items, 226, "🧘 Минимализм: спрятать всё лишнее", StarDecor.minimal());
+                    check(items, 227, "▶️ «Сейчас играет» — музыка из Telegram в витрине", StarDecor.musicStatus());
+                    items.add(UItem.asHeader("👀 Видят друзья со StarTegs"));
+                    button(items, 228, pro("🖍 Цвет имени"), StarDecor.NAME_COLOR_TITLES[Math.max(0, java.util.Arrays.asList(toObj(StarDecor.NAME_COLORS)).indexOf(StarDecor.nameColor()))]);
+                    button(items, 229, pro("✨ Шрифт имени"), StarDecor.nameStyle() < 0 ? "обычный" : StarStyle.STYLES[StarDecor.nameStyle()].split(" ")[0]);
+                    button(items, 240, "🖼 Обложка витрины", StarDecor.COVERS[Math.max(0, StarDecor.cover())]);
+                    button(items, 241, "🎂 Мой день рождения", StarDecor.birthday().isEmpty() ? "" : StarDecor.birthday().substring(3) + "." + StarDecor.birthday().substring(0, 2));
+                    items.add(UItem.asShadow("Ещё друзья видят медаль уровня у твоего имени: 🥉 → 🥈 → 🥇 → 💎 → 👑 (растёт от достижений). "
+                            + "Цвет чата для двоих и обои для отдельного чата уже есть в самом Telegram: меню ⋮ в чате → «Изменить цвета» / «Обои». "
+                            + "Ночная тема по расписанию — Настройки → Оформление → Ночная тема."));
+                    break;
                 case 19:
                     for (int k : new int[]{0, 8, 10, 17, 13}) items.add(UItem.asButton(5000 + k, SECTIONS[k][0] + "  " + SECTIONS[k][1], SECTIONS[k][2]));
                     break;
@@ -410,6 +454,12 @@ public final class StarSections {
             if (id >= 2000 && id < 2100) {
                 org.json.JSONObject o = StarLife.later().optJSONObject(id - 2000);
                 if (o != null) StarLife.openMessage(this, o.optLong("d"), o.optInt("m"));
+                return;
+            }
+            if (id >= 230 && id < 230 + StarDecor.BG.length) {
+                if (id - 230 >= 2 && !StarMod.requirePro(this, "Живой фон чата")) return;
+                StarDecor.setBg(id - 230);
+                refresh.run();
                 return;
             }
             if (id >= 5000 && id < 5000 + SECTIONS.length) {
@@ -512,6 +562,38 @@ public final class StarSections {
                 case 143: StarMod.checkUpdate(this, true); return;
                 case 144: StarMod.confirmClear(this); return;
                 case 145: presentFragment(new StarHubActivity()); return;
+                case 220: presentFragment(new StarThemeBuilder()); return;
+                case 221: StarDecor.toggle("decor_rain", true); break;
+                case 222: StarDecor.toggle("decor_stripe", true); NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.dialogsNeedReload); break;
+                case 223: StarDecor.toggle("decor_bubble", false); StarDecor.updateBubble(); break;
+                case 224:
+                    choose("📳 Вибро при отправке", StarDecor.HAPTICS, w -> { StarDecor.setHaptic(w); StarDecor.onSend(); refresh.run(); });
+                    return;
+                case 225: {
+                    String[] names = new String[StarCosmetics.SOUNDS.length + 1];
+                    names[0] = "Как в Telegram";
+                    for (int i = 0; i < StarCosmetics.SOUNDS.length; i++) names[i + 1] = (String) StarCosmetics.SOUNDS[i][0];
+                    choose("🔊 Звук отправки (после перезапуска)", names, w -> { StarDecor.setSendSound(w - 1); refresh.run(); });
+                    return;
+                }
+                case 226: StarDecor.setMinimal(!StarDecor.minimal()); break;
+                case 227: StarDecor.toggle("decor_music", true); break;
+                case 228:
+                    if (!StarMod.requirePro(this, "Цвет имени")) return;
+                    choose("🖍 Цвет имени для друзей", StarDecor.NAME_COLOR_TITLES, w -> { StarDecor.setLook(this, "look_name_color", StarDecor.NAME_COLORS[w]); refresh.run(); });
+                    return;
+                case 229: {
+                    if (!StarMod.requirePro(this, "Шрифт имени")) return;
+                    String[] st = new String[StarStyle.STYLES.length + 1];
+                    st[0] = "Обычный";
+                    for (int i = 0; i < StarStyle.STYLES.length; i++) st[i + 1] = StarStyle.STYLES[i];
+                    choose("✨ Шрифт имени для друзей", st, w -> { StarDecor.setLook(this, "look_name_style", w - 1); refresh.run(); });
+                    return;
+                }
+                case 240:
+                    choose("🖼 Обложка витрины", StarDecor.COVERS, w -> { StarDecor.setLook(this, "look_cover", w); refresh.run(); });
+                    return;
+                case 241: StarDecor.chooseBirthday(this, refresh); return;
                 case 210: StarStyle.chooseAuto(this, refresh); return;
                 case 211: StarStyle.fancyName(this); return;
                 case 212: StarStyle.aiBio(this); return;

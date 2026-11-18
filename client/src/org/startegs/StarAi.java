@@ -46,7 +46,70 @@ public final class StarAi {
     public static final int MENU_IMPROVE = 9011;
 
     public static boolean enabled() {
-        return !TextUtils.isEmpty(StarModConfig.AI_BOT);
+        return !TextUtils.isEmpty(StarModConfig.AI_BOT) || !TextUtils.isEmpty(StarModConfig.ECO_BOT);
+    }
+
+    // ================================================================ 4.5: нейросеть напрямую через сервер StarTegs (бот v63)
+
+    /** Прямой режим: сервер бота StarTegs сам обращается к нейросети (ключ API только на сервере). */
+    static boolean direct() {
+        if (TextUtils.isEmpty(StarModConfig.ECO_BOT)) return false;
+        return System.currentTimeMillis() > prefs().getLong("ai_direct_off_until", 0);
+    }
+
+    private static void askDirect(int account, String prompt, Stream cb, Runnable fallback) {
+        try {
+            StarCloud.call(account, "ai_start", new JSONObject().put("prompt", prompt.length() > 12000 ? prompt.substring(prompt.length() - 12000) : prompt), new StarCloud.Result() {
+                @Override
+                public void ok(JSONObject res) {
+                    poll(account, res.optString("job"), System.currentTimeMillis(), "", cb);
+                }
+
+                @Override
+                public void fail(String why) {
+                    boolean limit = why != null && (why.contains("лимит") || why.contains("Лимит"));
+                    if (!limit && fallback != null && !TextUtils.isEmpty(StarModConfig.AI_BOT)) {
+                        // бот без v63 — 10 минут работаем по-старому через ИИ-бота
+                        prefs().edit().putLong("ai_direct_off_until", System.currentTimeMillis() + 10 * 60_000L).apply();
+                        fallback.run();
+                    } else {
+                        cb.error(why);
+                    }
+                }
+            });
+        } catch (Exception e) {
+            cb.error("Ошибка запроса");
+        }
+    }
+
+    private static void poll(int account, String job, long started, String last, Stream cb) {
+        if (System.currentTimeMillis() - started > 150_000L) {
+            cb.error("Нейросеть долго не отвечает, попробуйте ещё раз");
+            return;
+        }
+        AndroidUtilities.runOnUIThread(() -> {
+            try {
+                StarCloud.call(account, "ai_job", new JSONObject().put("id", job), new StarCloud.Result() {
+                    @Override
+                    public void ok(JSONObject res) {
+                        String text = plain(res.optString("text", ""));
+                        if (res.optBoolean("done")) {
+                            cb.done(text);
+                            return;
+                        }
+                        if (!text.equals(last)) cb.partial(text);
+                        poll(account, job, started, text, cb);
+                    }
+
+                    @Override
+                    public void fail(String why) {
+                        cb.error(why);
+                    }
+                });
+            } catch (Exception e) {
+                cb.error("Ошибка запроса");
+            }
+        }, 700);
     }
 
     private static SharedPreferences prefs() {
@@ -121,6 +184,18 @@ public final class StarAi {
      * мода (чтобы разовые вопросы не смешивались с вашими чатами в боте), < 0 — активный диалог.
      */
     static void ask(int account, String prompt, long chatId, Stream cb) {
+        if (direct() && chatId <= 0) {
+            askDirect(account, prompt, cb, () -> askBot(account, prompt, chatId, cb));
+            return;
+        }
+        if (TextUtils.isEmpty(StarModConfig.AI_BOT)) {
+            cb.error("Нейросеть недоступна: обновите бота StarTegs до v63");
+            return;
+        }
+        askBot(account, prompt, chatId, cb);
+    }
+
+    private static void askBot(int account, String prompt, long chatId, Stream cb) {
         api(account, new Api() {
             @Override
             public void ok(String base, String init) {

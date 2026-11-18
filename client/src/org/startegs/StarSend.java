@@ -115,6 +115,8 @@ public final class StarSend {
             if (Looper.myLooper() != Looper.getMainLooper()) return false;
             if (StarPlugins.handle(account, p)) return true; // команды «.calc», «.tr», «.ai», свои макросы
             if (p.message != null && p.document == null && p.photo == null) StarLife.noteSent(p.message);
+            StarDecor.onSend();
+            if (p.message != null) StarDecor.onText(top(), p.message);
             StarLook.sendFlash(top());
             StarAchieve.bump("sent", 1);
             StarQuest.progress("sent", 1);
@@ -368,6 +370,7 @@ public final class StarSend {
             if (now - m.messageOwner.date > 120) continue;
             String payload = m.isOut() ? null : StarCodec.read(m.messageOwner.message);
             if (payload != null && payload.startsWith("fx|")) StarFx.play(f, payload.substring(3)); // эффект от друга
+            else if (!m.isOut()) StarDecor.onText(f, m.messageOwner.message); // эмодзи-дождь по словам
             if (!remindDetect()) continue;
             String[] label = {null};
             int when = parse(m.messageOwner.message, now, label);

@@ -213,6 +213,9 @@ public final class StarCosmetics {
             case "fr_val": return new int[]{0xFFFF2D6F, 0xFFFFB3C7, 0xFFD5004F, 0xFFFF2D6F};
             case "fr_hw": return new int[]{0xFFFF8C00, 0xFF6A1B9A, 0xFF111111, 0xFFFF8C00};
             case "fr_spring": return new int[]{0xFF7CD67C, 0xFFFFC1E3, 0xFFFFF59D, 0xFF7CD67C};
+            case "fr_pulse": return new int[]{0xFFFF2D6F, 0xFFFF9CC2, 0xFFFF2D6F, 0xFFFFD1E0, 0xFFFF2D6F};
+            case "fr_spin": return new int[]{0xFF7B5CFF, 0xFF00E5FF, 0xFFFF3DCB, 0xFF33A6FF, 0xFF7B5CFF};
+            case "fr_flame": return new int[]{0xFFFFD000, 0xFFFF6A00, 0xFFE8152B, 0xFFFF6A00, 0xFFFFD000};
             default: return new int[]{0xFF8E6BFF, 0xFF33A6FF, 0xFF8E6BFF};
         }
     }
@@ -231,6 +234,7 @@ public final class StarCosmetics {
     /** Вызывается из DialogCell после аватарки: рамка друга, если он выбрал её в StarTegs. */
     public static void drawFrame(Canvas canvas, RectF avatar, long dialogId, View cell) {
         try {
+            if (avatar != null && avatar.width() > 0) StarDecor.drawCell(canvas, avatar, dialogId, cell); // полоска и эмодзи-аватарка (4.5)
             if (dialogId <= 0 || avatar == null || avatar.width() <= 0) return;
             String f = frameOf(dialogId);
             float cx = avatar.centerX(), cy = avatar.centerY(), r = avatar.width() / 2f + AndroidUtilities.dp(2.5f);
@@ -238,7 +242,21 @@ public final class StarCosmetics {
             if (f == null || f.isEmpty()) return;
             ring.setStyle(Paint.Style.STROKE);
             ring.setStrokeWidth(AndroidUtilities.dp(2.6f));
-            ring.setShader(new SweepGradient(cx, cy, colors(f), null));
+            SweepGradient sweep = new SweepGradient(cx, cy, colors(f), null);
+            if (f.equals("fr_pulse") || f.equals("fr_spin") || f.equals("fr_flame")) { // анимированные рамки (4.5)
+                long t = System.currentTimeMillis();
+                android.graphics.Matrix mx = new android.graphics.Matrix();
+                mx.setRotate((t / (f.equals("fr_spin") ? 6f : 18f)) % 360f, cx, cy);
+                sweep.setLocalMatrix(mx);
+                if (f.equals("fr_pulse")) {
+                    float k = 0.5f + 0.5f * (float) Math.sin(t / 220.0);
+                    ring.setStrokeWidth(AndroidUtilities.dp(2f + 2f * k));
+                    r += AndroidUtilities.dp(1.5f) * k;
+                }
+                if (f.equals("fr_flame")) ring.setStrokeWidth(AndroidUtilities.dp(2.6f + 1.2f * (float) Math.abs(Math.sin(t / 130.0))));
+                if (cell != null) cell.postInvalidateDelayed(40);
+            }
+            ring.setShader(sweep);
             int shape = StarMod.avatarShape();
             if (shape == 0) canvas.drawCircle(cx, cy, r, ring);
             else {
@@ -295,6 +313,15 @@ public final class StarCosmetics {
     }
 
     private static void applyTheme(String id) {
+        if (id.startsWith("th_x_")) { // тема недели: th_x_<оттенок>_<градиент><неон>
+            try {
+                String[] p = id.split("_");
+                applyStyle(Integer.parseInt(p[2]), p[3].charAt(0) == '1', p[3].charAt(1) == '1');
+            } catch (Exception e) {
+                FileLog.e(e);
+            }
+            return;
+        }
         for (Object[] t : THEMES) {
             if (!t[0].equals(id)) continue;
             prefs().edit().putBoolean("look_gradient", (Boolean) t[2]).putBoolean("look_neon", (Boolean) t[3]).apply();
