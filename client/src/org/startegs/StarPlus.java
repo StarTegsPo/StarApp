@@ -87,6 +87,7 @@ public final class StarPlus {
         StarGuard.init(activity);
         StarDecor.init(activity);
         StarVault.cleanup(org.telegram.messenger.UserConfig.selectedAccount, false); // 4.9: автоочистка корзины
+        StarVault.weekly(org.telegram.messenger.UserConfig.selectedAccount); // 4.9: итоги недели
         StarGhost.refreshIndicator();
     }
 

@@ -38,7 +38,11 @@ import java.util.Locale;
 
 public class StarDeletedActivity extends UniversalFragment {
 
-    private static final int ID_ITEM = 1000, ID_KEEP = 1, ID_CLEAR = 2;
+    private static final int ID_ITEM = 1000, ID_KEEP = 1, ID_CLEAR = 2, ID_TYPE = 3, ID_CHAT = 4, ID_PERIOD = 5, ID_EXPORT = 6;
+    private static final String[] TYPES = {"Все", "💬 Текст", "🖼 Фото", "🎬 Видео", "🎤 Голосовые и кружки", "📎 Файлы", "🌟 Стикеры"};
+    private static final String[] PERIODS = {"За всё время", "Сегодня", "За неделю", "За месяц"};
+    private int typeFilter, periodFilter;
+    private long chatFilter;
     private static final int LIMIT = 300;
 
     private static final class Entry {
@@ -49,6 +53,7 @@ public class StarDeletedActivity extends UniversalFragment {
         String title;
         long scope;
         int deletedAt;
+        boolean unread;
         TLRPC.Message msg;
     }
 
@@ -114,6 +119,7 @@ public class StarDeletedActivity extends UniversalFragment {
                                 e.scope = scope;
                                 e.msg = m;
                                 e.deletedAt = StarMod.deletedTime(account, scope, mid);
+                                e.unread = StarMod.deletedUnreadKey(account, scope, mid);
                                 out.add(e);
                             }
                         }
@@ -144,6 +150,12 @@ public class StarDeletedActivity extends UniversalFragment {
         items.add(UItem.asButton(ID_KEEP, R.drawable.msg_delete, "🧺 Хранить удалённые", StarVault.keepTitle()));
         items.add(UItem.asButton(ID_CLEAR, "Очистить корзину", StarVault.sizeTitle()).red());
         items.add(UItem.asShadow(null));
+        items.add(UItem.asHeader("Фильтры · " + StarVault.weekTitle(currentAccount)));
+        items.add(UItem.asButton(ID_TYPE, "Тип", TYPES[typeFilter]));
+        items.add(UItem.asButton(ID_CHAT, "Чат", chatFilter == 0 ? "все чаты" : chatName(chatFilter)));
+        items.add(UItem.asButton(ID_PERIOD, "Период", PERIODS[periodFilter]));
+        items.add(UItem.asButton(ID_EXPORT, R.drawable.msg_download, "📄 Сохранить показанные в .txt", ""));
+        items.add(UItem.asShadow(null));
         if (loading) {
             items.add(UItem.asShadow("Загрузка…"));
             return;
@@ -151,13 +163,12 @@ public class StarDeletedActivity extends UniversalFragment {
         int shown = 0;
         for (int i = 0; i < entries.size(); i++) {
             Entry e = entries.get(i);
-            if (!query.isEmpty() && !(e.text.toLowerCase(Locale.ROOT).contains(query) || (e.title != null && e.title.toLowerCase(Locale.ROOT).contains(query)))) {
-                continue;
-            }
+            if (!matches(e)) continue;
             int t = e.deletedAt > 0 ? e.deletedAt : e.date;
             String when = (e.deletedAt > 0 ? "удалено " : "") + LocaleController.getInstance().getFormatterDayMonth().format((long) t * 1000) + ", "
                     + LocaleController.getInstance().getFormatterDay().format((long) t * 1000)
-                    + (StarVault.mediaFile(currentAccount, e.scope, e.mid) != null ? " · 📎" : "");
+                    + (StarVault.mediaFile(currentAccount, e.scope, e.mid) != null ? " · 📎" : "")
+                    + (e.unread ? " · не прочитано" : "");
             String snippet = e.text.length() > 120 ? e.text.substring(0, 120) + "…" : e.text;
             items.add(SettingsActivity.SettingCell.Factory.of(ID_ITEM + i, 0xFFF45255, 0xFFDF3955, R.drawable.msg_delete,
                     e.title + " · " + when, snippet.replace('\n', ' ')));
@@ -177,6 +188,37 @@ public class StarDeletedActivity extends UniversalFragment {
         Runnable refresh = () -> {
             if (listView != null) listView.adapter.update(true);
         };
+        if (item.id == ID_TYPE) {
+            new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity()).setTitle("Тип").setItems(TYPES, (d, w) -> {
+                typeFilter = w;
+                refresh.run();
+            }).show();
+            return;
+        }
+        if (item.id == ID_PERIOD) {
+            new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity()).setTitle("Период").setItems(PERIODS, (d, w) -> {
+                periodFilter = w;
+                refresh.run();
+            }).show();
+            return;
+        }
+        if (item.id == ID_CHAT) {
+            java.util.LinkedHashMap<Long, String> chats = new java.util.LinkedHashMap<>();
+            for (Entry e : entries) if (!chats.containsKey(e.dialogId)) chats.put(e.dialogId, chatName(e.dialogId));
+            ArrayList<Long> ids = new ArrayList<>(chats.keySet());
+            CharSequence[] names = new CharSequence[ids.size() + 1];
+            names[0] = "Все чаты";
+            for (int k = 0; k < ids.size(); k++) names[k + 1] = chats.get(ids.get(k));
+            new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity()).setTitle("Чат").setItems(names, (d, w) -> {
+                chatFilter = w == 0 ? 0 : ids.get(w - 1);
+                refresh.run();
+            }).show();
+            return;
+        }
+        if (item.id == ID_EXPORT) {
+            export();
+            return;
+        }
         if (item.id == ID_KEEP) {
             StarVault.chooseKeep(this, this::load);
             return;
@@ -218,6 +260,74 @@ public class StarDeletedActivity extends UniversalFragment {
         });
         new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity()).setTitle(e.title)
                 .setItems(labels.toArray(new CharSequence[0]), (d, w) -> acts.get(w).run()).show();
+    }
+
+    private String chatName(long did) {
+        return StarVault.title(MessagesController.getInstance(currentAccount), did);
+    }
+
+    private static int type(TLRPC.Message m) {
+        if (m.media == null || m.media instanceof TLRPC.TL_messageMediaEmpty || m.media instanceof TLRPC.TL_messageMediaWebPage) return 1;
+        if (m.media.photo != null) return 2;
+        if (m.media.document != null) {
+            TLRPC.Document d = m.media.document;
+            if (org.telegram.messenger.MessageObject.isVoiceDocument(d) || org.telegram.messenger.MessageObject.isRoundVideoDocument(d)) return 4;
+            if (org.telegram.messenger.MessageObject.isStickerDocument(d) || org.telegram.messenger.MessageObject.isAnimatedStickerDocument(d, true)) return 6;
+            if (org.telegram.messenger.MessageObject.isVideoDocument(d)) return 3;
+            return 5;
+        }
+        return 5;
+    }
+
+    private boolean matches(Entry e) {
+        if (!query.isEmpty() && !(e.text.toLowerCase(Locale.ROOT).contains(query) || (e.title != null && e.title.toLowerCase(Locale.ROOT).contains(query)))) return false;
+        if (typeFilter != 0 && type(e.msg) != typeFilter) return false;
+        if (chatFilter != 0 && e.dialogId != chatFilter) return false;
+        if (periodFilter != 0) {
+            int t = e.deletedAt > 0 ? e.deletedAt : e.date;
+            long now = System.currentTimeMillis() / 1000;
+            long border;
+            if (periodFilter == 1) {
+                java.util.Calendar c = java.util.Calendar.getInstance();
+                c.set(java.util.Calendar.HOUR_OF_DAY, 0);
+                c.set(java.util.Calendar.MINUTE, 0);
+                c.set(java.util.Calendar.SECOND, 0);
+                border = c.getTimeInMillis() / 1000;
+            } else border = now - (periodFilter == 2 ? 7 : 30) * 86400L;
+            if (t < border) return false;
+        }
+        return true;
+    }
+
+    /** №13: показанные (с учётом фильтров и поиска) — в .txt. */
+    private void export() {
+        if (getParentActivity() == null) return;
+        java.text.SimpleDateFormat df = new java.text.SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault());
+        StringBuilder sb = new StringBuilder("Удалённые сообщения — сохранено в StarTegs " + df.format(new java.util.Date()) + "\n\n");
+        int n = 0;
+        for (Entry e : entries) {
+            if (!matches(e)) continue;
+            n++;
+            sb.append('[').append(df.format(new java.util.Date(e.date * 1000L))).append("] ").append(e.title);
+            if (e.deletedAt > 0) sb.append(" · удалено ").append(df.format(new java.util.Date(e.deletedAt * 1000L)));
+            if (e.unread) sb.append(" · не прочитано");
+            sb.append("\n").append(e.text).append("\n\n");
+        }
+        if (n == 0) {
+            android.widget.Toast.makeText(getParentActivity(), "Нечего сохранять", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        try {
+            java.io.File dir = new java.io.File(org.telegram.messenger.ApplicationLoader.applicationContext.getFilesDir(), "cache");
+            if (!dir.exists()) dir.mkdirs();
+            java.io.File f = new java.io.File(dir, "Удалённые_StarTegs.txt");
+            try (java.io.FileOutputStream os = new java.io.FileOutputStream(f)) {
+                os.write(sb.toString().getBytes("UTF-8"));
+            }
+            StarVault.shareFile(getParentActivity(), f);
+        } catch (Exception ex) {
+            FileLog.e(ex);
+        }
     }
 
     private static ChatActivity chatFor(Entry e) {

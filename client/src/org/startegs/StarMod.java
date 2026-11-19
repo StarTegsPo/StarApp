@@ -171,12 +171,12 @@ public final class StarMod {
 
     private static final class Db extends SQLiteOpenHelper {
         Db(Context c) {
-            super(c, "startegs_mod.db", null, 2);
+            super(c, "startegs_mod.db", null, 3);
         }
 
         @Override
         public void onCreate(SQLiteDatabase db) {
-            db.execSQL("CREATE TABLE deleted (account INTEGER, dialog INTEGER, mid INTEGER, date INTEGER, synced INTEGER DEFAULT 0, PRIMARY KEY (account, dialog, mid))");
+            db.execSQL("CREATE TABLE deleted (account INTEGER, dialog INTEGER, mid INTEGER, date INTEGER, synced INTEGER DEFAULT 0, unread INTEGER DEFAULT 0, PRIMARY KEY (account, dialog, mid))");
             db.execSQL("CREATE TABLE edits (id INTEGER PRIMARY KEY AUTOINCREMENT, account INTEGER, dialog INTEGER, mid INTEGER, date INTEGER, text TEXT)");
             db.execSQL("CREATE INDEX edits_idx ON edits (account, dialog, mid)");
         }
@@ -184,6 +184,7 @@ public final class StarMod {
         @Override
         public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
             if (oldVersion < 2) db.execSQL("ALTER TABLE deleted ADD COLUMN synced INTEGER DEFAULT 0");
+            if (oldVersion < 3) db.execSQL("ALTER TABLE deleted ADD COLUMN unread INTEGER DEFAULT 0");
         }
     }
 
@@ -197,6 +198,7 @@ public final class StarMod {
     /** Быстрый кэш для отрисовки: какие сообщения удалены / изменены (ключ account:dialog:mid). */
     private static final HashSet<String> deletedCache = new HashSet<>();
     private static final java.util.HashMap<String, Integer> deletedAt = new java.util.HashMap<>();
+    private static final HashSet<String> deletedUnread = new HashSet<>();
     private static final HashSet<String> editsCache = new HashSet<>();
     private static final HashSet<Integer> loadedAccounts = new HashSet<>();
 
@@ -207,11 +209,12 @@ public final class StarMod {
     private static synchronized void ensureLoaded(int account) {
         if (loadedAccounts.contains(account)) return;
         loadedAccounts.add(account);
-        try (Cursor c = sql().rawQuery("SELECT dialog, mid, date FROM deleted WHERE account = ?", new String[]{String.valueOf(account)})) {
+        try (Cursor c = sql().rawQuery("SELECT dialog, mid, date, unread FROM deleted WHERE account = ?", new String[]{String.valueOf(account)})) {
             while (c.moveToNext()) {
                 String k = key(account, c.getLong(0), c.getInt(1));
                 deletedCache.add(k);
                 deletedAt.put(k, c.getInt(2));
+                if (c.getInt(3) == 1) deletedUnread.add(k);
             }
         } catch (Exception e) {
             FileLog.e(e);
@@ -301,7 +304,9 @@ public final class StarMod {
                     at = deletedAt.get(key(account, deleteScope(m), m.getId()));
                 }
                 String when = at != null ? LocaleController.getInstance().getFormatterDay().format((long) at * 1000) : "";
-                return TextUtils.concat(when.isEmpty() ? "🗑 удалено  " : "🗑 удалено в " + when + "  ", time);
+                boolean unread = deletedUnreadKey(account, deleteScope(m), m.getId());
+                String label = unread ? "🗑 удалено до прочтения" : "🗑 удалено";
+                return TextUtils.concat(when.isEmpty() ? label + "  " : label + " в " + when + "  ", time);
             }
         } catch (Exception e) {
             FileLog.e(e);
@@ -682,6 +687,7 @@ public final class StarMod {
                 synchronized (StarMod.class) {
                     deletedCache.remove(key(account, scope, mid));
                     deletedAt.remove(key(account, scope, mid));
+                    deletedUnread.remove(key(account, scope, mid));
                 }
             }
         } catch (Exception e) {
@@ -706,6 +712,35 @@ public final class StarMod {
 
     static int deletedCount(int account) {
         try (Cursor c = sql().rawQuery("SELECT COUNT(*) FROM deleted WHERE account = ?", new String[]{String.valueOf(account)})) {
+            return c.moveToNext() ? c.getInt(0) : 0;
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    /** №3: отметить, что сообщение удалили раньше, чем его прочитали. */
+    static void markDeletedUnread(int account, long scope, int mid) {
+        try {
+            ContentValues v = new ContentValues();
+            v.put("unread", 1);
+            sql().update("deleted", v, "account = ? AND dialog = ? AND mid = ?", new String[]{String.valueOf(account), String.valueOf(scope), String.valueOf(mid)});
+            synchronized (StarMod.class) {
+                deletedUnread.add(key(account, scope, mid));
+            }
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+    }
+
+    static boolean deletedUnreadKey(int account, long scope, int mid) {
+        synchronized (StarMod.class) {
+            return deletedUnread.contains(key(account, scope, mid));
+        }
+    }
+
+    /** №18: сколько удалённых сохранено после указанного времени. */
+    static int deletedSince(int account, int since) {
+        try (Cursor c = sql().rawQuery("SELECT COUNT(*) FROM deleted WHERE account = ? AND date >= ?", new String[]{String.valueOf(account), String.valueOf(since)})) {
             return c.moveToNext() ? c.getInt(0) : 0;
         } catch (Exception e) {
             return 0;

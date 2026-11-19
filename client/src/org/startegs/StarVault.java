@@ -159,6 +159,7 @@ public final class StarVault {
         long uid;
         int mid;
         TLRPC.Message msg;
+        boolean unread;
     }
 
     /** Читает удалённые сообщения из базы Telegram (вызывать в очереди хранилища). */
@@ -215,6 +216,14 @@ public final class StarVault {
                 continue;
             }
             if (copyMedia()) copyFile(account, s);
+            if (!s.msg.out) { // №3: удалили раньше, чем ты прочитал
+                TLRPC.Dialog dlg = mc.dialogs_dict.get(s.uid);
+                if (s.msg.unread || dlg != null && s.mid > dlg.read_inbox_max_id) {
+                    long sc = s.msg.peer_id != null && s.msg.peer_id.channel_id != 0 ? -s.msg.peer_id.channel_id : 0;
+                    StarMod.markDeletedUnread(account, sc, s.mid);
+                    s.unread = true;
+                }
+            }
             if (!channelPost && !s.msg.out) {
                 ArrayList<Snap> l = byChat.get(s.uid);
                 if (l == null) byChat.put(s.uid, l = new ArrayList<>());
@@ -238,7 +247,10 @@ public final class StarVault {
                 title = "🗑 " + who + " " + (did > 0 ? "удалил(а) переписку" : "удалил(а) " + l.size() + " сообщений в «" + chat + "»");
                 text = l.size() + " сообщений — копия сохранена в StarTegs";
             } else {
-                title = "🗑 " + who + " удалил(а) " + (l.size() == 1 ? "сообщение" : l.size() + " сообщения") + (did < 0 ? " в «" + chat + "»" : "");
+                boolean unseen = false;
+                for (Snap s : l) unseen |= s.unread;
+                title = "🗑 " + who + " удалил(а) " + (l.size() == 1 ? "сообщение" : l.size() + " сообщения") + (did < 0 ? " в «" + chat + "»" : "")
+                        + (unseen ? " — до того, как ты прочитал(а)" : "");
                 StringBuilder b = new StringBuilder();
                 for (Snap s : l) {
                     if (b.length() > 0) b.append('\n');
@@ -300,7 +312,7 @@ public final class StarVault {
         intent.setAction("com.tmessages.openchat" + Math.random() + Integer.MAX_VALUE);
         intent.setFlags(32768);
         if (did > 0) intent.putExtra("userId", did);
-        else intent.putExtra("chatId", -did);
+        else if (did < 0) intent.putExtra("chatId", -did);
         intent.putExtra("currentAccount", account);
         PendingIntent pi = PendingIntent.getActivity(ctx, 0, intent, PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE);
         android.app.Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new android.app.Notification.Builder(ctx, ch) : new android.app.Notification.Builder(ctx);
@@ -314,6 +326,36 @@ public final class StarVault {
         } catch (SecurityException e) {
             FileLog.e(e);
         }
+    }
+
+    // ================================================================ сводка недели (№18)
+
+    public static boolean weeklyOn() { return flag("vault_weekly", true); }
+
+    /** Раз в 7 дней — одно тихое уведомление: сколько удалённых сохранено за неделю. Только число. */
+    static void weekly(int account) {
+        if (!weeklyOn() || !saveDeleted()) return;
+        long now = System.currentTimeMillis();
+        long last = prefs().getLong("vault_week_" + account, 0);
+        if (last == 0) {
+            prefs().edit().putLong("vault_week_" + account, now).apply();
+            return;
+        }
+        if (now - last < 7 * 86400_000L) return;
+        prefs().edit().putLong("vault_week_" + account, now).apply();
+        int n = StarMod.deletedSince(account, (int) (last / 1000));
+        if (n <= 0) return;
+        notify(account, 0, "🗑 Итоги недели", "За неделю StarTegs сохранил " + n + " " + StarCmds.plural(n, "удалённое сообщение", "удалённых сообщения", "удалённых сообщений")
+                + ". Посмотреть: StarTegs → Сообщения → Все удалённые.");
+    }
+
+    private static boolean saveDeleted() {
+        return StarMod.saveDeleted();
+    }
+
+    public static String weekTitle(int account) {
+        int n = StarMod.deletedSince(account, (int) (System.currentTimeMillis() / 1000) - 7 * 86400);
+        return n + " за 7 дней";
     }
 
     // ================================================================ удалить по-настоящему

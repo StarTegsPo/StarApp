@@ -359,6 +359,7 @@ public final class StarSections {
                     check(items, 412, "📎 Копии фото, видео и файлов", StarVault.copyMedia());
                     button(items, 413, "🧺 Хранить удалённые", StarVault.keepTitle());
                     check(items, 414, "🔒 PIN на раздел «Удалённые»", StarVault.pinOn());
+                    check(items, 417, "📊 Итоги недели: сколько сохранено", StarVault.weeklyOn());
                     items.add(UItem.asShadow("Копируются только уже загруженные файлы, одноразовые фото и видео — никогда. "
                             + "«Не сохранять удалённые в этом чате» и «Сообщать, когда здесь удалят» — меню ⋮ в чате. "
                             + "История правок показывает «было → стало»: красным — что убрали, зелёным — что добавили."));
@@ -641,6 +642,7 @@ public final class StarSections {
                 case 413: StarVault.chooseKeep(this, refresh); return;
                 case 414: StarVault.togglePin(this, refresh); return;
                 case 415: presentFragment(new StarMemory.Screen()); return;
+                case 417: StarVault.toggle("vault_weekly", true); break;
                 case 416:
                     choose("Двойной тап по сообщению", StarExtra.TAP_ACTIONS, w -> {
                         StarExtra.setTapAction(w);
