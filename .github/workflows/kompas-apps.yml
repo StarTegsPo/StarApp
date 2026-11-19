@@ -1,0 +1,185 @@
+name: Сборка мессенджера Компас (Android + iOS)
+
+# Собирает мобильные приложения «Компас» из kompas/app (Capacitor) и публикует
+# Kompas.apk и Kompas-unsigned.ipa в релизе «kompas-latest».
+# Адрес сервера по умолчанию берётся из переменной репозитория KOMPAS_SERVER_URL
+# (Settings → Secrets and variables → Actions → Variables). Если её нет — приложение спросит адрес при входе.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'kompas/app/**'
+      - '.github/workflows/kompas-apps.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: kompas-apps-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  KOMPAS_SERVER_URL: ${{ vars.KOMPAS_SERVER_URL }}
+  APP_VERSION: 1.0.${{ github.run_number }}
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: kompas/app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: kompas/app/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Android SDK
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" --install "platforms;android-36" "build-tools;36.0.0" > /dev/null
+
+      - name: Зависимости
+        run: npm ci
+
+      - name: Адрес сервера
+        if: env.KOMPAS_SERVER_URL != ''
+        run: echo "window.KOMPAS_SERVER = '${KOMPAS_SERVER_URL%/}';" > www/config.js
+
+      - name: Android-проект, иконки и заставка
+        run: |
+          npx cap add android
+          npm run assets
+          npx cap sync android
+          # версия приложения
+          sed -i "s/versionCode [0-9]*/versionCode ${{ github.run_number }}/; s/versionName \"[^\"]*\"/versionName \"$APP_VERSION\"/" android/app/build.gradle
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Ключ подписи
+        id: sign
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KOMPAS_KEYSTORE_BASE64 || secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KOMPAS_KEYSTORE_PASSWORD || secrets.KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "Подпись: свой ключ"
+          else
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Ключ подписи не задан (KOMPAS_KEYSTORE_BASE64 / KOMPAS_KEYSTORE_PASSWORD) — APK подписан отладочным ключом. Устанавливается нормально, но при обновлении может потребоваться удалить старую версию. См. kompas/README.md."
+          fi
+
+      - name: Сборка APK
+        working-directory: kompas/app/android
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KOMPAS_KEYSTORE_PASSWORD || secrets.KEYSTORE_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          if [ "${{ steps.sign.outputs.release }}" = "true" ]; then
+            ./gradlew assembleRelease --no-daemon --stacktrace
+            UNSIGNED=$(find app/build/outputs/apk/release -name '*.apk' | head -n1)
+            BT="$ANDROID_HOME/build-tools/36.0.0"
+            "$BT/zipalign" -f -p 4 "$UNSIGNED" aligned.apk
+            ALIAS=$(keytool -list -keystore "$RUNNER_TEMP/release.keystore" -storepass "$KEYSTORE_PASSWORD" | grep -m1 PrivateKeyEntry | cut -d, -f1)
+            "$BT/apksigner" sign --ks "$RUNNER_TEMP/release.keystore" --ks-pass env:KEYSTORE_PASSWORD \
+              --key-pass env:KEYSTORE_PASSWORD --ks-key-alias "$ALIAS" --out ../Kompas.apk aligned.apk
+            "$BT/apksigner" verify ../Kompas.apk
+          else
+            ./gradlew assembleDebug --no-daemon --stacktrace
+            cp "$(find app/build/outputs/apk/debug -name '*.apk' | head -n1)" ../Kompas.apk
+          fi
+          ls -lh ../Kompas.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kompas-android
+          path: kompas/app/Kompas.apk
+
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: kompas/app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: kompas/app/package-lock.json
+
+      - name: Зависимости
+        run: npm ci
+
+      - name: Адрес сервера
+        if: env.KOMPAS_SERVER_URL != ''
+        run: echo "window.KOMPAS_SERVER = '${KOMPAS_SERVER_URL%/}';" > www/config.js
+
+      - name: iOS-проект, иконки и заставка
+        run: |
+          npx cap add ios
+          npm run assets
+          npx cap sync ios
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" ios/App/App/Info.plist || true
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" ios/App/App/Info.plist || true
+
+      - name: Сборка (без подписи)
+        working-directory: kompas/app/ios/App
+        run: |
+          xcodebuild -project App.xcodeproj -scheme App -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            build | tail -n 40
+          APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' | head -n1)
+          test -n "$APP" || { echo "App.app не найден"; exit 1; }
+          mkdir -p Payload && cp -R "$APP" Payload/
+          zip -qry ../../Kompas-unsigned.ipa Payload
+          ls -lh ../../Kompas-unsigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kompas-ios
+          path: kompas/app/Kompas-unsigned.ipa
+
+  release:
+    needs: [android, ios]
+    if: always() && (needs.android.result == 'success' || needs.ios.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+
+      - name: Опубликовать в релизе kompas-latest
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: kompas-latest
+          name: Компас — мессенджер (последняя сборка)
+          prerelease: true
+          make_latest: false
+          files: out/*
+          body: |
+            🧭 **Компас** — мессенджер. Сборка ${{ env.APP_VERSION }} из ветки `${{ github.ref_name }}`, коммит ${{ github.sha }}.
+
+            **Android:** скачайте `Kompas.apk` на телефон и установите (разрешите установку из неизвестных источников).
+
+            **iPhone / iPad:**
+            - самый простой путь — откройте адрес вашего сервера Компаса в Safari → «Поделиться» → «На экран Домой»;
+            - или установите `Kompas-unsigned.ipa` через AltStore / Sideloadly (они подпишут его вашим Apple ID);
+            - для App Store / TestFlight нужен аккаунт Apple Developer — см. kompas/README.md.

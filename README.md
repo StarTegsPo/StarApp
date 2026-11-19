@@ -13,6 +13,8 @@
 
 Внешних зависимостей нет: Node.js 22.13+ (встроенные `node:sqlite`, `fetch`, `node:test`), чистый JS в Mini App.
 
+> 🧭 **Новое: мессенджер «Компас»** для iOS и Android — отдельное приложение со своим сервером. Запуск: `npm run kompas`, приложения — в релизе `kompas-latest`. Подробности: [kompas/README.md](kompas/README.md).
+
 ## Запуск
 
 ```bash

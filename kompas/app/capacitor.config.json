@@ -1,0 +1,23 @@
+{
+  "appId": "app.kompas.messenger",
+  "appName": "Компас",
+  "webDir": "www",
+  "backgroundColor": "#0b1220",
+  "android": {
+    "allowMixedContent": true
+  },
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 600,
+      "backgroundColor": "#0b1220",
+      "showSpinner": false
+    },
+    "LocalNotifications": {
+      "iconColor": "#14b8a6"
+    }
+  }
+}
