@@ -243,8 +243,8 @@ public final class StarMemory {
                 items.add(UItem.asButton(ID_ITEM + i, t, sub));
                 shown.add(i);
             }
-            if (a.length() == 0) items.add(UItem.asShadow("Память пуста. Долгое нажатие на любое сообщение → «🧠 В память». "
-                    + "Или выбери «В память» как действие двойного тапа — тогда хватит двух касаний."));
+            if (a.length() == 0 && getParentActivity() != null) items.add(UItem.asCustom(StarGlow.empty(getParentActivity(), "🧠", "Память пока пуста",
+                    "Долгое нажатие на любое сообщение → «🧠 В память». Или выбери «В память» для двойного тапа — хватит двух касаний.")));
             else if (shown.isEmpty()) items.add(UItem.asShadow("Ничего не найдено"));
             else items.add(UItem.asShadow("Нажми — действия. Копия остаётся, даже если сообщение удалят. Хранится только на этом телефоне."));
         }

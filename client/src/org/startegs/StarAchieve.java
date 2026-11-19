@@ -102,6 +102,7 @@ public final class StarAchieve {
                 AndroidUtilities.runOnUIThread(() -> Toast.makeText(ApplicationLoader.applicationContext, "🏆 Достижение: " + a[3] + " " + a[4] + " — забери награду в StarTegs", Toast.LENGTH_LONG).show());
             }
         }
+        StarGlow.checkLevel(); // 5.1: праздник нового уровня
     }
 
     static void claim(Object[] a, Runnable done) {

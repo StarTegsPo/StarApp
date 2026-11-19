@@ -97,6 +97,7 @@ final class StarHero {
         }
         card.addView(row, rowLp);
         wrap.addView(card, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        StarGlow.decorateHero(wrap); // 5.1: сезонные частицы
         return wrap;
     }
 

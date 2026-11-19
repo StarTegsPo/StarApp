@@ -138,9 +138,11 @@ public final class StarStarred {
                         o.optString("w") + (dt > 0 ? " · " + f.format(new Date(dt * 1000)) : "")));
                 shown.add(o);
             }
-            items.add(UItem.asShadow(shown.isEmpty()
-                    ? "Здесь пока пусто. Долгое нажатие на любое сообщение → «В избранные ⭐»."
-                    : "Нажмите — откроется место в чате. Долгое нажатие — убрать."));
+            if (shown.isEmpty() && getParentActivity() != null) {
+                items.add(UItem.asCustom(StarGlow.empty(getParentActivity(), "⭐", "Здесь пока пусто", "Долгое нажатие на любое сообщение → «В избранные ⭐».")));
+            } else {
+                items.add(UItem.asShadow(shown.isEmpty() ? "Здесь пока пусто." : "Нажмите — откроется место в чате. Долгое нажатие — убрать."));
+            }
         }
 
         @Override

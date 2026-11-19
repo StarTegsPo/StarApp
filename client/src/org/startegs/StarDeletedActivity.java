@@ -175,7 +175,7 @@ public class StarDeletedActivity extends UniversalFragment {
             shown++;
         }
         if (entries.isEmpty()) {
-            items.add(UItem.asShadow("Пока ничего не удалено. Когда кто-то удалит сообщение, оно появится здесь."));
+            if (getParentActivity() != null) items.add(UItem.asCustom(StarGlow.empty(getParentActivity(), "🗑", "Пока ничего не удалено", "Когда кто-то удалит сообщение, оно появится здесь — с текстом и временем удаления.")));
         } else if (shown == 0) {
             items.add(UItem.asShadow("Ничего не найдено"));
         } else {
