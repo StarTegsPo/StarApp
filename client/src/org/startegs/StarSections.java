@@ -27,10 +27,10 @@ public final class StarSections {
 
     static final String[][] SECTIONS = {
             {"⭐", "Premium", "пробный период, функции Premium"},
-            {"👻", "Приватность", "призрак, «прочитано», клавиатура"},
+            {"👻", "Приватность", "призрак 2.0: расписание, по чатам, таймер"},
             {"🕳", "Двойное дно", "скрытые чаты, PIN, фальшивый и тревожный код"},
             {"💬", "Чаты", "метки, заметки, фокус, фильтр, поиск"},
-            {"✉️", "Сообщения", "удалённые, правки, секунды, «Поделиться»"},
+            {"✉️", "Сообщения", "удалённые 2.0, «было → стало», 🧠 память"},
             {"📤", "Отправка", "отмена, тон, подтверждение, без звука"},
             {"🖼", "Медиа", "загрузка, истории, кружки, скачать всё"},
             {"🤖", "Нейросеть", "чат с ИИ, перевод, «Ответь за меня»"},
@@ -67,6 +67,7 @@ public final class StarSections {
 
     static void setGhostAll(boolean on) {
         prefs().edit().putBoolean("ghost_typing", on).putBoolean("ghost_read", on).putBoolean("ghost_online", on).putBoolean("ghost_stories", on).apply();
+        StarGhost.arm();
     }
 
     static final int[][] GROUPS = {{20, 18, 9, 11, 16}, {3, 21, 4, 5, 7}, {1, 2, 15}, {14, 6, 12}, {19}};
@@ -310,6 +311,19 @@ public final class StarSections {
                     check(items, 15, "⌨️ Секретная клавиатура", StarPlus.incognitoKeyboard());
                     check(items, 16, "📵 Запрет скриншотов в закрытых и скрытых чатах", StarPlus.secureLocked());
                     items.add(UItem.asShadow("«Прочитано» для отдельного чата: профиль → ⋮ → «Не отправлять «прочитано»»."));
+                    items.add(UItem.asHeader("👻 Призрак 2.0"));
+                    button(items, 400, pro("🎭 Готовые наборы призрака"));
+                    check(items, 401, "🕐 Призрак по расписанию", StarGhost.scheduleOn());
+                    button(items, 402, "Время", StarGhost.schedTitle());
+                    button(items, 403, "⏱ Автовыключение", StarGhost.autoOffTitle());
+                    button(items, 404, "💬 Призрак по чатам", StarGhost.CHAT_MODES[StarGhost.chatMode()] + (StarGhost.listSize() > 0 ? " · " + StarGhost.listSize() : ""));
+                    check(items, 405, "↩️ «Прочитать», когда отвечаю", StarGhost.readOnReply());
+                    check(items, 406, pro("🎧 Не отправлять «прослушано» у голосовых и кружков"), raw("ghost_listen", false));
+                    check(items, 407, "⚠️ Предупреждать перед отправкой", StarGhost.warnOn());
+                    check(items, 408, "🌙 Сразу «не в сети» после отправки", StarGhost.offlineAfter());
+                    check(items, 409, "👻 Кнопка призрака над чатами", raw("ghost_button", true));
+                    items.add(UItem.asShadow("«Печатает», «записывает голосовое» и «выбирает стикер» скрываются вместе. "
+                            + "Отметить чат и «👁 Отметить прочитанным» — меню ⋮ в чате. Плитка «Призрак» для шторки: опусти шторку → ✏️ → перетащи плитку."));
                     break;
                 case 2:
                     button(items, 20, "🙈 Скрытые чаты");
@@ -339,6 +353,19 @@ public final class StarSections {
                     check(items, 43, "Секунды во времени сообщений", raw("show_seconds", false));
                     check(items, 44, "🔁 «Повторить (+1)» в меню сообщения", StarPlus.repeatOn());
                     check(items, 45, "Скрыть кнопку «Поделиться» у сообщений", StarMedia.hideShareButton());
+                    items.add(UItem.asHeader("🗑 Удалённые 2.0"));
+                    button(items, 410, "🔔 «Удалил(а) сообщение»", StarVault.NOTIFY_MODES[StarVault.notifyMode()]);
+                    check(items, 411, "📢 Сохранять удалённые посты каналов", StarVault.saveChannels());
+                    check(items, 412, "📎 Копии фото, видео и файлов", StarVault.copyMedia());
+                    button(items, 413, "🧺 Хранить удалённые", StarVault.keepTitle());
+                    check(items, 414, "🔒 PIN на раздел «Удалённые»", StarVault.pinOn());
+                    items.add(UItem.asShadow("Копируются только уже загруженные файлы, одноразовые фото и видео — никогда. "
+                            + "«Не сохранять удалённые в этом чате» и «Сообщать, когда здесь удалят» — меню ⋮ в чате. "
+                            + "История правок показывает «было → стало»: красным — что убрали, зелёным — что добавили."));
+                    items.add(UItem.asHeader("🧠 Память"));
+                    button(items, 415, "🧠 Моя память", StarMemory.count() > 0 ? String.valueOf(StarMemory.count()) : "");
+                    button(items, 416, "Двойной тап по сообщению", StarExtra.TAP_ACTIONS[Math.min(StarExtra.tapAction(), StarExtra.TAP_ACTIONS.length - 1)]);
+                    items.add(UItem.asShadow("Долгое нажатие на сообщение → «🧠 В память», или выбери «В память» для двойного тапа. Копия остаётся, даже если сообщение удалят."));
                     break;
                 case 5:
                     for (int i = 0; i < UNDO.length; i++) {
@@ -588,10 +615,38 @@ public final class StarSections {
                 case 2: presentFragment(new StarPremiumActivity()); return;
                 case 3: org.telegram.messenger.browser.Browser.openUrl(getParentActivity(), "https://t.me/" + StarModConfig.ECO_BOT + "?start=premium"); return;
                 case 4: presentFragment(new StarPlusActivity()); return;
-                case 10: StarMod.toggle("ghost_typing", false); break;
-                case 11: StarMod.toggle("ghost_read", false); break;
-                case 12: StarMod.toggle("ghost_online", false); break;
-                case 13: StarMod.toggle("ghost_stories", false); break;
+                case 10: StarMod.toggle("ghost_typing", false); StarGhost.arm(); break;
+                case 11: StarMod.toggle("ghost_read", false); StarGhost.arm(); break;
+                case 12: StarMod.toggle("ghost_online", false); StarGhost.arm(); break;
+                case 13: StarMod.toggle("ghost_stories", false); StarGhost.arm(); break;
+                case 400: StarGhost.choosePreset(this, refresh); return;
+                case 401:
+                    if (!StarGhost.scheduleOn() && !StarMod.requirePro(this, "Призрак по расписанию")) return;
+                    StarGhost.toggle("ghost_sched", false);
+                    break;
+                case 402: StarGhost.chooseSchedule(this, refresh); return;
+                case 403: StarGhost.chooseAutoOff(this, refresh); return;
+                case 404: StarGhost.chooseChatMode(this, refresh); return;
+                case 405: StarGhost.toggle("ghost_read_reply", true); break;
+                case 406:
+                    if (!raw("ghost_listen", false) && !StarMod.requirePro(this, "Без «прослушано»")) return;
+                    StarGhost.toggle("ghost_listen", false);
+                    break;
+                case 407: StarGhost.toggle("ghost_warn", false); break;
+                case 408: StarGhost.toggle("ghost_offline_after", true); break;
+                case 409: StarGhost.toggle("ghost_button", true); break;
+                case 410: StarVault.chooseNotify(this, refresh); return;
+                case 411: StarVault.toggle("vault_channels", true); break;
+                case 412: StarVault.toggle("vault_media", true); break;
+                case 413: StarVault.chooseKeep(this, refresh); return;
+                case 414: StarVault.togglePin(this, refresh); return;
+                case 415: presentFragment(new StarMemory.Screen()); return;
+                case 416:
+                    choose("Двойной тап по сообщению", StarExtra.TAP_ACTIONS, w -> {
+                        StarExtra.setTapAction(w);
+                        refresh.run();
+                    });
+                    return;
                 case 14: StarPrivacy.clearNoRead(); break;
                 case 15: StarPlus.toggle("plus_incognito_kb", false); break;
                 case 16: StarPlus.toggle("plus_secure_locked", true); break;
@@ -618,7 +673,7 @@ public final class StarSections {
                 case 39: StarPlus.toggle("plus_profile_history", true); break;
                 case 40: StarMod.toggle("save_deleted", true); break;
                 case 41: StarMod.toggle("save_edits", true); break;
-                case 42: presentFragment(new StarDeletedActivity()); return;
+                case 42: StarVault.open(this); return;
                 case 43: StarMod.toggle("show_seconds", false); break;
                 case 44: StarPlus.toggle("plus_repeat", true); break;
                 case 45: StarMedia.toggle("media_hide_share", false); break;

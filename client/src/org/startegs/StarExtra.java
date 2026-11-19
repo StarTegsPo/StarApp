@@ -358,7 +358,7 @@ public final class StarExtra {
 
     // ================================================================ двойное нажатие
 
-    public static final String[] TAP_ACTIONS = {"Реакция (как в Telegram)", "Ответить", "Спросить ИИ", "Копировать текст", "Напомнить ответить"};
+    public static final String[] TAP_ACTIONS = {"Реакция (как в Telegram)", "Ответить", "Спросить ИИ", "Копировать текст", "Напомнить ответить", "🧠 В память"};
 
     public static int tapAction() {
         return prefs().getInt("double_tap", 0);
@@ -386,6 +386,9 @@ public final class StarExtra {
                     return true;
                 case 4:
                     remind(chat, m);
+                    return true;
+                case 5:
+                    StarMemory.toggle(chat, m);
                     return true;
                 default:
                     return false;

@@ -86,6 +86,8 @@ public final class StarPlus {
         StarLife.init(activity);
         StarGuard.init(activity);
         StarDecor.init(activity);
+        StarVault.cleanup(org.telegram.messenger.UserConfig.selectedAccount, false); // 4.9: автоочистка корзины
+        StarGhost.refreshIndicator();
     }
 
     /** Секретная клавиатура: просим клавиатуру не запоминать ввод (IME_FLAG_NO_PERSONALIZED_LEARNING). */

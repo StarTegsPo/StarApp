@@ -1196,6 +1196,106 @@ patch(CA,
                     org.startegs.StarX.exportChat(ChatActivity.this);
                 } else if (id == org.startegs.StarDecor.MENU_EMOJI_AVATAR) {""")
 
+print("== 4.9: удалённые 2.0, призрак 2.0, память")
+patch(MC,
+      """        if (org.startegs.StarMod.ghostTyping()) {
+            return false;
+        }""",
+      """        if (org.startegs.StarGhost.typing(dialogId)) {
+            return false;
+        }""")
+patch(MC,
+      """org.startegs.StarMod.ghostRead() && DialogObject.isUserDialog(task.dialogId)""",
+      """org.startegs.StarGhost.read(task.dialogId)""")
+patch(MC,
+      """        getNotificationCenter().postNotificationName(NotificationCenter.messagesReadContent, dialogId, arrayList);
+        if (messageObject.getId() < 0) {""",
+      """        getNotificationCenter().postNotificationName(NotificationCenter.messagesReadContent, dialogId, arrayList);
+        if (org.startegs.StarGhost.noListen(messageObject)) {
+            return; // призрак: «прослушано» не отправляем
+        }
+        if (messageObject.getId() < 0) {""")
+patch(CA,
+      """        if (org.startegs.StarPro.canDetails(selectedObject)) {""",
+      """        if (org.startegs.StarMemory.can(selectedObject) && chatMode == MODE_DEFAULT) {
+            items.add(org.startegs.StarMemory.title(currentAccount, selectedObject));
+            options.add(org.startegs.StarMemory.OPTION_MEMORY);
+            icons.add(R.drawable.msg_saved);
+        }
+        if (selectedObject != null && org.startegs.StarVault.isDeleted(currentAccount, selectedObject)) {
+            items.add("↩️ Ответить цитатой");
+            options.add(org.startegs.StarVault.OPTION_QUOTE);
+            icons.add(R.drawable.msg_reply);
+            items.add("⭐ Восстановить в «Избранное»");
+            options.add(org.startegs.StarVault.OPTION_RESTORE);
+            icons.add(R.drawable.msg_fave);
+        }
+        if (org.startegs.StarPro.canDetails(selectedObject)) {""")
+patch(CA,
+      """            case org.startegs.StarPro.OPTION_DETAILS: {""",
+      """            case org.startegs.StarMemory.OPTION_MEMORY: {
+                org.startegs.StarMemory.toggle(this, selectedObject);
+                break;
+            }
+            case org.startegs.StarVault.OPTION_QUOTE: {
+                org.startegs.StarVault.quote(this, selectedObject.messageOwner);
+                break;
+            }
+            case org.startegs.StarVault.OPTION_RESTORE: {
+                org.startegs.StarVault.restore(this, currentAccount, dialog_id, selectedObject.messageOwner);
+                break;
+            }
+            case org.startegs.StarPro.OPTION_DETAILS: {""")
+patch(CA,
+      """            headerItem.lazilyAddSubItem(org.startegs.StarX.MENU_EXPORT_TXT, R.drawable.msg_download, "📄 Сохранить переписку в файл");
+""",
+      """            headerItem.lazilyAddSubItem(org.startegs.StarX.MENU_EXPORT_TXT, R.drawable.msg_download, "📄 Сохранить переписку в файл");
+            headerItem.lazilyAddSubItem(org.startegs.StarGhost.MENU_GHOST_CHAT, R.drawable.ghost, org.startegs.StarGhost.chatMenuTitle(dialog_id));
+            headerItem.lazilyAddSubItem(org.startegs.StarGhost.MENU_READ_NOW, R.drawable.msg_view_file, "👁 Отметить прочитанным");
+            headerItem.lazilyAddSubItem(org.startegs.StarVault.MENU_VAULT_SKIP, R.drawable.msg_delete, org.startegs.StarVault.skipTitle(dialog_id));
+            headerItem.lazilyAddSubItem(org.startegs.StarVault.MENU_VAULT_WATCH, R.drawable.msg_notifications, org.startegs.StarVault.watchTitle(dialog_id));
+""")
+patch(CA,
+      """                } else if (id == org.startegs.StarX.MENU_FIX_LAYOUT) {""",
+      """                } else if (id == org.startegs.StarGhost.MENU_GHOST_CHAT) {
+                    org.startegs.StarGhost.toggleChat(ChatActivity.this, dialog_id);
+                } else if (id == org.startegs.StarGhost.MENU_READ_NOW) {
+                    org.startegs.StarGhost.readNow(ChatActivity.this);
+                } else if (id == org.startegs.StarVault.MENU_VAULT_SKIP) {
+                    org.startegs.StarVault.toggleSkip(ChatActivity.this, dialog_id);
+                } else if (id == org.startegs.StarVault.MENU_VAULT_WATCH) {
+                    org.startegs.StarVault.toggleWatch(ChatActivity.this, dialog_id);
+                } else if (id == org.startegs.StarX.MENU_FIX_LAYOUT) {""")
+patch(DA,
+      """                    menu.addItem(org.startegs.StarMod.MENU_AI, R.drawable.msg_bot).setContentDescription("Чат с ИИ");
+                }""",
+      """                    menu.addItem(org.startegs.StarMod.MENU_AI, R.drawable.msg_bot).setContentDescription("Чат с ИИ");
+                }
+                if (org.startegs.StarGhost.buttonOn()) {
+                    org.startegs.StarGhost.attachIndicator(menu.addItem(org.startegs.StarGhost.MENU_GHOST_BUTTON, R.drawable.ghost));
+                }""")
+patch(DA,
+      """                if (id == org.startegs.StarMod.MENU_AI) {""",
+      """                if (id == org.startegs.StarGhost.MENU_GHOST_BUTTON) {
+                    org.startegs.StarGhost.quickToggle(getParentActivity());
+                    return;
+                }
+                if (id == org.startegs.StarMod.MENU_AI) {""")
+patch("TMessagesProj/src/main/AndroidManifest.xml",
+      """    </application>""",
+      """        <service
+            android:name="org.startegs.StarGhostTile"
+            android:exported="true"
+            android:icon="@drawable/msg_stories_stealth"
+            android:label="Призрак"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+    </application>""")
+
 print("== отчёт о сбоях")
 patch("TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java",
       """        try {

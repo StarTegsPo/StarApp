@@ -97,22 +97,22 @@ public final class StarMod {
 
     /** Не отправлять «печатает…». */
     public static boolean ghostTyping() {
-        return prefs().getBoolean("ghost_typing", false) && isPro();
+        return StarGhost.active("ghost_typing");
     }
 
     /** Не отправлять отметку о прочтении в личных чатах. */
     public static boolean ghostRead() {
-        return prefs().getBoolean("ghost_read", false) && isPro();
+        return StarGhost.active("ghost_read");
     }
 
     /** Не показывать «в сети»: клиент сообщает серверу, что он офлайн. */
     public static boolean ghostOnline() {
-        return prefs().getBoolean("ghost_online", false) && isPro();
+        return StarGhost.active("ghost_online");
     }
 
     /** Смотреть истории, не попадая в список просмотревших. */
     public static boolean ghostStories() {
-        return prefs().getBoolean("ghost_stories", false) && isPro();
+        return StarGhost.active("ghost_stories");
     }
 
     public static boolean hideStories() {
@@ -196,6 +196,7 @@ public final class StarMod {
 
     /** Быстрый кэш для отрисовки: какие сообщения удалены / изменены (ключ account:dialog:mid). */
     private static final HashSet<String> deletedCache = new HashSet<>();
+    private static final java.util.HashMap<String, Integer> deletedAt = new java.util.HashMap<>();
     private static final HashSet<String> editsCache = new HashSet<>();
     private static final HashSet<Integer> loadedAccounts = new HashSet<>();
 
@@ -206,8 +207,12 @@ public final class StarMod {
     private static synchronized void ensureLoaded(int account) {
         if (loadedAccounts.contains(account)) return;
         loadedAccounts.add(account);
-        try (Cursor c = sql().rawQuery("SELECT dialog, mid FROM deleted WHERE account = ?", new String[]{String.valueOf(account)})) {
-            while (c.moveToNext()) deletedCache.add(key(account, c.getLong(0), c.getInt(1)));
+        try (Cursor c = sql().rawQuery("SELECT dialog, mid, date FROM deleted WHERE account = ?", new String[]{String.valueOf(account)})) {
+            while (c.moveToNext()) {
+                String k = key(account, c.getLong(0), c.getInt(1));
+                deletedCache.add(k);
+                deletedAt.put(k, c.getInt(2));
+            }
         } catch (Exception e) {
             FileLog.e(e);
         }
@@ -253,12 +258,14 @@ public final class StarMod {
                     s.insertWithOnConflict("deleted", null, v, SQLiteDatabase.CONFLICT_IGNORE);
                     synchronized (StarMod.class) {
                         deletedCache.add(key(account, scope, mid));
+                        deletedAt.put(key(account, scope, mid), now);
                     }
                 }
                 s.setTransactionSuccessful();
             } finally {
                 s.endTransaction();
             }
+            StarVault.onDeleted(account, scope, ids); // 4.9: уведомление, исключения, копии медиа
             return true;
         } catch (Exception e) {
             FileLog.e(e);
@@ -288,7 +295,14 @@ public final class StarMod {
             if (time != null && m != null && m.messageOwner != null && showSeconds() && m.messageOwner.date > 0) {
                 time = withSeconds(time, m.messageOwner.date);
             }
-            if (isDeleted(account, m)) return TextUtils.concat("🗑 удалено  ", time);
+            if (isDeleted(account, m)) {
+                Integer at;
+                synchronized (StarMod.class) {
+                    at = deletedAt.get(key(account, deleteScope(m), m.getId()));
+                }
+                String when = at != null ? LocaleController.getInstance().getFormatterDay().format((long) at * 1000) : "";
+                return TextUtils.concat(when.isEmpty() ? "🗑 удалено  " : "🗑 удалено в " + when + "  ", time);
+            }
         } catch (Exception e) {
             FileLog.e(e);
         }
@@ -366,22 +380,17 @@ public final class StarMod {
 
     public static void showEditHistory(BaseFragment fragment, MessageObject m) {
         if (fragment == null || m == null || fragment.getParentActivity() == null) return;
-        StringBuilder sb = new StringBuilder();
+        ArrayList<String[]> versions = new ArrayList<>();
         try (Cursor c = sql().rawQuery("SELECT date, text FROM edits WHERE account = ? AND dialog = ? AND mid = ? ORDER BY date, id",
                 new String[]{String.valueOf(fragment.getCurrentAccount()), String.valueOf(m.getDialogId()), String.valueOf(m.getId())})) {
-            int n = 0;
-            while (c.moveToNext()) {
-                n++;
-                sb.append("Версия ").append(n).append(" · ").append(formatDate(c.getInt(0))).append('\n')
-                        .append(TextUtils.isEmpty(c.getString(1)) ? "(без текста)" : c.getString(1)).append("\n\n");
-            }
+            while (c.moveToNext()) versions.add(new String[]{formatDate(c.getInt(0)), c.getString(1) == null ? "" : c.getString(1)});
         } catch (Exception e) {
             FileLog.e(e);
         }
-        sb.append("Сейчас:\n").append(m.messageOwner != null && m.messageOwner.message != null ? m.messageOwner.message : "");
+        CharSequence text = StarVault.history(versions, m.messageOwner != null ? m.messageOwner.message : "");
         new AlertDialog.Builder(fragment.getParentActivity())
-                .setTitle("✏️ История изменений")
-                .setMessage(sb.toString())
+                .setTitle("✏️ История изменений · " + versions.size() + " " + StarCmds.plural(versions.size(), "правка", "правки", "правок"))
+                .setMessage(text)
                 .setPositiveButton("OK", null)
                 .show();
     }
@@ -663,6 +672,53 @@ public final class StarMod {
     }
 
     // ---------------------------------------------------------------- список удалённых
+
+    /** Убрать отметки «удалено» (после настоящего удаления). */
+    static void forgetDeleted(int account, long scope, List<Integer> ids) {
+        try {
+            SQLiteDatabase s = sql();
+            for (Integer mid : ids) {
+                s.delete("deleted", "account = ? AND dialog = ? AND mid = ?", new String[]{String.valueOf(account), String.valueOf(scope), String.valueOf(mid)});
+                synchronized (StarMod.class) {
+                    deletedCache.remove(key(account, scope, mid));
+                    deletedAt.remove(key(account, scope, mid));
+                }
+            }
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+    }
+
+    /** Удалённые раньше указанного времени: scope → id сообщений. */
+    static java.util.HashMap<Long, ArrayList<Integer>> deletedBefore(int account, int border) {
+        java.util.HashMap<Long, ArrayList<Integer>> out = new java.util.HashMap<>();
+        try (Cursor c = sql().rawQuery("SELECT dialog, mid FROM deleted WHERE account = ? AND date < ?", new String[]{String.valueOf(account), String.valueOf(border)})) {
+            while (c.moveToNext()) {
+                ArrayList<Integer> l = out.get(c.getLong(0));
+                if (l == null) out.put(c.getLong(0), l = new ArrayList<>());
+                l.add(c.getInt(1));
+            }
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+        return out;
+    }
+
+    static int deletedCount(int account) {
+        try (Cursor c = sql().rawQuery("SELECT COUNT(*) FROM deleted WHERE account = ?", new String[]{String.valueOf(account)})) {
+            return c.moveToNext() ? c.getInt(0) : 0;
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    /** Время удаления (unix) или 0. */
+    static int deletedTime(int account, long scope, int mid) {
+        synchronized (StarMod.class) {
+            Integer at = deletedAt.get(key(account, scope, mid));
+            return at != null ? at : 0;
+        }
+    }
 
     /** Последние удалённые сообщения аккаунта: пары {scope, mid}, новые сверху. */
     static List<long[]> deletedKeys(int account, int limit) {

@@ -38,7 +38,7 @@ import java.util.Locale;
 
 public class StarDeletedActivity extends UniversalFragment {
 
-    private static final int ID_ITEM = 1000;
+    private static final int ID_ITEM = 1000, ID_KEEP = 1, ID_CLEAR = 2;
     private static final int LIMIT = 300;
 
     private static final class Entry {
@@ -47,6 +47,9 @@ public class StarDeletedActivity extends UniversalFragment {
         int date;
         String text;
         String title;
+        long scope;
+        int deletedAt;
+        TLRPC.Message msg;
     }
 
     private final ArrayList<Entry> entries = new ArrayList<>();
@@ -106,7 +109,11 @@ public class StarDeletedActivity extends UniversalFragment {
                                 e.dialogId = c.longValue(0);
                                 e.mid = mid;
                                 e.date = m.date;
-                                e.text = !TextUtils.isEmpty(m.message) ? m.message : m.media != null ? "📎 Медиа" : "Сообщение";
+                                e.text = StarVault.preview(m);
+                                if (e.text.isEmpty()) e.text = "Сообщение";
+                                e.scope = scope;
+                                e.msg = m;
+                                e.deletedAt = StarMod.deletedTime(account, scope, mid);
                                 out.add(e);
                             }
                         }
@@ -120,13 +127,9 @@ public class StarDeletedActivity extends UniversalFragment {
             AndroidUtilities.runOnUIThread(() -> {
                 MessagesController mc = MessagesController.getInstance(account);
                 for (Entry e : out) {
-                    if (e.dialogId > 0) {
-                        TLRPC.User u = mc.getUser(e.dialogId);
-                        e.title = u != null ? UserObject.getUserName(u) : "Личный чат";
-                    } else {
-                        TLRPC.Chat ch = mc.getChat(-e.dialogId);
-                        e.title = ch != null ? ch.title : "Группа или канал";
-                    }
+                    e.title = StarVault.title(mc, e.dialogId);
+                    if (e.dialogId < 0 && !e.msg.out) e.title = StarVault.sender(mc, e.msg, e.dialogId) + " в «" + e.title + "»";
+                    else if (e.msg.out) e.title = "Ты · " + e.title;
                 }
                 entries.clear();
                 entries.addAll(out);
@@ -138,6 +141,9 @@ public class StarDeletedActivity extends UniversalFragment {
 
     @Override
     protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
+        items.add(UItem.asButton(ID_KEEP, R.drawable.msg_delete, "🧺 Хранить удалённые", StarVault.keepTitle()));
+        items.add(UItem.asButton(ID_CLEAR, "Очистить корзину", StarVault.sizeTitle()).red());
+        items.add(UItem.asShadow(null));
         if (loading) {
             items.add(UItem.asShadow("Загрузка…"));
             return;
@@ -148,8 +154,10 @@ public class StarDeletedActivity extends UniversalFragment {
             if (!query.isEmpty() && !(e.text.toLowerCase(Locale.ROOT).contains(query) || (e.title != null && e.title.toLowerCase(Locale.ROOT).contains(query)))) {
                 continue;
             }
-            String when = LocaleController.getInstance().getFormatterDayMonth().format((long) e.date * 1000) + ", "
-                    + LocaleController.getInstance().getFormatterDay().format((long) e.date * 1000);
+            int t = e.deletedAt > 0 ? e.deletedAt : e.date;
+            String when = (e.deletedAt > 0 ? "удалено " : "") + LocaleController.getInstance().getFormatterDayMonth().format((long) t * 1000) + ", "
+                    + LocaleController.getInstance().getFormatterDay().format((long) t * 1000)
+                    + (StarVault.mediaFile(currentAccount, e.scope, e.mid) != null ? " · 📎" : "");
             String snippet = e.text.length() > 120 ? e.text.substring(0, 120) + "…" : e.text;
             items.add(SettingsActivity.SettingCell.Factory.of(ID_ITEM + i, 0xFFF45255, 0xFFDF3955, R.drawable.msg_delete,
                     e.title + " · " + when, snippet.replace('\n', ' ')));
@@ -160,20 +168,64 @@ public class StarDeletedActivity extends UniversalFragment {
         } else if (shown == 0) {
             items.add(UItem.asShadow("Ничего не найдено"));
         } else {
-            items.add(UItem.asShadow("Показаны последние " + Math.min(entries.size(), LIMIT) + ". Нажмите, чтобы перейти к сообщению в чате."));
+            items.add(UItem.asShadow("Показаны последние " + Math.min(entries.size(), LIMIT) + ". Нажмите — перейти, восстановить, ответить цитатой или сохранить файл."));
         }
     }
 
     @Override
     protected void onClick(UItem item, View view, int position, float x, float y) {
+        Runnable refresh = () -> {
+            if (listView != null) listView.adapter.update(true);
+        };
+        if (item.id == ID_KEEP) {
+            StarVault.chooseKeep(this, this::load);
+            return;
+        }
+        if (item.id == ID_CLEAR) {
+            StarVault.clearAll(this, () -> {
+                entries.clear();
+                refresh.run();
+            });
+            return;
+        }
         int i = item.id - ID_ITEM;
-        if (i < 0 || i >= entries.size()) return;
+        if (i < 0 || i >= entries.size() || getParentActivity() == null) return;
         Entry e = entries.get(i);
+        java.io.File file = StarVault.mediaFile(currentAccount, e.scope, e.mid);
+        ArrayList<String> labels = new ArrayList<>();
+        ArrayList<Runnable> acts = new ArrayList<>();
+        labels.add("💬 Перейти к сообщению");
+        acts.add(() -> presentFragment(chatFor(e)));
+        labels.add("⭐ Восстановить в «Избранное»");
+        acts.add(() -> StarVault.restore(this, currentAccount, e.dialogId, e.msg));
+        labels.add("↩️ Ответить цитатой");
+        acts.add(() -> {
+            ChatActivity chat = chatFor(e);
+            presentFragment(chat);
+            AndroidUtilities.runOnUIThread(() -> StarVault.quote(chat, e.msg), 700);
+        });
+        if (file != null) {
+            labels.add("📥 Сохранить или отправить файл");
+            acts.add(() -> StarVault.shareFile(getParentActivity(), file));
+        }
+        labels.add("🗑 Удалить навсегда");
+        acts.add(() -> {
+            ArrayList<Integer> ids = new ArrayList<>();
+            ids.add(e.mid);
+            StarVault.reallyDelete(currentAccount, e.scope, ids);
+            entries.remove(e);
+            refresh.run();
+        });
+        new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity()).setTitle(e.title)
+                .setItems(labels.toArray(new CharSequence[0]), (d, w) -> acts.get(w).run()).show();
+    }
+
+    private static ChatActivity chatFor(Entry e) {
         Bundle args = new Bundle();
         if (e.dialogId > 0) args.putLong("user_id", e.dialogId);
         else args.putLong("chat_id", -e.dialogId);
         args.putInt("message_id", e.mid);
-        presentFragment(new ChatActivity(args));
+        return new ChatActivity(args);
     }
 
     @Override

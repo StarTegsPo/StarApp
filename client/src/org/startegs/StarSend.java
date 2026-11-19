@@ -115,6 +115,8 @@ public final class StarSend {
             if (Looper.myLooper() != Looper.getMainLooper()) return false;
             if (StarPlugins.handle(account, p)) return true; // команды «.calc», «.tr», «.ai», свои макросы
             StarX.beforeSend(p); // чистые ссылки без utm и fbclid (4.7)
+            if (StarGhost.confirmSend(account, p)) return true; // 4.9: предупреждение в режиме призрака
+            StarGhost.afterSend(account, p.peer); // 4.9: «прочитать при ответе», снова «не в сети»
             if (p.message != null && p.document == null && p.photo == null) StarLife.noteSent(p.message);
             StarDecor.onSend();
             if (p.message != null) StarDecor.onText(top(), p.message);
@@ -168,7 +170,7 @@ public final class StarSend {
     }
 
     /** Вернуть текст в поле ввода, если открыт этот же чат. */
-    private static void restore(SendMessagesHelper.SendMessageParams p) {
+    static void restore(SendMessagesHelper.SendMessageParams p) {
         BaseFragment f = top();
         if (f instanceof ChatActivity && ((ChatActivity) f).getDialogId() == p.peer && ((ChatActivity) f).getChatActivityEnterView() != null) {
             CharSequence cur = ((ChatActivity) f).getChatActivityEnterView().getFieldText();
