@@ -1225,7 +1225,7 @@ patch(CA,
         if (selectedObject != null && org.startegs.StarVault.isDeleted(currentAccount, selectedObject)) {
             items.add("↩️ Ответить цитатой");
             options.add(org.startegs.StarVault.OPTION_QUOTE);
-            icons.add(R.drawable.msg_reply);
+            icons.add(R.drawable.menu_reply);
             items.add("⭐ Восстановить в «Избранное»");
             options.add(org.startegs.StarVault.OPTION_RESTORE);
             icons.add(R.drawable.msg_fave);
