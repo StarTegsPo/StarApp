@@ -13,7 +13,7 @@ let port;
 const dir = mkdtempSync(join(tmpdir(), 'kompas-'));
 
 before(async () => {
-  kompas = createKompas({ dbPath: ':memory:', filesDir: join(dir, 'files') });
+  kompas = createKompas({ dbPath: ':memory:', filesDir: join(dir, 'files'), authLimit: 1000 });
   port = await kompas.listen(0, '127.0.0.1');
   base = `http://127.0.0.1:${port}`;
 });
@@ -240,4 +240,143 @@ test('веб-клиент и CORS для мобильных приложений
   assert.equal(pre.headers.get('access-control-allow-origin'), '*');
   const traversal = await fetch(base + '/..%2f..%2fpackage.json');
   assert.doesNotMatch(await traversal.text(), /"name"/);
+});
+
+test('Избранное создаётся автоматически и сообщения в нём сразу прочитаны', async () => {
+  const u = await signup('ulyana');
+  const chats = (await call('GET', '/api/chats', undefined, u.token)).data;
+  const saved = chats.find((c) => c.type === 'saved');
+  assert.ok(saved, 'есть чат «Избранное»');
+  const again = (await call('POST', '/api/chats/saved', {}, u.token)).data;
+  assert.equal(again.id, saved.id);
+  const self = (await call('POST', '/api/chats/direct', { userId: u.user.id }, u.token)).data;
+  assert.equal(self.id, saved.id, 'чат с самим собой = Избранное');
+  const m = (await call('POST', `/api/chats/${saved.id}/messages`, { text: 'заметка' }, u.token)).data;
+  const view = (await call('GET', `/api/chats/${saved.id}`, undefined, u.token)).data;
+  assert.ok(view.readUpTo >= m.id);
+});
+
+test('реакции, пересылка, закрепление', async () => {
+  const a = await signup('fedor', 'Фёдор');
+  const b = await signup('galya', 'Галя');
+  const c = await signup('ivan', 'Иван');
+  const ab = (await call('POST', '/api/chats/direct', { userId: b.user.id }, a.token)).data;
+  const bc = (await call('POST', '/api/chats/direct', { userId: c.user.id }, b.token)).data;
+  const m = (await call('POST', `/api/chats/${ab.id}/messages`, { text: 'Встречаемся в 7' }, a.token)).data;
+
+  let r = (await call('POST', `/api/messages/${m.id}/react`, { emoji: '👍' }, b.token)).data;
+  assert.deepEqual(r.reactions, [{ emoji: '👍', userIds: [b.user.id] }]);
+  r = (await call('POST', `/api/messages/${m.id}/react`, { emoji: '❤️' }, b.token)).data;
+  assert.deepEqual(r.reactions, [{ emoji: '❤️', userIds: [b.user.id] }], 'одна реакция на человека');
+  r = (await call('POST', `/api/messages/${m.id}/react`, { emoji: '❤️' }, b.token)).data;
+  assert.deepEqual(r.reactions, [], 'повторное нажатие снимает реакцию');
+  assert.equal((await call('POST', `/api/messages/${m.id}/react`, { emoji: '🍔' }, b.token)).status, 400);
+  assert.equal((await call('POST', `/api/messages/${m.id}/react`, { emoji: '👍' }, c.token)).status, 404);
+
+  const fwd = (await call('POST', '/api/messages/forward', { messageIds: [m.id], chatIds: [bc.id] }, b.token)).data;
+  assert.equal(fwd[0].forward.name, 'Фёдор');
+  assert.equal(fwd[0].forward.userId, a.user.id);
+  assert.equal(fwd[0].userId, b.user.id);
+  assert.equal((await call('POST', '/api/messages/forward', { messageIds: [m.id], chatIds: [bc.id] }, c.token)).status, 404,
+    'нельзя переслать то, чего не видишь');
+  assert.equal((await call('PATCH', `/api/messages/${fwd[0].id}`, { text: 'x' }, b.token)).status, 403, 'пересланное не редактируется');
+
+  const pinned = (await call('POST', `/api/chats/${ab.id}/pin`, { messageId: m.id }, b.token)).data;
+  assert.equal(pinned.pinnedMessage.id, m.id);
+  await call('DELETE', `/api/messages/${m.id}`, undefined, a.token);
+  assert.equal((await call('GET', `/api/chats/${ab.id}`, undefined, b.token)).data.pinnedMessage, null, 'удалённое открепляется');
+
+  const s = (await call('POST', `/api/chats/${ab.id}/settings`, { pinned: true, muted: true }, a.token)).data;
+  assert.equal(s.pinned, true);
+  assert.equal(s.muted, true);
+  const list = (await call('GET', '/api/chats', undefined, a.token)).data;
+  assert.equal(list[0].id, ab.id, 'закреплённый чат наверху');
+});
+
+test('каналы: публикуют только админы, подписка по поиску', async () => {
+  const owner = await signup('kanal_owner', 'Автор');
+  const reader = await signup('reader1', 'Читатель');
+  assert.equal((await call('POST', '/api/chats/channel', { title: 'Новости', handle: 'reader1' }, owner.token)).status, 409,
+    'ссылка канала не может совпадать с username');
+  const ch = (await call('POST', '/api/chats/channel', { title: 'Новости Компаса', description: 'Всё о Компасе', handle: 'kompas_news' }, owner.token)).data;
+  assert.equal(ch.type, 'channel');
+  assert.equal(ch.canPost, true);
+  const post = (await call('POST', `/api/chats/${ch.id}/messages`, { text: 'Первый пост' }, owner.token)).data;
+
+  const found = (await call('GET', '/api/search?q=kompas_n', undefined, reader.token)).data;
+  assert.equal(found.channels[0].id, ch.id);
+  assert.equal(found.channels[0].joined, false);
+  const preview = (await call('GET', `/api/chats/${ch.id}/messages`, undefined, reader.token)).data;
+  assert.equal(preview.at(-1).text, 'Первый пост', 'публичный канал можно читать без подписки');
+  assert.equal((await call('POST', `/api/messages/${post.id}/react`, { emoji: '🔥' }, reader.token)).status, 403);
+
+  const joined = (await call('POST', `/api/chats/${ch.id}/join`, {}, reader.token)).data;
+  assert.equal(joined.joined, true);
+  assert.equal(joined.canPost, false);
+  assert.equal(joined.unread, 0, 'старые посты не считаются непрочитанными');
+  assert.equal(joined.memberCount, 2);
+  assert.equal((await call('POST', `/api/chats/${ch.id}/messages`, { text: 'спам' }, reader.token)).status, 403);
+  assert.equal((await call('POST', `/api/messages/${post.id}/react`, { emoji: '🔥' }, reader.token)).status, 200);
+
+  await call('POST', `/api/chats/${ch.id}/messages`, { text: 'Второй пост' }, owner.token);
+  const list = (await call('GET', '/api/chats', undefined, reader.token)).data;
+  assert.equal(list.find((c) => c.id === ch.id).unread, 1);
+
+  const fwd = (await call('POST', '/api/messages/forward', { messageIds: [post.id], chatIds: [list.find((c) => c.type === 'saved').id] }, reader.token)).data;
+  assert.equal(fwd[0].forward.chatId, ch.id);
+  assert.equal(fwd[0].forward.name, 'Новости Компаса');
+
+  await call('POST', `/api/chats/${ch.id}/leave`, {}, reader.token);
+  assert.equal((await call('GET', '/api/chats', undefined, reader.token)).data.some((c) => c.id === ch.id), false);
+});
+
+test('голосовые и аватарки', async () => {
+  const v = await signup('voice_user');
+  const w = await signup('voice_peer');
+  const chat = (await call('POST', '/api/chats/direct', { userId: w.user.id }, v.token)).data;
+  const audio = Buffer.alloc(3000, 7);
+  const up = await (await fetch(base + '/api/upload', {
+    method: 'POST', headers: { Authorization: 'Bearer ' + v.token, 'Content-Type': 'audio/webm;codecs=opus' }, body: audio,
+  })).json();
+  assert.match(up.file, /\.webm$/);
+  const msg = (await call('POST', `/api/chats/${chat.id}/messages`, { file: up.file, duration: 3.4 }, v.token)).data;
+  assert.equal(msg.kind, 'voice');
+  assert.equal(msg.duration, 3);
+
+  const part = await fetch(`${base}/files/${up.file}?t=${w.token}`, { headers: { Range: 'bytes=0-99' } });
+  assert.equal(part.status, 206);
+  assert.equal(part.headers.get('content-range'), 'bytes 0-99/3000');
+  assert.equal((await part.arrayBuffer()).byteLength, 100);
+
+  const png = Buffer.from('89504e470d0a1a0a', 'hex');
+  const av = await (await fetch(base + '/api/upload', { method: 'POST', headers: { Authorization: 'Bearer ' + v.token, 'Content-Type': 'image/png' }, body: png })).json();
+  const me = (await call('PATCH', '/api/me', { avatar: av.file }, v.token)).data;
+  assert.equal(me.avatar, av.file);
+  const stranger = await signup('stranger1');
+  assert.equal((await fetch(`${base}/files/${av.file}?t=${stranger.token}`)).status, 200, 'аватарки видны всем');
+});
+
+test('миграция базы первой версии', async () => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const path = join(dir, 'old.db');
+  const old = new DatabaseSync(path);
+  old.exec(`CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE COLLATE NOCASE, name TEXT NOT NULL,
+      bio TEXT NOT NULL DEFAULT '', color INTEGER NOT NULL DEFAULT 0, pass_hash TEXT NOT NULL, created_at INTEGER NOT NULL, last_seen INTEGER NOT NULL DEFAULT 0);
+    CREATE TABLE chats (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL CHECK (type IN ('direct', 'group')), title TEXT NOT NULL DEFAULT '',
+      direct_key TEXT UNIQUE, created_by INTEGER NOT NULL REFERENCES users(id), created_at INTEGER NOT NULL);
+    CREATE TABLE members (chat_id INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role TEXT NOT NULL DEFAULT 'member', last_read_id INTEGER NOT NULL DEFAULT 0, joined_at INTEGER NOT NULL, PRIMARY KEY (chat_id, user_id));
+    CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id), kind TEXT NOT NULL DEFAULT 'text', text TEXT NOT NULL DEFAULT '', file TEXT, reply_to INTEGER,
+      created_at INTEGER NOT NULL, edited_at INTEGER, deleted INTEGER NOT NULL DEFAULT 0);
+    INSERT INTO users (username, name, pass_hash, created_at) VALUES ('old', 'Old', 'x:y', 1);
+    INSERT INTO chats (type, title, created_by, created_at) VALUES ('group', 'Старая', 1, 1);
+    INSERT INTO members (chat_id, user_id, joined_at) VALUES (1, 1, 1);`);
+  old.close();
+  const { openDb } = await import('../server/db.js');
+  const db = openDb(path);
+  db.prepare("INSERT INTO chats (type, title, created_by, created_at) VALUES ('channel', 'Новый', 1, 2)").run();
+  assert.equal(db.prepare('SELECT title FROM chats WHERE id = 1').get().title, 'Старая');
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM members').get().n, 1);
+  db.close();
 });

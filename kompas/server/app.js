@@ -23,8 +23,17 @@ const MIME = {
   '.gif': 'image/gif',
   '.webp': 'image/webp',
   '.ico': 'image/x-icon',
+  '.webm': 'audio/webm',
+  '.ogg': 'audio/ogg',
+  '.m4a': 'audio/mp4',
+  '.mp3': 'audio/mpeg',
+  '.aac': 'audio/aac',
 };
-const IMAGE_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp' };
+const UPLOAD_TYPES = {
+  'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp',
+  'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a', 'audio/mpeg': 'mp3', 'audio/aac': 'aac',
+};
+const FILE_RE = /^[a-f0-9]{32}\.(jpg|png|gif|webp|webm|ogg|m4a|mp3|aac)$/;
 const MAX_JSON = 64 * 1024;
 const MAX_UPLOAD = 8 * 1024 * 1024;
 
@@ -33,10 +42,11 @@ export function createKompas({
   filesDir = './data/kompas-files',
   webRoot = WEB_ROOT,
   now,
+  authLimit = 20,
 } = {}) {
   const db = openDb(dbPath);
   const app = new Messenger(db, { now });
-  const authLimiter = new RateLimiter(20, 10 * 60 * 1000);
+  const authLimiter = new RateLimiter(authLimit, 10 * 60 * 1000);
 
   const routes = [];
   const route = (method, pattern, handler, { auth = true } = {}) => {
@@ -61,22 +71,30 @@ export function createKompas({
   route('PATCH', '/api/me', ({ uid, body }) => app.updateMe(uid, body));
   route('POST', '/api/me/password', ({ uid, body }) => (app.changePassword(uid, body), { ok: true }));
   route('GET', '/api/users/search', ({ uid, query }) => app.searchUsers(uid, query.get('q')));
+  route('GET', '/api/search', ({ uid, query }) => app.search(uid, query.get('q')));
   route('GET', '/api/users/:id', ({ params }) => app.getUser(params.id));
 
   // ---- чаты ----
   route('GET', '/api/chats', ({ uid }) => app.listChats(uid));
   route('POST', '/api/chats/direct', ({ uid, body }) => app.openDirect(uid, body.userId));
   route('POST', '/api/chats/group', ({ uid, body }) => app.createGroup(uid, body));
+  route('POST', '/api/chats/channel', ({ uid, body }) => app.createChannel(uid, body));
+  route('POST', '/api/chats/saved', ({ uid }) => app.openSaved(uid));
   route('GET', '/api/chats/:id', ({ uid, params }) => app.getChat(uid, params.id));
-  route('PATCH', '/api/chats/:id', ({ uid, params, body }) => app.renameGroup(uid, params.id, body.title));
+  route('PATCH', '/api/chats/:id', ({ uid, params, body }) => app.updateChat(uid, params.id, body));
   route('POST', '/api/chats/:id/members', ({ uid, params, body }) => app.addMembers(uid, params.id, body.userIds));
+  route('POST', '/api/chats/:id/join', ({ uid, params }) => app.joinChannel(uid, params.id));
   route('POST', '/api/chats/:id/leave', ({ uid, params }) => (app.leaveChat(uid, params.id), { ok: true }));
+  route('POST', '/api/chats/:id/settings', ({ uid, params, body }) => app.chatSettings(uid, params.id, body));
+  route('POST', '/api/chats/:id/pin', ({ uid, params, body }) => app.pinMessage(uid, params.id, body.messageId));
   route('POST', '/api/chats/:id/read', ({ uid, params, body }) => app.markRead(uid, params.id, body.messageId));
 
   // ---- сообщения ----
   route('GET', '/api/chats/:id/messages', ({ uid, params, query }) =>
     app.listMessages(uid, params.id, { before: query.get('before'), limit: query.get('limit') }));
   route('POST', '/api/chats/:id/messages', ({ uid, params, body }) => app.sendMessage(uid, params.id, body));
+  route('POST', '/api/messages/forward', ({ uid, body }) => app.forwardMessages(uid, body));
+  route('POST', '/api/messages/:id/react', ({ uid, params, body }) => app.react(uid, params.id, body.emoji));
   route('PATCH', '/api/messages/:id', ({ uid, params, body }) => app.editMessage(uid, params.id, body.text));
   route('DELETE', '/api/messages/:id', async ({ uid, params }) => {
     const file = app.deleteMessage(uid, params.id);
@@ -87,8 +105,8 @@ export function createKompas({
   // ---- файлы ----
   route('POST', '/api/upload', async ({ req }) => {
     const type = String(req.headers['content-type'] || '').split(';')[0].trim();
-    const ext = IMAGE_TYPES[type];
-    if (!ext) throw new HttpError(415, 'Можно отправлять только изображения (JPEG, PNG, GIF, WebP)');
+    const ext = UPLOAD_TYPES[type];
+    if (!ext) throw new HttpError(415, 'Можно отправлять изображения (JPEG, PNG, GIF, WebP) и голосовые сообщения');
     const data = await readBody(req, MAX_UPLOAD);
     if (!data.length) throw new HttpError(400, 'Пустой файл');
     const name = `${randomBytes(16).toString('hex')}.${ext}`;
@@ -137,16 +155,31 @@ export function createKompas({
 
   async function serveFile(req, res, url) {
     const name = url.pathname.slice('/files/'.length);
-    if (!/^[a-f0-9]{32}\.(jpg|png|gif|webp)$/.test(name)) return json(res, 404, { error: 'Не найдено' });
+    if (!FILE_RE.test(name)) return json(res, 404, { error: 'Не найдено' });
     const uid = app.userByToken(url.searchParams.get('t') || bearer(req));
     if (!uid || !app.canSeeFile(uid, name)) return json(res, 404, { error: 'Не найдено' });
     try {
       const data = await readFile(join(filesDir, name));
-      res.writeHead(200, {
+      const headers = {
         'Content-Type': MIME[extname(name)],
         'Cache-Control': 'private, max-age=31536000, immutable',
         'X-Content-Type-Options': 'nosniff',
-      });
+        'Accept-Ranges': 'bytes',
+      };
+      // Safari проигрывает аудио только с поддержкой Range-запросов
+      const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || ''));
+      if (range && (range[1] || range[2])) {
+        let start = range[1] ? Number(range[1]) : data.length - Number(range[2]);
+        let end = range[1] && range[2] ? Number(range[2]) : data.length - 1;
+        start = Math.max(0, start); end = Math.min(end, data.length - 1);
+        if (start > end) {
+          res.writeHead(416, { 'Content-Range': `bytes */${data.length}` });
+          return res.end();
+        }
+        res.writeHead(206, { ...headers, 'Content-Range': `bytes ${start}-${end}/${data.length}`, 'Content-Length': end - start + 1 });
+        return res.end(data.subarray(start, end + 1));
+      }
+      res.writeHead(200, { ...headers, 'Content-Length': data.length });
       res.end(data);
     } catch {
       json(res, 404, { error: 'Не найдено' });

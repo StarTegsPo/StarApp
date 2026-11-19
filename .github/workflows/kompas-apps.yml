@@ -61,6 +61,9 @@ jobs:
           npx cap add android
           npm run assets
           npx cap sync android
+          # микрофон для голосовых сообщений
+          sed -i 's|<uses-permission android:name="android.permission.INTERNET" />|&\n    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />|' android/app/src/main/AndroidManifest.xml
+          grep -q RECORD_AUDIO android/app/src/main/AndroidManifest.xml
           # версия приложения
           sed -i "s/versionCode [0-9]*/versionCode ${{ github.run_number }}/; s/versionName \"[^\"]*\"/versionName \"$APP_VERSION\"/" android/app/build.gradle
 
@@ -134,12 +137,17 @@ jobs:
           npx cap add ios
           npm run assets
           npx cap sync ios
+          PL=ios/App/App/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string 'Компасу нужен микрофон, чтобы записывать голосовые сообщения'" $PL
+          /usr/libexec/PlistBuddy -c "Add :NSCameraUsageDescription string 'Компасу нужна камера, чтобы отправлять фотографии'" $PL
+          /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryUsageDescription string 'Компасу нужен доступ к фото, чтобы отправлять их в чаты'" $PL
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" ios/App/App/Info.plist || true
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" ios/App/App/Info.plist || true
 
       - name: Сборка (без подписи)
         working-directory: kompas/app/ios/App
         run: |
+          set -o pipefail
           xcodebuild -project App.xcodeproj -scheme App -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \

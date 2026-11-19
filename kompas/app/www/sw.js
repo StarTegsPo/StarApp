@@ -1,6 +1,6 @@
 // Service worker: кэширует оболочку приложения, чтобы Компас открывался мгновенно и без сети.
 // API и файлы всегда идут в сеть.
-const CACHE = 'kompas-v1';
+const CACHE = 'kompas-v2';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'config.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {
