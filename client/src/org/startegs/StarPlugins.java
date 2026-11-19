@@ -53,7 +53,8 @@ public final class StarPlugins {
             + ".up текст — БОЛЬШИМИ БУКВАМИ\n"
             + ".mock текст — ТеКсТ ВоТ ТаК\n"
             + ".id — ID этого чата\n"
-            + "/название_шаблона — вставить шаблон ответа\n"
+            + StarCmds.HELP
+            + "\n/название_шаблона — вставить шаблон ответа\n"
             + "Свои команды — в StarTegs → Новое в 4.0 → Мои команды.";
 
     // ---------------------------------------------------------------- свои команды
@@ -272,6 +273,19 @@ public final class StarPlugins {
                     return true;
                 }
                 default: {
+                    String r = StarCmds.run(account, p, cmd, arg); // 4.8: большой набор команд
+                    if (r == StarCmds.CONSUMED) {
+                        StarAchieve.bump("plugin", 1);
+                        return true;
+                    }
+                    if (r == StarCmds.KEEP) {
+                        StarAchieve.bump("plugin", 1);
+                        return false;
+                    }
+                    if (r != null) {
+                        out = r;
+                        break;
+                    }
                     String macro = macros().get(cmd);
                     if (macro == null) return false;
                     out = arg.isEmpty() ? macro : macro + " " + arg;
