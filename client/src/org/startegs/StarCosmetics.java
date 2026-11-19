@@ -200,7 +200,7 @@ public final class StarCosmetics {
     private static final Paint ring = new Paint(Paint.ANTI_ALIAS_FLAG);
     private static final TextPaint badge = new TextPaint(Paint.ANTI_ALIAS_FLAG);
 
-    private static int[] colors(String frame) {
+    static int[] colors(String frame) {
         switch (frame) {
             case "fr_fire": return new int[]{0xFFFFD000, 0xFFFF6A00, 0xFFE8152B, 0xFFFFD000};
             case "fr_neon": return new int[]{0xFFB44CFF, 0xFF00E5FF, 0xFFFF3DCB, 0xFFB44CFF};

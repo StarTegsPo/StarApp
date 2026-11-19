@@ -89,6 +89,7 @@ public final class StarPlus {
         StarVault.cleanup(org.telegram.messenger.UserConfig.selectedAccount, false); // 4.9: автоочистка корзины
         StarVault.weekly(org.telegram.messenger.UserConfig.selectedAccount); // 4.9: итоги недели
         StarGhost.refreshIndicator();
+        StarYou.maybeWelcome(); // 5.0: знакомство при первом запуске
     }
 
     /** Секретная клавиатура: просим клавиатуру не запоминать ввод (IME_FLAG_NO_PERSONALIZED_LEARNING). */

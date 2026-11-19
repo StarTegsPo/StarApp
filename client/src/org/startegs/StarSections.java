@@ -109,6 +109,9 @@ public final class StarSections {
                     }
                 })));
             }
+            if (getParentActivity() != null) {
+                items.add(UItem.asCustom(StarYou.profileCard(this, () -> presentFragment(new Screen(20)))));
+            }
             items.add(UItem.asButton(905, R.drawable.msg_search, "🔎 Поиск по настройкам StarTegs"));
             if (!StarMod.isPro()) {
                 items.add(UItem.asButton(99, R.drawable.msg_premium_badge, StarTrial.available() ? "🎁 Premium на 3 дня — бесплатно" : "⭐ Открыть всё с Premium").accent());
@@ -121,7 +124,12 @@ public final class StarSections {
             for (int g = 0; g < GROUPS.length; g++) {
                 if (!GROUP_TITLES[g].isEmpty()) items.add(UItem.asHeader(GROUP_TITLES[g]));
                 else items.add(UItem.asShadow(null));
-                for (int i : GROUPS[g]) items.add(UItem.asButton(100 + i, SECTIONS[i][0] + "  " + SECTIONS[i][1], SECTIONS[i][2]));
+                for (int i : GROUPS[g]) items.add(StarYou.tile(100 + i, i)); // 5.0: цветные плитки
+                if (g == 0 && getParentActivity() != null) {
+                    items.add(UItem.asHeader("🎨 Темы одним касанием"));
+                    items.add(UItem.asCustom(StarYou.gallery(this, this::refresh)));
+                    items.add(UItem.asButton(906, R.drawable.msg_palette, "Пройти знакомство заново", ""));
+                }
             }
             items.add(UItem.asShadow("StarTegs " + StarModConfig.MOD_VERSION + " · тариф " + StarMod.tierTitle() + ". Функции с ⭐ — в Premium."));
         }
@@ -153,6 +161,9 @@ public final class StarSections {
                     return;
                 case 905:
                     presentFragment(new Search());
+                    return;
+                case 906:
+                    presentFragment(new StarYou.Welcome());
                     return;
             }
             int i = item.id - 100;
@@ -509,6 +520,12 @@ public final class StarSections {
                             + "«Ответь за меня» теперь отвечает уверенно, дерзко или мило 😎"));
                     break;
                 case 20:
+                    if (getParentActivity() != null) {
+                        items.add(UItem.asHeader("Готовые темы"));
+                        items.add(UItem.asCustom(StarYou.gallery(this, () -> {
+                            if (listView != null) listView.adapter.update(true);
+                        })));
+                    }
                     button(items, 220, pro("🎨 Конструктор темы с предпросмотром"));
                     items.add(UItem.asHeader("Чат"));
                     for (int i = 0; i < StarDecor.BG.length; i++) {
@@ -559,7 +576,7 @@ public final class StarSections {
                             + "В чате, меню ⋮: «⌨️ Исправить раскладку» (ghbdtn → привет) и «📄 Сохранить переписку в файл»."));
                     break;
                 case 19:
-                    for (int k : new int[]{0, 8, 10, 17, 13}) items.add(UItem.asButton(5000 + k, SECTIONS[k][0] + "  " + SECTIONS[k][1], SECTIONS[k][2]));
+                    for (int k : new int[]{0, 8, 10, 17, 13}) items.add(StarYou.tile(5000 + k, k));
                     break;
                 default:
                     if (StarModConfig.SERVICES.length == 0) items.add(UItem.asShadow("Сервисы не настроены в startegs.properties."));

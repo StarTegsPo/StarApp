@@ -56,6 +56,7 @@ final class StarHero {
         GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[]{0xFF7B5CFF, 0xFF33A6FF});
         bg.setCornerRadius(AndroidUtilities.dp(22));
         card.setBackground(bg);
+        StarYou.breathe(card, bg, new int[]{0xFF7B5CFF, 0xFF33A6FF}, new int[]{0xFFB04CFF, 0xFF2EC5FF}); // 5.0: «дышащий» градиент
 
         TLRPC.User me = UserConfig.getInstance(account).getCurrentUser();
         String name = me != null ? UserObject.getFirstName(me) : "";
