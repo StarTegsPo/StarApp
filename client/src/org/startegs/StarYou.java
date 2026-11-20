@@ -244,6 +244,11 @@ public final class StarYou {
             {"🌃 Неон", 290f, true, true, 3, 0, true},
             {"🌌 Полночь", 230f, false, true, 1, 2, true},
             {"🌋 Лава", 8f, true, true, 3, 1, true},
+            {"🍯 Карамель", 34f, true, false, 0, 3, true},
+            {"🌌 Аврора", 160f, true, true, 3, 3, true},
+            {"🩶 Графит", 220f, false, false, 1, 2, false},
+            {"🍒 Вишня", 348f, true, false, 0, 1, true},
+            {"💚 Изумруд", 145f, true, true, 1, 0, true},
     };
 
     static int hsv(float h, float s, float v) {

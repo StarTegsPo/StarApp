@@ -54,6 +54,7 @@ public final class StarPlugins {
             + ".mock текст — ТеКсТ ВоТ ТаК\n"
             + ".id — ID этого чата\n"
             + StarCmds.HELP
+            + StarCmds2.HELP
             + "\n/название_шаблона — вставить шаблон ответа\n"
             + "Свои команды — в StarTegs → Новое в 4.0 → Мои команды.";
 

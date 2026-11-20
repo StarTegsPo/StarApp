@@ -552,7 +552,7 @@ final class StarCmds {
                     return null;
                 }
             }
-            default: return null;
+            default: return StarCmds2.run(account, p, cmd, arg); // 5.4: ещё 32 команды
         }
     }
 

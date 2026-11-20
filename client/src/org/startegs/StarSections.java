@@ -467,6 +467,9 @@ public final class StarSections {
                     items.add(UItem.asButton(144, "Очистить сохранённое модом", "").red());
                     break;
                 case 14:
+                    button(items, 173, "🌈 Дневник настроения", StarDays.mood(StarDays.today()));
+                    button(items, 174, "🔥 Привычки", StarDays.habits().length() > 0 ? String.valueOf(StarDays.habits().length()) : "");
+                    button(items, 175, "⏳ Обратный отсчёт до событий");
                     button(items, 170, "✅ Мои дела", StarLife.openTodos() > 0 ? String.valueOf(StarLife.openTodos()) : "");
                     {
                         org.json.JSONArray t = StarLife.todos();
@@ -541,7 +544,7 @@ public final class StarSections {
                     button(items, 249, "✨ Что нового в этой версии");
                     items.add(UItem.asHeader("Чат"));
                     for (int i = 0; i < StarDecor.BG.length; i++) {
-                        items.add(UItem.asRadio(230 + i, "Фон: " + StarDecor.BG[i] + (i >= 2 && !StarMod.isPro() ? "  ⭐" : "")).setChecked(StarDecor.bg() == i));
+                        items.add(UItem.asRadio(2300 + i, "Фон: " + StarDecor.BG[i] + (i >= 2 && !StarMod.isPro() ? "  ⭐" : "")).setChecked(StarDecor.bg() == i));
                     }
                     if (StarDecor.bg() == 8) button(items, 245, "Узор для фона", StarNight.DOODLE_NAMES[StarNight.doodle()]);
                     check(items, 221, "🎉 Эмодзи-дождь по словам и пасхалки", StarDecor.rainOn());
@@ -623,9 +626,9 @@ public final class StarSections {
                 if (o != null) StarLife.openMessage(this, o.optLong("d"), o.optInt("m"));
                 return;
             }
-            if (id >= 230 && id < 230 + StarDecor.BG.length) {
-                if (id - 230 >= 2 && !StarMod.requirePro(this, "Живой фон чата")) return;
-                StarDecor.setBg(id - 230);
+            if (id >= 2300 && id < 2300 + StarDecor.BG.length) {
+                if (id - 2300 >= 2 && !StarMod.requirePro(this, "Живой фон чата")) return;
+                StarDecor.setBg(id - 2300);
                 refresh.run();
                 return;
             }
@@ -808,6 +811,9 @@ public final class StarSections {
                 case 160: presentFragment(new StarFeedActivity()); return;
                 case 161: if (StarMod.requirePro(this, "Фильтр постов каналов")) StarGuard.editChannelWords(this, refresh); return;
                 case 171: StarLife.clearDone(); break;
+                case 173: presentFragment(new StarDays.Mood()); return;
+                case 174: presentFragment(new StarDays.Habits()); return;
+                case 175: presentFragment(new StarDays.Countdown()); return;
                 case 172:
                     if (getParentActivity() != null) new AlertDialog.Builder(getParentActivity()).setTitle("⏱ Экранное время").setMessage(StarLife.weekReport()).setPositiveButton("OK", null).show();
                     return;
