@@ -531,10 +531,13 @@ public final class StarSections {
                     button(items, 242, pro("🪄 Тема в цвет моей аватарки"));
                     button(items, 243, pro("🖼 Тема в цвет обоев телефона"));
                     check(items, 244, "❄️ Сезонные частицы в шапке StarTegs", StarGlow.seasonOn());
+                    button(items, 246, "🌙 Тёплый ночной фильтр", StarNight.title());
+                    button(items, 247, "📤 Поделиться карточкой стиля");
                     items.add(UItem.asHeader("Чат"));
                     for (int i = 0; i < StarDecor.BG.length; i++) {
                         items.add(UItem.asRadio(230 + i, "Фон: " + StarDecor.BG[i] + (i >= 2 && !StarMod.isPro() ? "  ⭐" : "")).setChecked(StarDecor.bg() == i));
                     }
+                    if (StarDecor.bg() == 8) button(items, 245, "Узор для фона", StarNight.DOODLE_NAMES[StarNight.doodle()]);
                     check(items, 221, "🎉 Эмодзи-дождь по словам и пасхалки", StarDecor.rainOn());
                     items.add(UItem.asShadow("«С днём рождения» — конфетти, «люблю» — сердечки, «ура» — звёзды. А ещё в StarTegs спрятаны пасхалки: найдено "
                             + StarDecor.eggsFound() + " из " + StarDecor.eggsTotal() + ". Фон применяется к вновь открытым чатам."));
@@ -666,6 +669,9 @@ public final class StarSections {
                 case 242: StarGlow.fromAvatar(this, refresh); return;
                 case 243: StarGlow.fromWallpaper(this, refresh); return;
                 case 244: StarMod.toggle("glow_season", true); break;
+                case 245: StarNight.chooseDoodle(this, refresh); return;
+                case 246: StarNight.choose(this, refresh); return;
+                case 247: StarNight.shareCard(this); return;
                 case 417: StarVault.toggle("vault_weekly", true); break;
                 case 416:
                     choose("Двойной тап по сообщению", StarExtra.TAP_ACTIONS, w -> {

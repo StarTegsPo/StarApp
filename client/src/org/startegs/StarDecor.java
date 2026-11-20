@@ -197,8 +197,8 @@ public final class StarDecor {
     // ================================================================ фон чата
 
     /** 0 — как в Telegram, 1 — размытая аватарка собеседника, 2.. — живые частицы. */
-    static final String[] BG = {"Как в Telegram", "Размытая аватарка собеседника", "✨ Звёзды", "🫧 Пузыри", "💖 Сердечки", "🌸 Лепестки", "🔥 Искры"};
-    private static final String[][] PARTICLES = {{}, {}, {"✨", "⭐", "💫"}, {"🫧"}, {"💖", "💕", "💗"}, {"🌸", "🌺"}, {"🔥", "✨"}};
+    static final String[] BG = {"Как в Telegram", "Размытая аватарка собеседника", "✨ Звёзды", "🫧 Пузыри", "💖 Сердечки", "🌸 Лепестки", "🔥 Искры", "🌈 Сияние в цветах темы", "🎨 Узор из эмодзи"};
+    private static final String[][] PARTICLES = {{}, {}, {"✨", "⭐", "💫"}, {"🫧"}, {"💖", "💕", "💗"}, {"🌸", "🌺"}, {"🔥", "✨"}, {}, {}};
 
     static int bg() { return prefs().getInt("decor_bg", 0); }
 
@@ -211,7 +211,11 @@ public final class StarDecor {
             if (root == null || mode == 0) return;
             if (mode >= 2 && !StarMod.isPro()) return;
             int at = root.getChildCount() > 0 && root.getChildAt(0).getClass().getSimpleName().equals("BackgroundView") ? 1 : 0;
-            View v = mode == 1 ? new AvatarBg(root.getContext(), dialogId, account) : new Particles(root.getContext(), PARTICLES[mode]);
+            if (mode >= BG.length) return;
+            View v = mode == 1 ? new AvatarBg(root.getContext(), dialogId, account)
+                    : mode == 7 ? new StarNight.Aurora(root.getContext()) // 5.2
+                    : mode == 8 ? new StarNight.Doodle(root.getContext()) // 5.2
+                    : new Particles(root.getContext(), PARTICLES[mode]);
             root.addView(v, at, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         } catch (Exception e) {
             FileLog.e(e);

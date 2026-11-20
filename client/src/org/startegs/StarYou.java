@@ -205,7 +205,7 @@ public final class StarYou {
         nameView.setEllipsize(TextUtils.TruncateAt.END);
         col.addView(nameView);
         String status = StarProfile.statusTitle();
-        col.addView(text(ctx, TextUtils.isEmpty(status) ? "Уровень " + level + " · так тебя видят друзья со StarTegs" : status + " · уровень " + level, 13, 0xCCFFFFFF, false));
+        col.addView(text(ctx, TextUtils.isEmpty(status) ? "Уровень " + level + " · так тебя видят друзья · удерживай — поделиться" : status + " · уровень " + level, 13, 0xCCFFFFFF, false));
         TextView edit = text(ctx, "✏️ Изменить стиль", 12, Color.WHITE, true);
         GradientDrawable pill = new GradientDrawable();
         pill.setColor(0x33FFFFFF);
@@ -219,6 +219,10 @@ public final class StarYou {
         clp.leftMargin = AndroidUtilities.dp(14);
         card.addView(col, clp);
         card.setOnClickListener(v -> onClick.run());
+        card.setOnLongClickListener(v -> { // 5.2: долгое нажатие — картинка для сторис
+            StarNight.shareCard(f);
+            return true;
+        });
         wrap.addView(card, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         return wrap;
     }
