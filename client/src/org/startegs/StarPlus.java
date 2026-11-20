@@ -91,6 +91,7 @@ public final class StarPlus {
         StarGhost.refreshIndicator();
         StarYou.maybeWelcome(); // 5.0: знакомство при первом запуске
         StarNight.attach(activity); // 5.2: тёплый ночной фильтр
+        StarPolish.maybeNews(); // 5.3: «Что нового» после обновления
     }
 
     /** Секретная клавиатура: просим клавиатуру не запоминать ввод (IME_FLAG_NO_PERSONALIZED_LEARNING). */

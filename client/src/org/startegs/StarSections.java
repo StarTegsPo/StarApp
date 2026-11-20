@@ -113,6 +113,7 @@ public final class StarSections {
                 items.add(UItem.asCustom(StarYou.profileCard(this, () -> presentFragment(new Screen(20)))));
             }
             items.add(UItem.asButton(905, R.drawable.msg_search, "🔎 Поиск по настройкам StarTegs"));
+            if (getParentActivity() != null) items.add(UItem.asCustom(StarPolish.tipCard(this, -1))); // 5.3: совет дня
             if (!StarMod.isPro()) {
                 items.add(UItem.asButton(99, R.drawable.msg_premium_badge, StarTrial.available() ? "🎁 Premium на 3 дня — бесплатно" : "⭐ Открыть всё с Premium").accent());
             }
@@ -136,6 +137,7 @@ public final class StarSections {
 
         @Override
         protected void onClick(UItem item, View view, int position, float x, float y) {
+            StarPolish.tap(view); // 5.3: лёгкая отдача
             switch (item.id) {
                 case 99:
                     if (StarTrial.available()) StarTrial.offer(this, this::refresh);
@@ -238,7 +240,8 @@ public final class StarSections {
                 String t = (String) e[1];
                 if (!t.toLowerCase().contains(query)) continue;
                 int sec = (Integer) e[0];
-                items.add(UItem.asButton(10000 + k, t, SECTIONS[sec][0] + " " + SECTIONS[sec][1]));
+                int[] tl = StarYou.TILES[Math.min(sec, StarYou.TILES.length - 1)];
+                items.add(org.telegram.ui.SettingsActivity.SettingCell.Factory.of(10000 + k, tl[1], tl[2], tl[0], t, SECTIONS[sec][0] + " " + SECTIONS[sec][1]));
                 n++;
             }
             if (n == 0) items.add(UItem.asShadow("Ничего не нашлось. Попробуйте другое слово."));
@@ -246,6 +249,7 @@ public final class StarSections {
 
         @Override
         protected void onClick(UItem item, View view, int position, float x, float y) {
+            StarPolish.tap(view); // 5.3: лёгкая отдача
             int k = item.id - 10000;
             if (k >= 0 && k < index.size()) presentFragment(new Screen((Integer) index.get(k)[0]));
         }
@@ -533,6 +537,8 @@ public final class StarSections {
                     check(items, 244, "❄️ Сезонные частицы в шапке StarTegs", StarGlow.seasonOn());
                     button(items, 246, "🌙 Тёплый ночной фильтр", StarNight.title());
                     button(items, 247, "📤 Поделиться карточкой стиля");
+                    check(items, 248, "📳 Лёгкая отдача при нажатиях в StarTegs", StarPolish.hapticsOn());
+                    button(items, 249, "✨ Что нового в этой версии");
                     items.add(UItem.asHeader("Чат"));
                     for (int i = 0; i < StarDecor.BG.length; i++) {
                         items.add(UItem.asRadio(230 + i, "Фон: " + StarDecor.BG[i] + (i >= 2 && !StarMod.isPro() ? "  ⭐" : "")).setChecked(StarDecor.bg() == i));
@@ -590,13 +596,14 @@ public final class StarSections {
                     for (int i = 0; i < StarModConfig.SERVICES.length; i++) {
                         String[] sv = StarModConfig.SERVICES[i];
                         if (sv[2].isEmpty()) continue;
-                        items.add(UItem.asButton(3000 + i, sv[0], sv[1]));
+                        items.add(org.telegram.ui.SettingsActivity.SettingCell.Factory.of(3000 + i, 0xFF5AA7FF, 0xFF3B6FE8, R.drawable.settings_group, sv[0], sv[1]));
                     }
             }
         }
 
         @Override
         protected void onClick(UItem item, View view, int position, float x, float y) {
+            StarPolish.tap(view); // 5.3: лёгкая отдача
             Runnable refresh = () -> {
                 if (listView != null) listView.adapter.update(true);
             };
@@ -672,6 +679,8 @@ public final class StarSections {
                 case 245: StarNight.chooseDoodle(this, refresh); return;
                 case 246: StarNight.choose(this, refresh); return;
                 case 247: StarNight.shareCard(this); return;
+                case 248: StarMod.toggle("polish_haptic", true); break;
+                case 249: presentFragment(new StarPolish.News()); return;
                 case 417: StarVault.toggle("vault_weekly", true); break;
                 case 416:
                     choose("Двойной тап по сообщению", StarExtra.TAP_ACTIONS, w -> {

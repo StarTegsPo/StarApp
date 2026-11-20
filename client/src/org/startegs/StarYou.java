@@ -206,6 +206,9 @@ public final class StarYou {
         col.addView(nameView);
         String status = StarProfile.statusTitle();
         col.addView(text(ctx, TextUtils.isEmpty(status) ? "Уровень " + level + " · так тебя видят друзья · удерживай — поделиться" : status + " · уровень " + level, 13, 0xCCFFFFFF, false));
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        blp.topMargin = AndroidUtilities.dp(8);
+        col.addView(StarPolish.levelBar(ctx), blp); // 5.3: прогресс уровня
         TextView edit = text(ctx, "✏️ Изменить стиль", 12, Color.WHITE, true);
         GradientDrawable pill = new GradientDrawable();
         pill.setColor(0x33FFFFFF);
