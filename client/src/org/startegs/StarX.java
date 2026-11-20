@@ -155,9 +155,19 @@ public final class StarX {
 
     /** Сейчас тихие часы: уведомления приходят без звука и вибрации. */
     public static boolean quietNow() {
+        if (System.currentTimeMillis() < prefs().getLong("x_silence_until", 0)) return true; // 5.5: «Тишина на час»
         if (!quietOn()) return false;
         int h = Calendar.getInstance().get(Calendar.HOUR_OF_DAY), a = quietFrom(), b = quietTo();
         return a == b || (a < b ? h >= a && h < b : h >= a || h < b);
+    }
+
+    static void setSilenceUntil(long until) {
+        prefs().edit().putLong("x_silence_until", until).apply();
+    }
+
+    public static String silenceTitle() {
+        long left = prefs().getLong("x_silence_until", 0) - System.currentTimeMillis();
+        return left <= 0 ? "" : "ещё " + (left / 3600_000L > 0 ? left / 3600_000L + " ч " : "") + (left / 60_000L % 60) + " мин";
     }
 
     public static String quietTitle() {

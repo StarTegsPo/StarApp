@@ -114,6 +114,7 @@ public final class StarSections {
             }
             items.add(UItem.asButton(905, R.drawable.msg_search, "🔎 Поиск по настройкам StarTegs"));
             if (getParentActivity() != null) items.add(UItem.asCustom(StarPolish.tipCard(this, -1))); // 5.3: совет дня
+            if (getParentActivity() != null) items.add(UItem.asCustom(StarBonus.quoteCard(getParentActivity()))); // 5.5: цитата дня
             if (!StarMod.isPro()) {
                 items.add(UItem.asButton(99, R.drawable.msg_premium_badge, StarTrial.available() ? "🎁 Premium на 3 дня — бесплатно" : "⭐ Открыть всё с Premium").accent());
             }
@@ -122,6 +123,8 @@ public final class StarSections {
             items.add(UItem.asCheck(902, "🫥 Шторка приватности" + (StarMod.isPro() ? "" : "  ⭐")).setChecked(StarShade.enabled()));
             items.add(UItem.asCheck(903, "🔕 Отправлять без звука").setChecked(StarMedia.silentDefault()));
             items.add(UItem.asButton(904, R.drawable.msg_edit, "✨ Всегда писать красиво", StarStyle.autoStyleTitle()));
+            items.add(UItem.asButton(907, R.drawable.msg_mute, "🔕 Тишина на час", StarX.silenceTitle()));
+            items.add(UItem.asButton(908, R.drawable.msg_palette, "🌙 Тёплый ночной фильтр", StarNight.title()));
             for (int g = 0; g < GROUPS.length; g++) {
                 if (!GROUP_TITLES[g].isEmpty()) items.add(UItem.asHeader(GROUP_TITLES[g]));
                 else items.add(UItem.asShadow(null));
@@ -166,6 +169,12 @@ public final class StarSections {
                     return;
                 case 906:
                     presentFragment(new StarYou.Welcome());
+                    return;
+                case 907:
+                    StarBonus.silence(this, this::refresh);
+                    return;
+                case 908:
+                    StarNight.choose(this, this::refresh);
                     return;
             }
             int i = item.id - 100;
@@ -470,6 +479,9 @@ public final class StarSections {
                     button(items, 173, "🌈 Дневник настроения", StarDays.mood(StarDays.today()));
                     button(items, 174, "🔥 Привычки", StarDays.habits().length() > 0 ? String.valueOf(StarDays.habits().length()) : "");
                     button(items, 175, "⏳ Обратный отсчёт до событий");
+                    button(items, 176, "💧 Вода сегодня (+1 стакан)", StarBonus.waterTitle());
+                    button(items, 177, "🎁 Список желаний", StarBonus.wishes().length() > 0 ? String.valueOf(StarBonus.wishes().length()) : "");
+                    button(items, 178, "🥱 Скучно? Дай идею");
                     button(items, 170, "✅ Мои дела", StarLife.openTodos() > 0 ? String.valueOf(StarLife.openTodos()) : "");
                     {
                         org.json.JSONArray t = StarLife.todos();
@@ -519,6 +531,7 @@ public final class StarSections {
                     button(items, 210, "✨ Всегда писать красивым шрифтом", StarStyle.autoStyleTitle());
                     button(items, 211, "🪪 Красивое имя в профиле");
                     button(items, 212, "✍️ Крутое «О себе» от ИИ");
+                    button(items, 214, "📝 Готовые красивые «О себе» (20 шаблонов)");
                     button(items, 213, "🌟 Моя витрина: настроение, песня, эмодзи");
                     button(items, 128, "💭 Мой статус", StarProfile.statusTitle());
                     button(items, 100, "🛍 Рамки, значки и эффекты");
@@ -814,6 +827,10 @@ public final class StarSections {
                 case 173: presentFragment(new StarDays.Mood()); return;
                 case 174: presentFragment(new StarDays.Habits()); return;
                 case 175: presentFragment(new StarDays.Countdown()); return;
+                case 176: StarBonus.addWater(this); break;
+                case 177: presentFragment(new StarBonus.Wishlist()); return;
+                case 178: StarBonus.bored(this); return;
+                case 214: StarBonus.chooseBio(this); return;
                 case 172:
                     if (getParentActivity() != null) new AlertDialog.Builder(getParentActivity()).setTitle("⏱ Экранное время").setMessage(StarLife.weekReport()).setPositiveButton("OK", null).show();
                     return;
@@ -853,7 +870,9 @@ public final class StarSections {
 
         @Override
         protected boolean onLongClick(UItem item, View view, int position, float x, float y) {
-            if (item.id >= 1000 && item.id < 1100) {
+            if (item.id == 176) { // 5.5: сброс воды
+                StarBonus.resetWater();
+            } else if (item.id >= 1000 && item.id < 1100) {
                 StarLife.removeAt("life_todos", item.id - 1000);
             } else if (item.id >= 2000 && item.id < 2100) {
                 StarLife.removeAt("life_later", item.id - 2000);

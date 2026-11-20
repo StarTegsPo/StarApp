@@ -55,6 +55,7 @@ public final class StarPlugins {
             + ".id — ID этого чата\n"
             + StarCmds.HELP
             + StarCmds2.HELP
+            + StarCmds3.HELP
             + "\n/название_шаблона — вставить шаблон ответа\n"
             + "Свои команды — в StarTegs → Новое в 4.0 → Мои команды.";
 

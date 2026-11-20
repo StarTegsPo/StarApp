@@ -229,7 +229,7 @@ public final class StarStyle {
             {"⚡ ", " ⚡"}, {"🔥 ", " 🔥"}, {"♡ ", " ♡"}, {"👑 ", ""}, {"꧁༒☬ ", " ☬༒꧂"}, {"▄︻デ ", " ══━一"},
     };
 
-    private static void updateProfile(int account, String first, String about, Runnable ok) {
+    static void updateProfile(int account, String first, String about, Runnable ok) {
         TL_account.updateProfile req = new TL_account.updateProfile();
         if (first != null) {
             req.flags |= 1;

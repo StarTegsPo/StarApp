@@ -60,7 +60,7 @@ final class StarCmds {
             + ".joke — шутка, .fact — факт, .compliment Имя, .motivate — мотивация\n"
             + ".sort / .shuffle a, b, c — отсортировать / перемешать\n"
             + "\n🤗 ДЕЙСТВИЯ (РП)\n"
-            + ".hug .kiss .pat .slap .bite .poke .highfive .cuddle .feed .dance Имя\n"
+            + ".hug .kiss .pat .slap .bite .poke .highfive .cuddle .feed .dance .wave .tickle .boop .cheer Имя\n"
             + ".me действие — «* Ты делаешь что-то *»\n"
             + "\n📅 ВРЕМЯ\n"
             + ".date — сегодня, .days 31.12.2026 — сколько дней осталось\n"
@@ -291,6 +291,10 @@ final class StarCmds {
             {"cuddle", "прижать", "🫂 %s прижимается к %s"},
             {"feed", "покормить", "🍪 %s угощает печенькой %s"},
             {"dance", "танец", "💃 %s танцует с %s"},
+            {"wave", "помахать", "👋 %s машет рукой %s"},
+            {"tickle", "щекотать", "🤭 %s щекочет %s"},
+            {"boop", "буп", "👉👃 %s делает буп по носу %s"},
+            {"cheer", "поддержать", "📣 %s громко болеет за %s"},
     };
 
     // ---------------------------------------------------------------- выполнение
