@@ -107,6 +107,12 @@ public final class StarAchieve {
 
     static void claim(Object[] a, Runnable done) {
         if (!done(a) || claimed(a)) return;
+        if (!StarCloud.online()) { // 6.0: без сервера награда — праздничная отметка
+            prefs().edit().putBoolean("ach_claimed_" + a[0], true).apply();
+            Toast.makeText(ApplicationLoader.applicationContext, "🏆 " + a[3] + " " + a[4] + " — получено! Уровень растёт 🚀", Toast.LENGTH_LONG).show();
+            if (done != null) done.run();
+            return;
+        }
         checking = true;
         try {
             StarCloud.call(UserConfig.selectedAccount, "reward", new JSONObject().put("code", a[0]), new StarCloud.Result() {

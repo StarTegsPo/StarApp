@@ -132,6 +132,7 @@ public final class StarMod {
     }
 
     static String tierTitle() {
+        if (!StarCloud.online()) return "Всё включено ✨";
         if ("free".equals(StarCloud.tier()) && StarTrial.active()) return "Premium ⭐ (пробный до " + StarTrial.untilText() + ")";
         switch (StarCloud.tier()) {
             case "vip": return "VIP 👑";
@@ -590,7 +591,7 @@ public final class StarMod {
     // ---------------------------------------------------------------- спросить ИИ
 
     public static boolean canAskAi(MessageObject m) {
-        return !TextUtils.isEmpty(StarModConfig.AI_BOT) && m != null && m.messageOwner != null && !TextUtils.isEmpty(m.messageOwner.message);
+        return (StarAiKey.has() || !TextUtils.isEmpty(StarModConfig.AI_BOT)) && m != null && m.messageOwner != null && !TextUtils.isEmpty(m.messageOwner.message);
     }
 
     /** «Спросить ИИ» в меню сообщения: ответ показывается прямо в чате (см. StarAi). */

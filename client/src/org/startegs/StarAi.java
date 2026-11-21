@@ -46,7 +46,16 @@ public final class StarAi {
     public static final int MENU_IMPROVE = 9011;
 
     public static boolean enabled() {
-        return !TextUtils.isEmpty(StarModConfig.AI_BOT) || !TextUtils.isEmpty(StarModConfig.ECO_BOT);
+        return true; // 6.0: работает и без ботов — со своим ключом (StarAiKey)
+    }
+
+    /** Нейросеть готова отвечать прямо сейчас (есть свой ключ или бот). */
+    public static boolean ready() {
+        return StarAiKey.has() || !TextUtils.isEmpty(StarModConfig.AI_BOT) || !TextUtils.isEmpty(StarModConfig.ECO_BOT);
+    }
+
+    static boolean local() {
+        return StarAiKey.has() || TextUtils.isEmpty(StarModConfig.AI_BOT) && TextUtils.isEmpty(StarModConfig.ECO_BOT);
     }
 
     // ================================================================ 4.5: нейросеть напрямую через сервер StarTegs (бот v63)
@@ -184,6 +193,14 @@ public final class StarAi {
      * мода (чтобы разовые вопросы не смешивались с вашими чатами в боте), < 0 — активный диалог.
      */
     static void ask(int account, String prompt, long chatId, Stream cb) {
+        if (StarAiKey.has()) { // 6.0: свой ключ — напрямую, без ботов
+            StarAiKey.ask(prompt, cb);
+            return;
+        }
+        if (local()) {
+            cb.error("Подключи нейросеть: StarTegs → 🤖 Нейросеть → «Подключить нейросеть» (есть бесплатный вариант)");
+            return;
+        }
         if (direct() && chatId <= 0) {
             askDirect(account, prompt, cb, () -> askBot(account, prompt, chatId, cb));
             return;

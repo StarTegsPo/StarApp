@@ -133,7 +133,15 @@ public class StarAiChatActivity extends BaseFragment {
         if (scroll != null) scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
     }
 
+    private final java.util.ArrayList<String[]> localTurns = new java.util.ArrayList<>(); // 6.0: диалог без бота
+
     private void loadHistory() {
+        if (StarAi.local()) {
+            list.removeAllViews();
+            hint(StarAiKey.has() ? "Привет! Я Звёздочка ✨ Спроси что угодно — отвечу прямо здесь."
+                    : "Чтобы поговорить со Звёздочкой, подключи нейросеть: StarTegs → 🤖 Нейросеть → «Подключить нейросеть». Есть бесплатный вариант.");
+            return;
+        }
         hint("Загрузка диалога…");
         StarAi.api(currentAccount, new StarAi.Api() {
             @Override
@@ -184,6 +192,12 @@ public class StarAiChatActivity extends BaseFragment {
 
     private void newChat() {
         if (busy) return;
+        if (StarAi.local()) {
+            localTurns.clear();
+            list.removeAllViews();
+            hint("Новый диалог. О чём поговорим?");
+            return;
+        }
         StarAi.api(currentAccount, new StarAi.Api() {
             @Override
             public void ok(String base, String init) {
@@ -218,7 +232,15 @@ public class StarAiChatActivity extends BaseFragment {
         input.setText("");
         bubble(text, true);
         TextView answer = bubble("✨ Думаю…", false);
-        StarAi.ask(currentAccount, text, chatId != 0 ? chatId : -1, new StarAi.Stream() {
+        String prompt = text;
+        if (StarAi.local() && !localTurns.isEmpty()) {
+            StringBuilder b = new StringBuilder("Продолжи диалог.\n");
+            for (int i = Math.max(0, localTurns.size() - 10); i < localTurns.size(); i++) {
+                b.append("Пользователь: ").append(localTurns.get(i)[0]).append("\nЗвёздочка: ").append(localTurns.get(i)[1]).append("\n");
+            }
+            prompt = b.append("Пользователь: ").append(text).toString();
+        }
+        StarAi.ask(currentAccount, prompt, chatId != 0 ? chatId : -1, new StarAi.Stream() {
             @Override
             public void partial(String t) {
                 answer.setText(t + " ▍");
@@ -228,6 +250,7 @@ public class StarAiChatActivity extends BaseFragment {
             @Override
             public void done(String t) {
                 answer.setText(t);
+                if (StarAi.local()) localTurns.add(new String[]{text, t});
                 finish();
             }
 

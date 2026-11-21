@@ -198,7 +198,16 @@ public final class StarCloud {
     }
 
     /** Запрос к API бота StarTegs: {init, a, ...extra}. Колбэк — на главном потоке. */
+    /** 6.0: есть ли сервер StarTegs. Без него всё работает на телефоне. */
+    public static boolean online() {
+        return !android.text.TextUtils.isEmpty(StarModConfig.ECO_BOT);
+    }
+
     static void call(int account, String action, JSONObject extra, Result cb) {
+        if (!online()) { // автономный режим: никаких обращений к ботам
+            AndroidUtilities.runOnUIThread(() -> cb.fail("Эта функция работает только с сервером StarTegs"));
+            return;
+        }
         session(account, new Session() {
             @Override
             public void ok(String api, String init) {
@@ -243,7 +252,7 @@ public final class StarCloud {
 
     /** Узнать тариф у бота. force — без ограничения «не чаще раза в 6 часов», с сообщением о результате. */
     public static void refreshTier(BaseFragment fragment, boolean force, Runnable done) {
-        if (busy) return;
+        if (busy || !online()) return;
         if (!force && System.currentTimeMillis() - tierCheckedAt() < 6 * 3600_000L) return;
         busy = true;
         int account = fragment.getCurrentAccount();

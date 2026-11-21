@@ -73,7 +73,61 @@ public final class StarCosmetics {
         prefs().edit().putString("cos_state", s.toString()).apply();
     }
 
+    // ---------------------------------------------------------------- 6.0: магазин без сервера — всё бесплатно
+
+    static final String[][] LOCAL_CATALOG = {
+            {"fr_star", "frame", "Звёздная", "⭐"}, {"fr_fire", "frame", "Огненная", "🔥"}, {"fr_neon", "frame", "Неон", "💜"},
+            {"fr_snow", "frame", "Снежная", "❄️"}, {"fr_hearts", "frame", "Сердечки", "💖"}, {"fr_rainbow", "frame", "Радуга", "🌈"},
+            {"fr_gold", "frame", "Королевская", "👑"}, {"fr_galaxy", "frame", "Галактика", "🌌"}, {"fr_ny", "frame", "Новогодняя", "🎄"},
+            {"fr_val", "frame", "Валентинка", "💘"}, {"fr_spring", "frame", "Весенняя", "🌷"}, {"fr_hw", "frame", "Хэллоуин", "🎃"},
+            {"fr_pulse", "frame", "Пульс (анимация)", "💓"}, {"fr_spin", "frame", "Вихрь (анимация)", "🌀"}, {"fr_flame", "frame", "Живое пламя (анимация)", "🔥"},
+            {"bd_star", "badge", "Звезда", "⭐"}, {"bd_check", "badge", "Галочка", "✅"}, {"bd_crown", "badge", "Корона", "👑"},
+            {"bd_fire", "badge", "Огонь", "🔥"}, {"bd_bolt", "badge", "Молния", "⚡"}, {"bd_gem", "badge", "Кристалл", "💎"},
+            {"bd_rocket", "badge", "Ракета", "🚀"}, {"bd_unicorn", "badge", "Единорог", "🦄"}, {"bd_game", "badge", "Геймер", "🎮"},
+            {"bd_music", "badge", "Меломан", "🎵"}, {"bd_ny", "badge", "Ёлочка", "🎄"}, {"bd_val", "badge", "Купидон", "💘"},
+            {"bd_spring", "badge", "Тюльпан", "🌷"}, {"bd_hw", "badge", "Тыква", "🎃"},
+            {"fx_hearts", "effect", "Сердечки", "❤️"}, {"fx_confetti", "effect", "Конфетти", "🎉"}, {"fx_fire", "effect", "Огонь", "🔥"},
+            {"fx_bolt", "effect", "Молния", "⚡"}, {"fx_stars", "effect", "Звездопад", "⭐"}, {"fx_snow", "effect", "Снег", "❄️"},
+            {"fx_money", "effect", "Деньги", "💸"},
+            {"th_sakura", "theme", "Сакура", "🌸"}, {"th_cyber", "theme", "Киберпанк", "🌃"}, {"th_ocean", "theme", "Океан", "🌊"},
+            {"th_matcha", "theme", "Матча", "🍵"}, {"th_lava", "theme", "Лава", "🌋"},
+            {"snd_pack", "sound", "Звуки для друзей", "🔔"},
+    };
+
+    /** Состояние магазина без сервера: каталог целиком, всё уже твоё, надетое — как было. */
+    static void buildLocal() {
+        try {
+            JSONObject s = state();
+            JSONArray cat = new JSONArray(), owned = new JSONArray();
+            for (String[] it : LOCAL_CATALOG) {
+                cat.put(new JSONObject().put("id", it[0]).put("kind", it[1]).put("title", it[2]).put("emoji", it[3]).put("price", 0));
+                owned.put(it[0]);
+            }
+            s.put("catalog", cat).put("owned", owned).put("premium", true);
+            saveState(s);
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+    }
+
+    static void setLocal(String key, String value) {
+        try {
+            JSONObject s = state();
+            s.put(key, value);
+            saveState(s);
+        } catch (Exception ignore) {
+        }
+    }
+
+    /** Эмодзи своего значка у имени ("" — без значка). */
+    static String myBadgeEmoji() {
+        String b = state().optString("badge", "");
+        for (String[] it : LOCAL_CATALOG) if (it[0].equals(b)) return it[3];
+        return "";
+    }
+
     static boolean owns(String id) {
+        if (!StarCloud.online()) return true;
         JSONArray a = state().optJSONArray("owned");
         if (a == null) return id.equals("fr_star") || id.equals("fx_hearts") || id.equals("fx_confetti");
         for (int i = 0; i < a.length(); i++) if (id.equals(a.optString(i))) return true;
@@ -463,6 +517,13 @@ public final class StarCosmetics {
         }
 
         private void load() {
+            if (!StarCloud.online()) { // 6.0: без сервера — всё бесплатно и сразу
+                buildLocal();
+                loading = false;
+                error = null;
+                if (listView != null) listView.adapter.update(true);
+                return;
+            }
             loading = true;
             StarCloud.call(currentAccount, "cos_state", null, new StarCloud.Result() {
                 @Override
@@ -506,9 +567,13 @@ public final class StarCosmetics {
                 return;
             }
             boolean premium = s.optBoolean("premium");
-            list.add(UItem.asButton(ID_TOPUP, R.drawable.msg_premium_badge, "💎 Кристаллы: " + s.optInt("crystals"), "пополнить").accent());
-            list.add(UItem.asShadow(premium ? "У вас Premium — весь магазин открыт ✨"
-                    : "Кристаллы покупаются за ⭐ Stars в боте @" + StarModConfig.ECO_BOT + ". Premium открывает всё сразу."));
+            if (StarCloud.online()) {
+                list.add(UItem.asButton(ID_TOPUP, R.drawable.msg_premium_badge, "💎 Кристаллы: " + s.optInt("crystals"), "пополнить").accent());
+                list.add(UItem.asShadow(premium ? "У вас Premium — весь магазин открыт ✨"
+                        : "Кристаллы покупаются за ⭐ Stars в боте @" + StarModConfig.ECO_BOT + ". Premium открывает всё сразу."));
+            } else {
+                list.add(UItem.asShadow("✨ Всё бесплатно: рамки, значки, эффекты и темы — нажми, чтобы надеть."));
+            }
             JSONArray cat = s.optJSONArray("catalog");
             String frame = myFrame(), fx = myEffect(), badgeId = s.optString("badge", "");
             boolean hot = false;
@@ -545,9 +610,11 @@ public final class StarCosmetics {
                     }
                     items.add(it);
                 }
-                if (k.equals("frame")) list.add(UItem.asShadow("Рамку видят друзья, у которых тоже StarTegs, — в своём списке чатов. Пригласи друзей 😉"));
-                if (k.equals("badge")) list.add(UItem.asShadow("Значок стоит справа от вашего имени в списке чатов у друзей со StarTegs (нужен бот v61)."));
-                if (k.equals("theme")) list.add(UItem.asButton(ID_STYLES, R.drawable.msg_palette, "🎨 Темы от пользователей — купить или продать свою").accent());
+                if (k.equals("frame")) list.add(UItem.asShadow(StarCloud.online() ? "Рамку видят друзья, у которых тоже StarTegs, — в своём списке чатов. Пригласи друзей 😉"
+                        : "Рамка видна вокруг твоей аватарки в карточке профиля и в картинке для сторис."));
+                if (k.equals("badge")) list.add(UItem.asShadow(StarCloud.online() ? "Значок стоит справа от вашего имени в списке чатов у друзей со StarTegs."
+                        : "Значок стоит рядом с твоим именем в карточке профиля."));
+                if (k.equals("theme") && StarCloud.online()) list.add(UItem.asButton(ID_STYLES, R.drawable.msg_palette, "🎨 Темы от пользователей — купить или продать свою").accent());
                 if (k.equals("effect")) list.add(UItem.asShadow("Эффект проигрывается при отправке у вас и у друга с модом, когда он в этом чате."));
                 if (k.equals("sound")) list.add(UItem.asShadow("Поставить звук другу: профиль → ⋮ → «Свой звук для чата»."));
             }
@@ -641,6 +708,11 @@ public final class StarCosmetics {
         }
 
         private void equipBadge(String badge) {
+            if (!StarCloud.online()) {
+                setLocal("badge", badge);
+                if (listView != null) listView.adapter.update(true);
+                return;
+            }
             try {
                 StarCloud.call(currentAccount, "badge_set", new JSONObject().put("badge", badge), new StarCloud.Result() {
                     @Override
@@ -661,6 +733,13 @@ public final class StarCosmetics {
 
         private void equip(String frame, String effect) {
             prefs().edit().remove("fx_local").apply();
+            if (!StarCloud.online()) {
+                setLocal("frame", frame);
+                setLocal("effect", effect);
+                NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.dialogsNeedReload);
+                if (listView != null) listView.adapter.update(true);
+                return;
+            }
             try {
                 StarCloud.call(currentAccount, "cos_equip", new JSONObject().put("frame", frame).put("effect", effect), new StarCloud.Result() {
                     @Override

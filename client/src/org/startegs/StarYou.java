@@ -92,6 +92,7 @@ public final class StarYou {
             {R.drawable.settings_features, 0xFFA0A7B4, 0xFF6F7682},  // 19 Ещё
             {R.drawable.settings_language, 0xFFFF7EDB, 0xFF8A5CFF},  // 20 Дизайн
             {R.drawable.settings_folders, 0xFF5BC0EB, 0xFF3A86FF},   // 21 Удобство
+            {R.drawable.settings_data, 0xFF8E9AFF, 0xFF5D6BE0},      // 22 Инструменты
     };
 
     static UItem tile(int id, int section) {
@@ -200,7 +201,7 @@ public final class StarYou {
             name = sp;
         }
         int level = StarAchieve.level();
-        TextView nameView = text(ctx, TextUtils.concat(name, " ", StarDecor.medal(level)), 19, Color.WHITE, true);
+        TextView nameView = text(ctx, TextUtils.concat(name, " ", StarCosmetics.myBadgeEmoji(), StarCosmetics.myBadgeEmoji().isEmpty() ? "" : " ", StarDecor.medal(level)), 19, Color.WHITE, true);
         nameView.setSingleLine(true);
         nameView.setEllipsize(TextUtils.TruncateAt.END);
         col.addView(nameView);

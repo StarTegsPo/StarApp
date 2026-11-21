@@ -1055,7 +1055,7 @@ patch(CA,
             headerItem.lazilyAddSubItem(org.startegs.StarLife.MENU_CAPSULE, R.drawable.msg_mute, "⏳ Капсула времени");
             headerItem.lazilyAddSubItem(org.startegs.StarLife.MENU_DRAFTS, R.drawable.msg_edit, "📝 Стёртые черновики");
             if (currentUser != null && !currentUser.bot && !currentUser.self) {
-                headerItem.lazilyAddSubItem(org.startegs.StarFun.MENU_SEND_CRYSTALS, R.drawable.msg_premium_badge, "💎 Перевести кристаллы");
+                if (org.startegs.StarCloud.online()) headerItem.lazilyAddSubItem(org.startegs.StarFun.MENU_SEND_CRYSTALS, R.drawable.msg_premium_badge, "💎 Перевести кристаллы");
             }
 """)
 patch(CA,

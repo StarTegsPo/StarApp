@@ -48,6 +48,7 @@ public final class StarSections {
             {"⚙️", "Ещё", "Premium, плагины, бизнес, сервисы, прочее"},
             {"🎨", "Дизайн", "конструктор темы, фон чата, кнопка, звуки, стиль для друзей"},
             {"🧰", "Удобство", "папки, тихие часы, ключевые слова, стример, чистые ссылки"},
+            {"🛠", "Инструменты", "QR-код, калькулятор, конвертер, пароли, таймер, кубик"},
     };
 
     /** Порядок разделов на главном экране. */
@@ -70,7 +71,7 @@ public final class StarSections {
         StarGhost.arm();
     }
 
-    static final int[][] GROUPS = {{20, 18, 9, 11, 16}, {3, 21, 4, 5, 7}, {1, 2, 15}, {14, 6, 12}, {19}};
+    static final int[][] GROUPS = {{20, 18, 9, 11, 16}, {3, 21, 4, 5, 7}, {1, 2, 15}, {14, 22, 6, 12}, {19}};
     static final String[] GROUP_TITLES = {"🔥 Стиль и развлечения", "💬 Общение", "🔒 Приватность", "📚 Полезное", ""};
 
     /** Главный экран StarTegs. */
@@ -141,7 +142,10 @@ public final class StarSections {
             for (int g = 0; g < GROUPS.length; g++) {
                 if (!GROUP_TITLES[g].isEmpty()) items.add(UItem.asHeader(GROUP_TITLES[g]));
                 else items.add(UItem.asShadow(null));
-                for (int i : GROUPS[g]) items.add(StarYou.tile(100 + i, i)); // 5.0: цветные плитки
+                for (int i : GROUPS[g]) {
+                    if (!StarCloud.online() && (i == 16 || i == 17)) continue; // 6.0: без ботов — без кошелька и сервисов
+                    items.add(StarYou.tile(100 + i, i)); // 5.0: цветные плитки
+                }
                 if (g == 0 && getParentActivity() != null) {
                     items.add(UItem.asHeader("🎨 Темы одним касанием"));
                     items.add(UItem.asCustom(StarYou.gallery(this, this::refresh)));
@@ -240,7 +244,7 @@ public final class StarSections {
         private void build() {
             if (!index.isEmpty()) return;
             for (int sec = 0; sec < SECTIONS.length; sec++) {
-                if (sec == 19 || sec == 17) continue;
+                if (sec == 19 || sec == 17 || !StarCloud.online() && sec == 16) continue;
                 index.add(new Object[]{sec, SECTIONS[sec][1] + " " + SECTIONS[sec][2]});
                 ArrayList<UItem> tmp = new ArrayList<>();
                 try {
@@ -352,6 +356,12 @@ public final class StarSections {
             if (getParentActivity() != null && section != 19) items.add(UItem.asCustom(StarGlow.banner(getParentActivity(), section))); // 5.1
             switch (section) {
                 case 0:
+                    if (!StarCloud.online()) { // 6.0
+                        items.add(UItem.asShadow("✨ В StarTegs всё включено бесплатно: призрак, шторка, темы, рамки, значки, эффекты и все функции. Никаких подписок и ботов."));
+                        button(items, 4, "🧪 Что нового в StarTegs");
+                        button(items, 83, "🤖 Подключить нейросеть", StarAiKey.title());
+                        break;
+                    }
                     items.add(UItem.asShadow("Ваш тариф: " + StarMod.tierTitle()));
                     if (StarTrial.available()) button(items, 1, "🎁 Premium 3 дня бесплатно");
                     button(items, 2, "⭐ Все Premium-функции");
@@ -449,10 +459,8 @@ public final class StarSections {
                             + "Сохранять голосовые и файлы по одному — долгое нажатие → «Сохранить в загрузки» (есть в Telegram)."));
                     break;
                 case 7:
-                    if (!StarAi.enabled()) {
-                        items.add(UItem.asShadow("Нейросеть выключена: в startegs.properties не задан ai_bot."));
-                        break;
-                    }
+                    button(items, 83, "🔑 Подключить нейросеть", StarAiKey.title());
+                    if (!StarAi.ready()) items.add(UItem.asShadow("Нейросеть работает без ботов: вставь свой ключ. Самый простой — бесплатный ключ OpenRouter (около 50 вопросов в день). Ключ хранится только на телефоне."));
                     button(items, 80, "🤖 Чат с ИИ");
                     button(items, 81, "☀️ Сводка дня");
                     check(items, 82, "🌍 Перевод чатов через ИИ", StarAuto.aiTranslate());
@@ -467,12 +475,12 @@ public final class StarSections {
                     break;
                 case 9:
                     button(items, 100, "🛍 Магазин: рамки, значки, эффекты, темы");
-                    button(items, 101, "🎨 Темы от пользователей");
+                    if (StarCloud.online()) button(items, 101, "🎨 Темы от пользователей");
                     button(items, 102, "🖼 Иконка приложения");
                     button(items, 103, "Палитры, шрифты, пузыри, обои — все настройки оформления");
                     break;
                 case 10:
-                    button(items, 110, "💼 Бизнес-кабинет", StarBiz.on() ? "вкл" : "");
+                    if (StarCloud.online()) button(items, 110, "💼 Бизнес-кабинет", StarBiz.on() ? "вкл" : "");
                     check(items, 111, "🌙 Автоответ «Нет на месте»", StarPremium.awayOn());
                     button(items, 112, "Текст «Нет на месте»");
                     check(items, 113, "👋 Приветствие новым собеседникам", StarPremium.greetOn());
@@ -481,10 +489,10 @@ public final class StarSections {
                 case 11:
                     button(items, 150, "🐾 Мой питомец", StarFun.petTitle());
                     button(items, 151, "🔮 Гороскоп дня", StarFun.sign() >= 0 ? StarFun.SIGNS[StarFun.sign()] : "");
-                    button(items, 152, "🎡 Колесо бонусов", "раз в день");
+                    if (StarCloud.online()) button(items, 152, "🎡 Колесо бонусов", "раз в день");
                     button(items, 120, "🎮 Игры в чате");
                     button(items, 121, "💞 Лучшие друзья и стрики");
-                    button(items, 122, "🤫 Анонимные вопросы");
+                    if (StarCloud.online()) button(items, 122, "🤫 Анонимные вопросы");
                     button(items, 123, "🏆 Достижения · уровень " + StarAchieve.level());
                     button(items, 124, "🎁 Итоги года");
                     button(items, 125, "🪪 Визитка с QR-кодом");
@@ -554,7 +562,7 @@ public final class StarSections {
                     break;
                 case 16:
                     button(items, 200, "💰 Баланс и пополнение");
-                    button(items, 152, "🎡 Колесо бонусов", "раз в день");
+                    if (StarCloud.online()) button(items, 152, "🎡 Колесо бонусов", "раз в день");
                     button(items, 201, "🫶 Поддержать StarTegs — значок навсегда");
                     items.add(UItem.asShadow("Перевести 💎 другу: чат с ним → ⋮ → «💎 Перевести кристаллы». Чаевые автору темы: магазин тем → долгое нажатие на тему. Нужен бот v62."));
                     break;
@@ -605,7 +613,7 @@ public final class StarSections {
                     button(items, 225, "🔊 Звук отправки", StarDecor.sendSoundIndex() < 0 ? "как в Telegram" : (String) StarCosmetics.SOUNDS[StarDecor.sendSoundIndex()][0]);
                     check(items, 226, "🧘 Минимализм: спрятать всё лишнее", StarDecor.minimal());
                     check(items, 227, "▶️ «Сейчас играет» — музыка из Telegram в витрине", StarDecor.musicStatus());
-                    items.add(UItem.asHeader("👀 Видят друзья со StarTegs"));
+                    items.add(UItem.asHeader(StarCloud.online() ? "👀 Видят друзья со StarTegs" : "👤 Твой стиль — в карточке профиля и картинке для сторис"));
                     button(items, 228, pro("🖍 Цвет имени"), StarDecor.NAME_COLOR_TITLES[Math.max(0, java.util.Arrays.asList(toObj(StarDecor.NAME_COLORS)).indexOf(StarDecor.nameColor()))]);
                     button(items, 229, pro("✨ Шрифт имени"), StarDecor.nameStyle() < 0 ? "обычный" : StarStyle.STYLES[StarDecor.nameStyle()].split(" ")[0]);
                     button(items, 240, "🖼 Обложка витрины", StarDecor.COVERS[Math.max(0, StarDecor.cover())]);
@@ -637,8 +645,21 @@ public final class StarSections {
                     items.add(UItem.asShadow("Режим стримера прячет цифры номера в настройках и профилях — можно спокойно делать скрины и стримы. "
                             + "В чате, меню ⋮: «⌨️ Исправить раскладку» (ghbdtn → привет) и «📄 Сохранить переписку в файл»."));
                     break;
+                case 22: // 6.0: инструменты без интернета
+                    button(items, 260, "🔳 QR-код из текста или ссылки");
+                    button(items, 261, "🧮 Калькулятор");
+                    button(items, 262, "🔁 Конвертер: км, кг, литры, градусы");
+                    button(items, 263, "🔐 Генератор паролей");
+                    button(items, 264, "⏰ Таймер-напоминание");
+                    button(items, 265, "🎲 Кубик, монетка, случайное число");
+                    button(items, 266, "🔢 Счётчик символов");
+                    items.add(UItem.asShadow("Всё работает прямо на телефоне — без ботов и даже без интернета (кроме таймера: он приходит сообщением в «Избранное»)."));
+                    break;
                 case 19:
-                    for (int k : new int[]{0, 8, 10, 17, 13}) items.add(StarYou.tile(5000 + k, k));
+                    for (int k : new int[]{0, 8, 10, 17, 13}) {
+                        if (!StarCloud.online() && k == 17) continue;
+                        items.add(StarYou.tile(5000 + k, k));
+                    }
                     break;
                 default:
                     if (StarModConfig.SERVICES.length == 0) items.add(UItem.asShadow("Сервисы не настроены в startegs.properties."));
@@ -722,6 +743,14 @@ public final class StarSections {
                 case 413: StarVault.chooseKeep(this, refresh); return;
                 case 414: StarVault.togglePin(this, refresh); return;
                 case 415: presentFragment(new StarMemory.Screen()); return;
+                case 83: StarAiKey.setup(this, refresh); return;
+                case 260: StarToolbox.qr(this); return;
+                case 261: StarToolbox.calc(this); return;
+                case 262: StarToolbox.convert(this); return;
+                case 263: StarToolbox.password(this); return;
+                case 264: StarToolbox.timer(this); return;
+                case 265: StarToolbox.random(this); return;
+                case 266: StarToolbox.counter(this); return;
                 case 242: StarGlow.fromAvatar(this, refresh); return;
                 case 243: StarGlow.fromWallpaper(this, refresh); return;
                 case 244: StarMod.toggle("glow_season", true); break;

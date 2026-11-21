@@ -129,6 +129,12 @@ public final class StarProfile {
 
     private static void push(BaseFragment f, JSONObject m, Runnable done) {
         prefs().edit().putString("prof_mine", m.toString()).apply();
+        if (!StarCloud.online()) { // 6.0: без сервера — витрина видна в твоей карточке профиля
+            StarAchieve.bump("showcase", 1);
+            if (f.getParentActivity() != null) Toast.makeText(f.getParentActivity(), "✨ Сохранено — видно в твоей карточке профиля", Toast.LENGTH_SHORT).show();
+            if (done != null) done.run();
+            return;
+        }
         StarCloud.call(f.getCurrentAccount(), "prof_set", m, new StarCloud.Result() {
             @Override
             public void ok(JSONObject res) {
