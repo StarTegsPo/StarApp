@@ -171,6 +171,11 @@ public final class StarMemory {
     // ================================================================ экран «Память»
 
     public static class Screen extends UniversalFragment {
+        @Override
+        public boolean isLightStatusBar() {
+            return !StarSilk.barsOn() && super.isLightStatusBar();
+        }
+
 
         private static final int ID_ITEM = 10000, ID_ASK = 2, ID_CAT = 100;
         private final ArrayList<Integer> shown = new ArrayList<>();
@@ -185,6 +190,7 @@ public final class StarMemory {
         @Override
         public View createView(Context context) {
             View v = super.createView(context);
+            StarSilk.decorate(this, new int[]{0xFFB46CFF, 0xFF7B4DFF}, listView);
             ActionBarMenuItem s = actionBar.createMenu().addItem(0, R.drawable.outline_header_search).setIsSearchField(true)
                     .setActionBarMenuItemSearchListener(new ActionBarMenuItem.ActionBarMenuItemSearchListener() {
                         @Override

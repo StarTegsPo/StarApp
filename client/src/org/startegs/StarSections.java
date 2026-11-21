@@ -76,6 +76,18 @@ public final class StarSections {
     /** Главный экран StarTegs. */
     public static class Index extends UniversalFragment {
         @Override
+        public android.view.View createView(android.content.Context context) {
+            android.view.View v = super.createView(context);
+            StarSilk.decorate(this, StarSilk.PURPLE, listView); // 5.6: цветная шапка и плавное появление
+            return v;
+        }
+
+        @Override
+        public boolean isLightStatusBar() {
+            return !StarSilk.barsOn() && super.isLightStatusBar();
+        }
+
+        @Override
         protected CharSequence getTitle() {
             return "⭐ StarTegs";
         }
@@ -111,6 +123,7 @@ public final class StarSections {
             }
             if (getParentActivity() != null) {
                 items.add(UItem.asCustom(StarYou.profileCard(this, () -> presentFragment(new Screen(20)))));
+                items.add(UItem.asCustom(StarSilk.dayCard(this))); // 5.6: «Мой день»
             }
             items.add(UItem.asButton(905, R.drawable.msg_search, "🔎 Поиск по настройкам StarTegs"));
             if (getParentActivity() != null) items.add(UItem.asCustom(StarPolish.tipCard(this, -1))); // 5.3: совет дня
@@ -189,6 +202,11 @@ public final class StarSections {
 
     /** Поиск по всем настройкам StarTegs. */
     public static class Search extends UniversalFragment {
+        @Override
+        public boolean isLightStatusBar() {
+            return !StarSilk.barsOn() && super.isLightStatusBar();
+        }
+
         private String query = "";
         private final ArrayList<Object[]> index = new ArrayList<>(); // {раздел, текст}
 
@@ -200,6 +218,7 @@ public final class StarSections {
         @Override
         public android.view.View createView(Context context) {
             android.view.View v = super.createView(context);
+            StarSilk.decorate(this, new int[]{0xFF4FB2FF, 0xFF2A7DE1}, listView);
             org.telegram.ui.ActionBar.ActionBarMenuItem s = actionBar.createMenu().addItem(0, R.drawable.outline_header_search).setIsSearchField(true)
                     .setActionBarMenuItemSearchListener(new org.telegram.ui.ActionBar.ActionBarMenuItem.ActionBarMenuItemSearchListener() {
                         @Override
@@ -271,6 +290,18 @@ public final class StarSections {
 
     /** Один раздел. */
     public static class Screen extends UniversalFragment {
+        @Override
+        public android.view.View createView(android.content.Context context) {
+            android.view.View v = super.createView(context);
+            StarSilk.decorate(this, StarSilk.sectionColors(section), listView); // 5.6: цветная шапка и плавное появление
+            return v;
+        }
+
+        @Override
+        public boolean isLightStatusBar() {
+            return !StarSilk.barsOn() && super.isLightStatusBar();
+        }
+
 
         private final int section;
 
@@ -554,6 +585,8 @@ public final class StarSections {
                     button(items, 246, "🌙 Тёплый ночной фильтр", StarNight.title());
                     button(items, 247, "📤 Поделиться карточкой стиля");
                     check(items, 248, "📳 Лёгкая отдача при нажатиях в StarTegs", StarPolish.hapticsOn());
+                    check(items, 250, "🎨 Цветные шапки экранов StarTegs", StarSilk.barsOn());
+                    check(items, 251, "✨ Плавные анимации: появление, пружинки, рамка", StarSilk.motionOn());
                     button(items, 249, "✨ Что нового в этой версии");
                     items.add(UItem.asHeader("Чат"));
                     for (int i = 0; i < StarDecor.BG.length; i++) {
@@ -696,6 +729,8 @@ public final class StarSections {
                 case 246: StarNight.choose(this, refresh); return;
                 case 247: StarNight.shareCard(this); return;
                 case 248: StarMod.toggle("polish_haptic", true); break;
+                case 250: StarMod.toggle("silk_bars", true); break;
+                case 251: StarMod.toggle("silk_motion", true); break;
                 case 249: presentFragment(new StarPolish.News()); return;
                 case 417: StarVault.toggle("vault_weekly", true); break;
                 case 416:

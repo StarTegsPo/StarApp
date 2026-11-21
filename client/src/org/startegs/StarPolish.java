@@ -166,6 +166,7 @@ public final class StarPolish {
         lp.leftMargin = AndroidUtilities.dp(12);
         card.addView(col, lp);
         int sec = (Integer) t[2];
+        StarSilk.card(card); // 5.6
         if (sec >= 0) card.setOnClickListener(v -> {
             tap(v);
             f.presentFragment(new StarSections.Screen(sec));
@@ -180,15 +181,11 @@ public final class StarPolish {
     // ================================================================ «Что нового»
 
     static final String[][] NEWS = {
-            {"🎲", "Анимированные игры и опросы", ".cube .dart .basket .football .bowling .slot и .poll Вопрос | вариант | вариант"},
-            {"🎉", "100+ команд в чате", ".emojiquiz, .neverhave, .guess, .vs, .riddle, .tz Токио, .split, .conv, .capital, .roman… — всё в .help"},
-            {"🌈", "Дневник настроения", "Эмодзи на каждый день и календарь месяца — «Продуктивность»."},
-            {"🔥", "Привычки, вода и желания", "Стрики привычек, счётчик стаканов воды, список желаний."},
-            {"⏳", "Обратный отсчёт", "Цветные карточки: сколько дней до ДР, каникул и Нового года."},
-            {"💬", "Цитата дня и идеи", "Цитата дня на главном, «Скучно? Дай идею» и 20 красивых «О себе»."},
-            {"🔕", "Тишина на час", "Одной кнопкой на главном экране — уведомления без звука до нужного времени."},
-            {"🎨", "Ещё больше красоты", "8 новых фонов чата, 10 узоров, 10 тем, 4 новых цвета имени."},
-            {"🤗", "Новые действия", ".wave .tickle .boop .cheer — помахать, пощекотать, буп, поддержать."},
+            {"🎨", "Цветные шапки", "Каждый экран StarTegs — в цвет своего раздела: плавный градиент вместо серой полосы."},
+            {"✨", "Плавные анимации", "Списки мягко выплывают, карточки пружинят под пальцем, у карточек — нежные тени."},
+            {"🌈", "Живая рамка профиля", "Вокруг твоей карточки на главном экране медленно бежит радужная рамка."},
+            {"⭕", "«Мой день»", "Кольца прогресса на главном: вода, привычки и настроение за сегодня — в одном взгляде."},
+            {"🎲", "А ещё в прошлых версиях", "100+ команд (.help), дневник настроения, привычки, обратный отсчёт, 20 тем и 17 фонов чата."},
     };
 
     /** Из StarPlus.init: после обновления до новой версии (если знакомство уже пройдено). */
@@ -213,6 +210,18 @@ public final class StarPolish {
     }
 
     public static class News extends UniversalFragment {
+        @Override
+        public android.view.View createView(android.content.Context context) {
+            android.view.View v = super.createView(context);
+            StarSilk.decorate(this, StarSilk.PINK, listView); // 5.6: цветная шапка и плавное появление
+            return v;
+        }
+
+        @Override
+        public boolean isLightStatusBar() {
+            return !StarSilk.barsOn() && super.isLightStatusBar();
+        }
+
         @Override
         protected CharSequence getTitle() {
             return "✨ Что нового в StarTegs " + StarModConfig.MOD_VERSION;

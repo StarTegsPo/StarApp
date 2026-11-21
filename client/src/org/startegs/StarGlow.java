@@ -228,6 +228,7 @@ public final class StarGlow {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         lp.leftMargin = AndroidUtilities.dp(14);
         card.addView(col, lp);
+        card.setElevation(AndroidUtilities.dp(3)); // 5.6: мягкая тень
         FrameLayout wrap = new FrameLayout(ctx);
         int m = AndroidUtilities.dp(12);
         wrap.setPadding(m, m, m, AndroidUtilities.dp(4));

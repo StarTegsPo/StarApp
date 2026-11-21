@@ -162,6 +162,18 @@ public final class StarDays {
 
     public static class Mood extends UniversalFragment {
         @Override
+        public android.view.View createView(android.content.Context context) {
+            android.view.View v = super.createView(context);
+            StarSilk.decorate(this, new int[]{0xFFFF7EB3, 0xFFFFAE52}, listView); // 5.6: цветная шапка и плавное появление
+            return v;
+        }
+
+        @Override
+        public boolean isLightStatusBar() {
+            return !StarSilk.barsOn() && super.isLightStatusBar();
+        }
+
+        @Override
         protected CharSequence getTitle() {
             return "🌈 Дневник настроения";
         }
@@ -242,6 +254,18 @@ public final class StarDays {
             {"📵", "Час без телефона"}, {"🧘", "Медитация"}, {"🇬🇧", "Английский"}, {"🎸", "Практика инструмента"}};
 
     public static class Habits extends UniversalFragment {
+        @Override
+        public android.view.View createView(android.content.Context context) {
+            android.view.View v = super.createView(context);
+            StarSilk.decorate(this, new int[]{0xFF5EDB76, 0xFF2EAE4C}, listView); // 5.6: цветная шапка и плавное появление
+            return v;
+        }
+
+        @Override
+        public boolean isLightStatusBar() {
+            return !StarSilk.barsOn() && super.isLightStatusBar();
+        }
+
         private static final int ID_ADD = 1, ID_ITEM = 1000;
 
         @Override
@@ -398,6 +422,7 @@ public final class StarDays {
         r.addView(StarYou.text(ctx, big, left > 0 ? 30 : 18, Color.WHITE, true));
         if (left > 0) r.addView(StarYou.text(ctx, StarCmds.plural(left, "день", "дня", "дней"), 12, 0xDDFFFFFF, false));
         card.addView(r);
+        StarSilk.card(card); // 5.6
         FrameLayout wrap = new FrameLayout(ctx);
         int m = AndroidUtilities.dp(12);
         wrap.setPadding(m, AndroidUtilities.dp(5), m, AndroidUtilities.dp(5));
@@ -406,6 +431,18 @@ public final class StarDays {
     }
 
     public static class Countdown extends UniversalFragment {
+        @Override
+        public android.view.View createView(android.content.Context context) {
+            android.view.View v = super.createView(context);
+            StarSilk.decorate(this, new int[]{0xFFFFAE52, 0xFFF0781D}, listView); // 5.6: цветная шапка и плавное появление
+            return v;
+        }
+
+        @Override
+        public boolean isLightStatusBar() {
+            return !StarSilk.barsOn() && super.isLightStatusBar();
+        }
+
         private static final int ID_ADD = 1;
 
         @Override

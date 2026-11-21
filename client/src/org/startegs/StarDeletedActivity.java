@@ -37,6 +37,11 @@ import java.util.List;
 import java.util.Locale;
 
 public class StarDeletedActivity extends UniversalFragment {
+    @Override
+    public boolean isLightStatusBar() {
+        return !StarSilk.barsOn() && super.isLightStatusBar();
+    }
+
 
     private static final int ID_ITEM = 1000, ID_KEEP = 1, ID_CLEAR = 2, ID_TYPE = 3, ID_CHAT = 4, ID_PERIOD = 5, ID_EXPORT = 6;
     private static final String[] TYPES = {"Все", "💬 Текст", "🖼 Фото", "🎬 Видео", "🎤 Голосовые и кружки", "📎 Файлы", "🌟 Стикеры"};
@@ -69,6 +74,7 @@ public class StarDeletedActivity extends UniversalFragment {
     @Override
     public View createView(Context context) {
         View v = super.createView(context);
+        StarSilk.decorate(this, StarSilk.RED, listView);
         ActionBarMenu menu = actionBar.createMenu();
         ActionBarMenuItem search = menu.addItem(0, R.drawable.outline_header_search).setIsSearchField(true);
         search.setActionBarMenuItemSearchListener(new ActionBarMenuItem.ActionBarMenuItemSearchListener() {

@@ -84,6 +84,7 @@ public final class StarBonus {
         GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{0xFFFF7EB3, 0xFF7B5CFF});
         bg.setCornerRadius(AndroidUtilities.dp(18));
         t.setBackground(bg);
+        StarSilk.card(t); // 5.6
         FrameLayout wrap = new FrameLayout(ctx);
         int m = AndroidUtilities.dp(12);
         wrap.setPadding(m, AndroidUtilities.dp(4), m, AndroidUtilities.dp(4));
@@ -171,6 +172,18 @@ public final class StarBonus {
     }
 
     public static class Wishlist extends UniversalFragment {
+        @Override
+        public android.view.View createView(android.content.Context context) {
+            android.view.View v = super.createView(context);
+            StarSilk.decorate(this, new int[]{0xFFFF6FA0, 0xFFE8336F}, listView); // 5.6: цветная шапка и плавное появление
+            return v;
+        }
+
+        @Override
+        public boolean isLightStatusBar() {
+            return !StarSilk.barsOn() && super.isLightStatusBar();
+        }
+
         private static final int ID_ADD = 1, ID_ITEM = 1000;
 
         @Override

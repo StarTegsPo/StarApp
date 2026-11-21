@@ -222,11 +222,12 @@ public final class StarYou {
         clp.leftMargin = AndroidUtilities.dp(14);
         card.addView(col, clp);
         card.setOnClickListener(v -> onClick.run());
+        StarSilk.spring(card); // 5.6
         card.setOnLongClickListener(v -> { // 5.2: долгое нажатие — картинка для сторис
             StarNight.shareCard(f);
             return true;
         });
-        wrap.addView(card, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        wrap.addView(StarSilk.glow(card), new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)); // 5.6: переливающаяся рамка
         return wrap;
     }
 
@@ -349,6 +350,7 @@ public final class StarYou {
             llp.topMargin = AndroidUtilities.dp(6);
             cell.addView(label, llp);
             cell.setOnClickListener(v -> applyPreset(f, k, done));
+            StarSilk.spring(cell); // 5.6
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             lp.rightMargin = AndroidUtilities.dp(10);
             row.addView(cell, lp);
@@ -378,6 +380,18 @@ public final class StarYou {
     }
 
     public static class Welcome extends UniversalFragment {
+        @Override
+        public android.view.View createView(android.content.Context context) {
+            android.view.View v = super.createView(context);
+            StarSilk.decorate(this, StarSilk.PINK, listView); // 5.6: цветная шапка и плавное появление
+            return v;
+        }
+
+        @Override
+        public boolean isLightStatusBar() {
+            return !StarSilk.barsOn() && super.isLightStatusBar();
+        }
+
 
         private int step;
         private static final int ID_NEXT = 1, ID_SKIP = 2, ID_GHOST = 10, ID_SHADE = 11, ID_BUBBLE = 12, ID_FONT = 13, ID_NAME = 14;
