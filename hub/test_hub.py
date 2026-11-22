@@ -78,7 +78,7 @@ class ApiTest(unittest.TestCase):
                 r = await c.post("/api", json={"init": "bad", "a": "ping"})
                 self.assertEqual(r.status, 401)
                 r = await (await c.post("/api", json={"init": a, "a": "state"})).json()
-                self.assertEqual(r["state"]["tier"], "VIP")
+                self.assertEqual(r["state"]["tier"], "Free")  # без Gold
                 r = await (await c.post("/api", json={"init": a, "a": "cos_equip", "frame": "fr_fire", "effect": "fx_bolt"})).json()
                 self.assertEqual(r["frame"], "fr_fire")
                 await c.post("/api", json={"init": a, "a": "badge_set", "badge": "bd_crown"})
@@ -134,6 +134,32 @@ class ApiTest(unittest.TestCase):
                 r = await c.get("/app/")
                 self.assertEqual(r.status, 200)
                 self.assertIn("StarTegs", await r.text())
+            finally:
+                await c.close()
+        self.run_async(go())
+
+    def test_gold(self):
+        async def go():
+            c = await self._client()
+            try:
+                a, b = make_init(4001, "Gold"), make_init(4002, "Друг")
+                r = await (await c.post("/api", json={"init": a, "a": "gold"})).json()
+                self.assertFalse(r["gold"])
+                self.assertEqual(r["price"], 49)
+                until = bot.db.add_gold(4001, 30)
+                self.assertGreater(until, bot.now() + 29 * 86400)
+                self.assertGreater(bot.db.add_gold(4001, 30), until)  # продление складывается
+                r = await (await c.post("/api", json={"init": a, "a": "state"})).json()
+                self.assertTrue(r["gold"])
+                self.assertEqual(r["state"]["tier"], "Premium")
+                r = await (await c.post("/api", json={"init": b, "a": "look_get", "ids": [4001]})).json()
+                self.assertEqual(r["look"]["4001"]["g"], 1)
+                r = await (await c.post("/api", json={"init": b, "a": "cos_equip", "frame": "fr_diamond", "effect": "fx_gold"})).json()
+                self.assertEqual(r["frame"], "")  # без Gold рамка Gold не надевается
+                r = await (await c.post("/api", json={"init": a, "a": "cos_equip", "frame": "fr_diamond", "effect": "fx_gold"})).json()
+                self.assertEqual(r["frame"], "fr_diamond")
+                r = await (await c.post("/mini/api", json={"init": a, "a": "home"})).json()
+                self.assertGreater(r["gold_until"], bot.now())
             finally:
                 await c.close()
         self.run_async(go())

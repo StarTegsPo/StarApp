@@ -81,6 +81,8 @@ public final class StarCosmetics {
             {"fr_gold", "frame", "Королевская", "👑"}, {"fr_galaxy", "frame", "Галактика", "🌌"}, {"fr_ny", "frame", "Новогодняя", "🎄"},
             {"fr_val", "frame", "Валентинка", "💘"}, {"fr_spring", "frame", "Весенняя", "🌷"}, {"fr_hw", "frame", "Хэллоуин", "🎃"},
             {"fr_pulse", "frame", "Пульс (анимация)", "💓"}, {"fr_spin", "frame", "Вихрь (анимация)", "🌀"}, {"fr_flame", "frame", "Живое пламя (анимация)", "🔥"},
+            {"fr_diamond", "frame", "Алмаз · Gold", "💎"}, {"fr_crown", "frame", "Корона · Gold", "👑"},
+            {"fr_aurora", "frame", "Аврора · Gold", "🌌"}, {"fr_phoenix", "frame", "Феникс · Gold", "🐦‍🔥"},
             {"bd_star", "badge", "Звезда", "⭐"}, {"bd_check", "badge", "Галочка", "✅"}, {"bd_crown", "badge", "Корона", "👑"},
             {"bd_fire", "badge", "Огонь", "🔥"}, {"bd_bolt", "badge", "Молния", "⚡"}, {"bd_gem", "badge", "Кристалл", "💎"},
             {"bd_rocket", "badge", "Ракета", "🚀"}, {"bd_unicorn", "badge", "Единорог", "🦄"}, {"bd_game", "badge", "Геймер", "🎮"},
@@ -89,6 +91,8 @@ public final class StarCosmetics {
             {"fx_hearts", "effect", "Сердечки", "❤️"}, {"fx_confetti", "effect", "Конфетти", "🎉"}, {"fx_fire", "effect", "Огонь", "🔥"},
             {"fx_bolt", "effect", "Молния", "⚡"}, {"fx_stars", "effect", "Звездопад", "⭐"}, {"fx_snow", "effect", "Снег", "❄️"},
             {"fx_money", "effect", "Деньги", "💸"},
+            {"fx_firework", "effect", "Фейерверк · Gold", "🎆"}, {"fx_gold", "effect", "Золотой дождь · Gold", "🪙"},
+            {"fx_lovebomb", "effect", "Сердечный взрыв · Gold", "💘"},
             {"th_sakura", "theme", "Сакура", "🌸"}, {"th_cyber", "theme", "Киберпанк", "🌃"}, {"th_ocean", "theme", "Океан", "🌊"},
             {"th_matcha", "theme", "Матча", "🍵"}, {"th_lava", "theme", "Лава", "🌋"},
             {"snd_pack", "sound", "Звуки для друзей", "🔔"},
@@ -289,12 +293,24 @@ public final class StarCosmetics {
             case "fr_pulse": return new int[]{0xFFFF2D6F, 0xFFFF9CC2, 0xFFFF2D6F, 0xFFFFD1E0, 0xFFFF2D6F};
             case "fr_spin": return new int[]{0xFF7B5CFF, 0xFF00E5FF, 0xFFFF3DCB, 0xFF33A6FF, 0xFF7B5CFF};
             case "fr_flame": return new int[]{0xFFFFD000, 0xFFFF6A00, 0xFFE8152B, 0xFFFF6A00, 0xFFFFD000};
+            case "fr_diamond": return new int[]{0xFFFFFFFF, 0xFFB9F2FF, 0xFF7FD7FF, 0xFFE9D9FF, 0xFFFFFFFF, 0xFF9EE7FF, 0xFFFFFFFF};
+            case "fr_crown": return new int[]{0xFFFFF3B0, 0xFFFFC94D, 0xFFB8860B, 0xFFFFE082, 0xFFFF9F1C, 0xFFFFF3B0};
+            case "fr_aurora": return new int[]{0xFF00FFA3, 0xFF00C2FF, 0xFF7A5CFF, 0xFFFF4FD8, 0xFF00FFA3};
+            case "fr_phoenix": return new int[]{0xFFFFF176, 0xFFFF9100, 0xFFFF1744, 0xFFAA00FF, 0xFFFF9100, 0xFFFFF176};
             default: return new int[]{0xFF8E6BFF, 0xFF33A6FF, 0xFF8E6BFF};
         }
     }
 
+    /** 6.2: предметы только для StarTegs Gold. */
+    static boolean isGold(String id) {
+        return id != null && (id.equals("fr_diamond") || id.equals("fr_crown") || id.equals("fr_aurora") || id.equals("fr_phoenix")
+                || id.equals("fx_firework") || id.equals("fx_gold") || id.equals("fx_lovebomb"));
+    }
+
     private static String badgeOf(String frame) {
         switch (frame) {
+            case "fr_crown": return "👑";
+            case "fr_diamond": return "💎";
             case "fr_fire": return "🔥";
             case "fr_snow": return "❄️";
             case "fr_hearts": return "💖";
@@ -316,7 +332,7 @@ public final class StarCosmetics {
             ring.setStyle(Paint.Style.STROKE);
             ring.setStrokeWidth(AndroidUtilities.dp(2.6f));
             SweepGradient sweep = sweepFor(f, cx, cy);
-            boolean animated = (f.equals("fr_pulse") || f.equals("fr_spin") || f.equals("fr_flame"))
+            boolean animated = (f.equals("fr_pulse") || f.equals("fr_spin") || f.equals("fr_flame") || isGold(f))
                     && StarPro.anim(org.telegram.messenger.LiteMode.FLAG_ANIMATED_EMOJI_CHAT);
             if (animated) { // анимированные рамки (4.5); при энергосбережении — неподвижные
                 long t = System.currentTimeMillis();
@@ -328,6 +344,12 @@ public final class StarCosmetics {
                     ring.setStrokeWidth(AndroidUtilities.dp(2f + 2f * k));
                     r += AndroidUtilities.dp(1.5f) * k;
                 }
+                if (f.equals("fr_diamond") || f.equals("fr_crown")) { // 6.2: блеск бежит по кругу
+                    float k = 0.5f + 0.5f * (float) Math.sin(t / 300.0);
+                    ring.setStrokeWidth(AndroidUtilities.dp(2.8f + 0.8f * k));
+                }
+                if (f.equals("fr_aurora")) r += AndroidUtilities.dp(1f) * (float) Math.sin(t / 400.0);
+                if (f.equals("fr_phoenix")) ring.setStrokeWidth(AndroidUtilities.dp(3f + 1.6f * (float) Math.abs(Math.sin(t / 110.0))));
                 if (f.equals("fr_flame")) ring.setStrokeWidth(AndroidUtilities.dp(2.6f + 1.2f * (float) Math.abs(Math.sin(t / 130.0))));
                 if (cell != null) cell.postInvalidateDelayed(50);
             } else {
@@ -619,6 +641,7 @@ public final class StarCosmetics {
                     String id = it.optString("id");
                     boolean own = owns(id);
                     String title = it.optString("emoji") + "  " + it.optString("title");
+                    if (isGold(id) && !StarGold.active()) title += "  🔒";
                     String value = own ? (id.equals(frame) || id.equals(fx) || id.equals(badgeId) ? "✓ надето" : k.equals("sound") ? "✓ есть" : "надеть")
                             : priceText(it);
                     if (k.equals("theme") && own) value = "применить";
@@ -676,6 +699,7 @@ public final class StarCosmetics {
                         .show();
                 return;
             }
+            if (isGold(id) && !StarGold.require(this, it.optString("title"))) return; // 6.2
             if (kind.equals("frame")) equip(id, myEffect());
             else if (kind.equals("badge")) equipBadge(id);
             else if (kind.equals("effect")) equip(myFrame(), id);

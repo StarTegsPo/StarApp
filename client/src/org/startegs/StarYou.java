@@ -93,6 +93,8 @@ public final class StarYou {
             {R.drawable.settings_language, 0xFFFF7EDB, 0xFF8A5CFF},  // 20 Дизайн
             {R.drawable.settings_folders, 0xFF5BC0EB, 0xFF3A86FF},   // 21 Удобство
             {R.drawable.settings_data, 0xFF8E9AFF, 0xFF5D6BE0},      // 22 Инструменты
+            {R.drawable.settings_language, 0xFF7FB2FF, 0xFFC59BFF},  // 23 Стиль интерфейса
+            {R.drawable.settings_premium, 0xFFFFC94D, 0xFFFF8A3D},   // 24 StarTegs Gold
     };
 
     static UItem tile(int id, int section) {
@@ -173,6 +175,7 @@ public final class StarYou {
         card.setPadding(p, p, p, p);
         int cv = StarDecor.cover();
         int[] colors = cv > 0 && cv < StarDecor.COVER_COLORS.length ? StarDecor.COVER_COLORS[cv] : new int[]{0xFF23243A, 0xFF3A2E5C};
+        if (StarGold.active() && cv <= 0) colors = new int[]{0xFF2B2108, 0xFF6B4E12, 0xFFB8860B}; // 6.2: золотая карточка
         GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TL_BR, colors);
         bg.setCornerRadius(AndroidUtilities.dp(20));
         card.setBackground(bg);
@@ -200,6 +203,7 @@ public final class StarYou {
             sp.setSpan(new ForegroundColorSpan(color), 0, sp.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             name = sp;
         }
+        if (StarGold.active()) name = StarGold.goldName(name);
         int level = StarAchieve.level();
         TextView nameView = text(ctx, TextUtils.concat(name, " ", StarCosmetics.myBadgeEmoji(), StarCosmetics.myBadgeEmoji().isEmpty() ? "" : " ", StarDecor.medal(level)), 19, Color.WHITE, true);
         nameView.setSingleLine(true);
@@ -210,7 +214,7 @@ public final class StarYou {
         LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         blp.topMargin = AndroidUtilities.dp(8);
         col.addView(StarPolish.levelBar(ctx), blp); // 5.3: прогресс уровня
-        TextView edit = text(ctx, "✏️ Изменить стиль", 12, Color.WHITE, true);
+        TextView edit = text(ctx, StarGold.active() ? "👑 Gold · ✏️ Изменить стиль" : "✏️ Изменить стиль", 12, Color.WHITE, true);
         GradientDrawable pill = new GradientDrawable();
         pill.setColor(0x33FFFFFF);
         pill.setCornerRadius(AndroidUtilities.dp(12));

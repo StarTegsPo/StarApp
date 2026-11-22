@@ -49,7 +49,12 @@ public final class StarSections {
             {"🎨", "Дизайн", "конструктор темы, фон чата, кнопка, звуки, стиль для друзей"},
             {"🧰", "Удобство", "папки, тихие часы, ключевые слова, стример, чистые ссылки"},
             {"🛠", "Инструменты", "QR-код, калькулятор, конвертер, пароли, таймер, кубик"},
+            {"🫧", "Стиль интерфейса", "iOS Liquid Glass, Neon, Y2K, Material You — 18 стилей"},
+            {"👑", "StarTegs Gold", "золотое имя ✦, рамки, эффекты, стили Gold"},
     };
+
+    /** 6.2: разделы со своими экранами (не настройки) — поиск их не перебирает. */
+    static final int FIRST_SPECIAL = 23;
 
     /** Порядок разделов на главном экране. */
     static final int[] ORDER = {0, 1, 2, 3, 4, 5, 6, 7, 14, 11, 16, 9, 12, 15, 8, 10, 17, 13};
@@ -71,7 +76,7 @@ public final class StarSections {
         StarGhost.arm();
     }
 
-    static final int[][] GROUPS = {{20, 18, 9, 11, 16}, {3, 21, 4, 5, 7}, {1, 2, 15}, {14, 22, 6, 12}, {19}};
+    static final int[][] GROUPS = {{24, 23, 20, 18, 9, 11, 16}, {3, 21, 4, 5, 7}, {1, 2, 15}, {14, 22, 6, 12}, {19}};
     static final String[] GROUP_TITLES = {"🔥 Стиль и развлечения", "💬 Общение", "🔒 Приватность", "📚 Полезное", ""};
 
     /** Главный экран StarTegs. */
@@ -80,6 +85,7 @@ public final class StarSections {
         public android.view.View createView(android.content.Context context) {
             android.view.View v = super.createView(context);
             StarSilk.decorate(this, StarSilk.PURPLE, listView); // 5.6: цветная шапка и плавное появление
+            StarGold.refresh(currentAccount, this::refresh); // 6.2
             return v;
         }
 
@@ -105,22 +111,9 @@ public final class StarSections {
 
         @Override
         protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
-            if (getParentActivity() != null) {
-                String[][] btns = {{"👻", "Призрак"}, {"✨", "Шрифт"}, {"🪪", "Имя"}, {"🛍", "Магазин"}, {"🐾", "Питомец"}};
-                items.add(UItem.asCustom(StarHero.create(getParentActivity(), currentAccount, btns, which -> {
-                    switch (which) {
-                        case 0:
-                            if (!StarMod.requirePro(this, "Режим призрака")) return;
-                            setGhostAll(!ghostAll());
-                            android.widget.Toast.makeText(getParentActivity(), ghostAll() ? "👻 Призрак включён: тебя не видно в сети, «печатает» и «прочитано» не отправляются" : "👻 Призрак выключен", android.widget.Toast.LENGTH_LONG).show();
-                            refresh();
-                            break;
-                        case 1: StarStyle.chooseAuto(this, this::refresh); break;
-                        case 2: StarStyle.fancyName(this); break;
-                        case 3: presentFragment(new StarCosmetics.Shop()); break;
-                        default: StarFun.pet(this, this::refresh);
-                    }
-                })));
+            if (getParentActivity() != null) { // 6.2: свои быстрые кнопки
+                items.add(UItem.asCustom(StarHero.create(getParentActivity(), currentAccount, StarQuick.buttons(), which -> StarQuick.run(this, which, this::refresh))));
+                items.add(UItem.asCustom(StarGold.banner(this))); // 6.2: StarTegs Gold
             }
             if (getParentActivity() != null) {
                 items.add(UItem.asCustom(StarYou.profileCard(this, () -> presentFragment(new Screen(20)))));
@@ -133,6 +126,7 @@ public final class StarSections {
                 items.add(UItem.asButton(99, R.drawable.msg_premium_badge, StarTrial.available() ? "🎁 Premium на 3 дня — бесплатно" : "⭐ Открыть всё с Premium").accent());
             }
             items.add(UItem.asHeader("⚡ Быстро"));
+            items.add(UItem.asButton(909, R.drawable.msg_edit, "⚡ Свои быстрые кнопки вверху", "настроить"));
             items.add(UItem.asCheck(901, "👻 Режим призрака" + (StarMod.isPro() ? "" : "  ⭐")).setChecked(ghostAll()));
             items.add(UItem.asCheck(902, "🫥 Шторка приватности" + (StarMod.isPro() ? "" : "  ⭐")).setChecked(StarShade.enabled()));
             items.add(UItem.asCheck(903, "🔕 Отправлять без звука").setChecked(StarMedia.silentDefault()));
@@ -147,6 +141,8 @@ public final class StarSections {
                     items.add(StarYou.tile(100 + i, i)); // 5.0: цветные плитки
                 }
                 if (g == 0 && getParentActivity() != null) {
+                    items.add(UItem.asHeader("🫧 Стиль интерфейса — нажми, чтобы примерить"));
+                    items.add(UItem.asCustom(StarSkin.gallery(this, this::refresh))); // 6.2
                     items.add(UItem.asHeader("🎨 Темы одним касанием"));
                     items.add(UItem.asCustom(StarYou.gallery(this, this::refresh)));
                     items.add(UItem.asButton(906, R.drawable.msg_palette, "Пройти знакомство заново", ""));
@@ -193,8 +189,19 @@ public final class StarSections {
                 case 908:
                     StarNight.choose(this, this::refresh);
                     return;
+                case 909:
+                    StarQuick.customize(this, this::refresh);
+                    return;
             }
             int i = item.id - 100;
+            if (i == 23) {
+                presentFragment(new StarSkin.Screen());
+                return;
+            }
+            if (i == 24) {
+                presentFragment(new StarGold.Screen());
+                return;
+            }
             if (i >= 0 && i < SECTIONS.length) presentFragment(new Screen(i));
         }
 
@@ -243,7 +250,7 @@ public final class StarSections {
 
         private void build() {
             if (!index.isEmpty()) return;
-            for (int sec = 0; sec < SECTIONS.length; sec++) {
+            for (int sec = 0; sec < FIRST_SPECIAL; sec++) {
                 if (sec == 19 || sec == 17 || !StarCloud.legacy() && sec == 16) continue;
                 index.add(new Object[]{sec, SECTIONS[sec][1] + " " + SECTIONS[sec][2]});
                 ArrayList<UItem> tmp = new ArrayList<>();

@@ -118,6 +118,10 @@ nav button.on span{transform:scale(1.15) translateY(-1px)}
 .empty .e{font-size:60px;animation:bob 2.4s ease-in-out infinite}
 @keyframes bob{50%{transform:translateY(-8px)}}
 .spark{width:100%;height:70px;margin-top:10px}
+.gold{background:linear-gradient(135deg,rgba(255,216,107,.55),rgba(255,159,28,.35));border-color:rgba(255,221,140,.9)}
+.gold::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:linear-gradient(110deg,transparent 30%,rgba(255,255,255,.55) 45%,transparent 60%);background-size:250% 100%;animation:shine 3.5s ease-in-out infinite}
+@keyframes shine{0%{background-position:150% 0}60%,100%{background-position:-60% 0}}
 .toast{position:fixed;top:calc(env(safe-area-inset-top) + 12px);left:50%;transform:translate(-50%,-140%);z-index:20;padding:12px 18px;border-radius:20px;font-weight:600;transition:transform .4s cubic-bezier(.2,.9,.3,1.3)}
 .toast.on{transform:translate(-50%,0)}
 .skel{height:76px;border-radius:22px;margin-bottom:10px;background:linear-gradient(90deg,var(--glass),var(--glass2),var(--glass));background-size:200% 100%;animation:sk 1.2s infinite}
@@ -135,6 +139,11 @@ a{color:inherit}
     <div class="glass card press" id="biz-card">
       <div class="row"><div class="icon" style="--c1:#ff6b8b;--c2:#ff9a5a">🗑</div>
         <div class="grow"><div style="font-weight:700" id="biz-title">Удалённые сообщения</div><div class="muted" id="biz-sub">Загрузка…</div></div></div>
+    </div>
+    <div class="glass card press gold" id="gold-card" onclick="buyGold()">
+      <div class="row"><div class="icon" style="--c1:#ffd86b;--c2:#ff9f1c">👑</div>
+        <div class="grow"><div style="font-weight:800" id="gold-title">StarTegs Gold</div><div class="muted" id="gold-sub">Золотая отметка, переливающееся имя, эксклюзивные рамки</div></div>
+        <div class="badge" id="gold-price">49 ⭐</div></div>
     </div>
     <div class="grid" id="tiles"></div>
     <h2>Быстро</h2>
@@ -258,8 +267,21 @@ async function loadHome() {
   ];
   $('#tiles').innerHTML = tiles.map(t => `<div class="glass tile" onclick="go('${t[5]}')"><div class="icon" style="--c1:${t[3]};--c2:${t[4]}">${t[0]}</div>
     <div class="num">${esc(t[2])}</div><div class="lbl">${t[1]}</div></div>`).join('');
+  const goldOn = j.gold_until * 1000 > Date.now();
+  $('#gold-title').textContent = goldOn ? '👑 Gold активен' : 'StarTegs Gold';
+  $('#gold-sub').textContent = goldOn ? 'до ' + new Date(j.gold_until * 1000).toLocaleDateString('ru', {day:'numeric', month:'long'}) + ' · продлить — ещё ' + j.gold_days + ' дней'
+                                     : 'Золотая отметка, переливающееся имя, эксклюзивные рамки и эффекты';
+  $('#gold-price').textContent = j.gold_price + ' ⭐';
   $('#t-del').classList.toggle('on', !!j.notify_deleted);
   $('#t-edit').classList.toggle('on', !!j.notify_edited);
+}
+
+async function buyGold() {
+  hap('medium');
+  const j = await api('gold_link');
+  if (!j.ok) return;
+  if (tg && tg.openInvoice) tg.openInvoice(j.link, st => { if (st === 'paid') { ok(); toast('👑 Gold активирован!'); loadHome(); } });
+  else open(j.link);
 }
 
 // ---------- удалённые

@@ -33,6 +33,9 @@ final class StarFx {
             case "fx_stars": return new Object[]{new String[]{"⭐", "🌟", "✨", "💫"}, 1};
             case "fx_snow": return new Object[]{new String[]{"❄️", "❄️", "⛄"}, 1};
             case "fx_money": return new Object[]{new String[]{"💸", "💵", "💰", "🤑"}, 1};
+            case "fx_firework": return new Object[]{new String[]{"🎆", "🎇", "✨", "💥", "🌟"}, 2};
+            case "fx_gold": return new Object[]{new String[]{"🪙", "👑", "💛", "✨", "🏆"}, 1};
+            case "fx_lovebomb": return new Object[]{new String[]{"💘", "💖", "💞", "💝", "😍"}, 2};
             default: return null;
         }
     }

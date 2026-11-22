@@ -27,7 +27,8 @@ from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (BusinessConnection, BusinessMessagesDeleted, CallbackQuery, ChatMemberUpdated,
-                           InlineKeyboardButton, InlineKeyboardMarkup, MenuButtonWebApp, Message, WebAppInfo)
+                           InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, MenuButtonWebApp, Message,
+                           PreCheckoutQuery, WebAppInfo)
 from aiohttp import web
 
 import ai
@@ -41,6 +42,10 @@ ADMIN_ID = int(os.environ.get("ADMIN_ID", "0") or 0)
 PUBLIC_URL = os.environ.get("PUBLIC_URL", "").rstrip("/")
 PORT = int(os.environ.get("PORT", "8080"))
 AI_DAY_LIMIT = int(os.environ.get("AI_DAY_LIMIT", "40"))
+AI_GOLD_LIMIT = int(os.environ.get("AI_GOLD_LIMIT", "300"))
+GOLD_PRICE = int(os.environ.get("GOLD_PRICE", "49"))  # звёзд Telegram
+GOLD_ITEMS = {"fr_diamond", "fr_crown", "fr_aurora", "fr_phoenix", "fx_firework", "fx_gold", "fx_lovebomb"}
+GOLD_DAYS = int(os.environ.get("GOLD_DAYS", "30"))
 WEBAPP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webapp")
 
 db = DB()
@@ -70,6 +75,7 @@ def main_menu() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🗑 Удалённые", callback_data="m:del"), InlineKeyboardButton(text="🤖 Звёздочка", callback_data="m:ai")],
         [InlineKeyboardButton(text="🛍 Маркет", callback_data="m:market"), InlineKeyboardButton(text="📊 Аналитика", callback_data="m:stats")],
         [InlineKeyboardButton(text="⏰ Напоминания", callback_data="m:rem"), InlineKeyboardButton(text="📝 Заметки", callback_data="m:notes")],
+        [InlineKeyboardButton(text=f"👑 StarTegs Gold — {GOLD_PRICE} ⭐", callback_data="m:gold")],
         [InlineKeyboardButton(text="⚙️ Настройки", callback_data="m:set"), InlineKeyboardButton(text="❓ Помощь", callback_data="m:help")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -282,7 +288,7 @@ def ai_allowed(uid: int) -> bool:
     day = time.strftime("%Y-%m-%d")
     u = db.user(uid)
     used = u["ai_used"] if u and u["ai_used_day"] == day else 0
-    if used >= AI_DAY_LIMIT:
+    if used >= (AI_GOLD_LIMIT if db.gold(uid) else AI_DAY_LIMIT):
         return False
     db.x("UPDATE users SET ai_used_day=?, ai_used=? WHERE id=?", (day, used + 1, uid))
     return True
@@ -714,7 +720,9 @@ async def cmd_admin(m: Message):
                    f"🗑 Сохранено удалённых: {n('SELECT COUNT(*) n FROM msgs WHERE deleted=1')}\n"
                    f"🛍 Объявлений: {n('SELECT COUNT(*) n FROM ads WHERE active=1')}\n"
                    f"📊 Каналов в аналитике: {n('SELECT COUNT(*) n FROM channels WHERE active=1')}\n"
-                   f"🤖 Нейросеть: {ai.title()}\n\nРассылка: /broadcast текст")
+                   f"👑 Gold активен у: {n(f'SELECT COUNT(*) n FROM users WHERE gold_until>{now()}')} · "
+                   f"звёзд всего: {db.one('SELECT COALESCE(SUM(amount),0) n FROM payments WHERE refunded=0')['n']} ⭐\n"
+                   f"🤖 Нейросеть: {ai.title()}\n\nРассылка: /broadcast текст · Возврат: /refund ID ПЛАТЁЖ")
 
 
 @router.message(Command("broadcast"), F.from_user.id == ADMIN_ID)
@@ -745,6 +753,78 @@ async def cb_broadcast(c: CallbackQuery, bot: Bot):
             bad += 1
         await asyncio.sleep(0.05)
     await c.message.answer(f"Готово: доставлено {ok}, не доставлено {bad}")
+
+
+# ====================================================================== StarTegs Gold (звёзды Telegram)
+
+GOLD_PERKS = ("👑 <b>StarTegs Gold</b> — выделяйся среди всех\n\n"
+              "✦ Золотая отметка у имени — её видят друзья со StarTegs\n"
+              "🌈 Переливающееся имя для друзей\n"
+              "💎 Эксклюзивные анимированные рамки: Алмаз, Корона, Аврора, Феникс\n"
+              "🎆 Эффекты отправки: Фейерверк, Золотой дождь, Сердечный взрыв\n"
+              "✨ Эксклюзивные стили интерфейса: Gold Luxe и Diamond\n"
+              "🤖 Звёздочка почти без лимита\n\n")
+
+
+def gold_invoice() -> dict:
+    return dict(title="StarTegs Gold 👑", description=f"Золотая отметка, переливающееся имя, эксклюзивные рамки, эффекты и стили на {GOLD_DAYS} дней",
+                payload=f"gold:{GOLD_DAYS}", currency="XTR", prices=[LabeledPrice(label=f"Gold на {GOLD_DAYS} дней", amount=GOLD_PRICE)])
+
+
+@router.message(Command("gold"))
+@router.callback_query(F.data == "m:gold")
+async def gold_offer(ev, bot: Bot):
+    m = ev.message if isinstance(ev, CallbackQuery) else ev
+    db.touch_user(ev.from_user)
+    until = db.gold_until(ev.from_user.id)
+    status = f"✅ Gold активен до {time.strftime('%d.%m.%Y', time.localtime(until))}\n\n" if until > now() else ""
+    await m.answer(GOLD_PERKS + status + f"Цена: <b>{GOLD_PRICE} ⭐ за {GOLD_DAYS} дней</b>. Продление добавляет дни.")
+    await bot.send_invoice(m.chat.id, **gold_invoice())
+    if isinstance(ev, CallbackQuery):
+        await ev.answer()
+
+
+@router.pre_checkout_query()
+async def pre_checkout(q: PreCheckoutQuery):
+    await q.answer(ok=q.invoice_payload.startswith("gold:") and q.currency == "XTR", error_message="Этот платёж не подходит")
+
+
+@router.message(F.successful_payment)
+async def paid(m: Message):
+    p = m.successful_payment
+    db.touch_user(m.from_user)
+    if not p.invoice_payload.startswith("gold:"):
+        return
+    days = int(p.invoice_payload.split(":")[1] or GOLD_DAYS)
+    if db.one("SELECT 1 FROM payments WHERE charge=?", (p.telegram_payment_charge_id,)):
+        return
+    db.x("INSERT INTO payments(charge, uid, amount, days, ts) VALUES(?,?,?,?,?)", (p.telegram_payment_charge_id, m.from_user.id, p.total_amount, days, now()))
+    until = db.add_gold(m.from_user.id, days)
+    await m.answer(f"👑 <b>Gold активирован до {time.strftime('%d.%m.%Y', time.localtime(until))}!</b>\n\n"
+                   "Открой StarTegs → ⭐ StarTegs → 👑 Gold, чтобы включить золотые фишки. Спасибо, что поддерживаешь StarTegs 💛")
+    if ADMIN_ID:
+        try:
+            await m.bot.send_message(ADMIN_ID, f"💰 Gold: {esc(m.from_user.full_name)} ({m.from_user.id}) · {p.total_amount} ⭐ · {p.telegram_payment_charge_id}")
+        except Exception:
+            pass
+
+
+@router.message(Command("refund"), F.from_user.id == ADMIN_ID)
+async def cmd_refund(m: Message, command: CommandObject, bot: Bot):
+    args = (command.args or "").split()
+    if len(args) != 2:
+        await m.answer("Формат: /refund ID_пользователя ID_платежа (ID платежа приходит в уведомлении о покупке)")
+        return
+    try:
+        uid = int(args[0])
+        await bot.refund_star_payment(user_id=uid, telegram_payment_charge_id=args[1])
+        pay = db.one("SELECT days FROM payments WHERE charge=?", (args[1],))
+        db.x("UPDATE payments SET refunded=1 WHERE charge=?", (args[1],))
+        if pay:
+            db.x("UPDATE users SET gold_until=MAX(?, gold_until-?) WHERE id=?", (now(), pay["days"] * 86400, uid))
+        await m.answer("✅ Звёзды возвращены")
+    except Exception as e:
+        await m.answer(f"Не получилось: {esc(str(e))}")
 
 
 # ---------------------------------------------------------------------- любой текст в личке → Звёздочка
@@ -858,13 +938,25 @@ async def api_app(request: web.Request):
              (uid, u.get("first_name", ""), u.get("username", ""), now(), now()))
     look = look_of(uid)
 
-    if a in ("ping", "state"):
-        return js({"ok": True, "state": {"tier": "VIP", "vip": 1}, "hub": True})
+    if a in ("ping", "state", "gold"):
+        g = db.gold_until(uid)
+        return js({"ok": True, "state": {"tier": "Premium" if g > now() else "Free"}, "hub": True,
+                   "gold_until": g, "gold": g > now(), "price": GOLD_PRICE, "days": GOLD_DAYS})
+    if a == "gold_link":
+        try:
+            return js({"ok": True, "link": await BOT.create_invoice_link(**gold_invoice())})
+        except Exception:
+            log.exception("invoice link")
+            return js({"ok": False, "msg": "Не получилось создать счёт, попробуй /gold в боте"}, 502)
     if a == "cos_state":
         return js({"ok": True, "premium": True, "crystals": 0, "frame": look.get("frame", ""), "effect": look.get("effect", ""),
                    "badge": look.get("badge", "")})
     if a == "cos_equip":
-        save_look(uid, frame=str(body.get("frame", ""))[:32], effect=str(body.get("effect", ""))[:32])
+        frame, effect = str(body.get("frame", ""))[:32], str(body.get("effect", ""))[:32]
+        if not db.gold(uid):  # рамки и эффекты Gold — только с Gold
+            frame = "" if frame in GOLD_ITEMS else frame
+            effect = "" if effect in GOLD_ITEMS else effect
+        save_look(uid, frame=frame, effect=effect)
         return js({"ok": True, "premium": True, **{k: look_of(uid).get(k, "") for k in ("frame", "effect", "badge")}})
     if a == "badge_set":
         save_look(uid, badge=str(body.get("badge", ""))[:32])
@@ -886,7 +978,7 @@ async def api_app(request: web.Request):
         today = time.strftime("%m-%d")
         for i in ids:
             d = look_of(i)
-            if not d:
+            if not d and not db.gold(i):
                 continue
             if d.get("frame"):
                 frames[str(i)] = d["frame"]
@@ -895,8 +987,10 @@ async def api_app(request: web.Request):
             st = d.get("status", "") if not d.get("status_until") or d.get("status_until", 0) > now() else ""
             if any(d.get(k) for k in ("mood", "song", "emojis")) or st:
                 profs[str(i)] = {"mood": d.get("mood", ""), "song": d.get("song", ""), "emojis": d.get("emojis", ""), "status": st}
-            if any(k in d for k in ("c", "s", "cv", "l")):
-                looks[str(i)] = {"c": d.get("c", 0), "s": d.get("s", -1), "cv": d.get("cv", -1), "l": d.get("l", 0), "b": d.get("bday") == today}
+            gold = db.gold(i)
+            if any(k in d for k in ("c", "s", "cv", "l")) or gold:
+                looks[str(i)] = {"c": d.get("c", 0), "s": d.get("s", -1), "cv": d.get("cv", -1), "l": d.get("l", 0), "b": d.get("bday") == today,
+                                 "g": 1 if gold else 0}
         return js({"ok": True, "frames": frames, "profiles": profs, "look": looks, "badges": badges})
     if a == "modarch":
         items = body.get("items") if isinstance(body.get("items"), list) else []
@@ -918,7 +1012,7 @@ async def api_app(request: web.Request):
         if not prompt:
             return js({"ok": False, "err": "bad", "msg": "Пустой вопрос"}, 400)
         if not ai_allowed(uid):
-            return js({"ok": False, "err": "limit", "msg": f"Дневной лимит нейросети исчерпан ({AI_DAY_LIMIT})"}, 429)
+            return js({"ok": False, "err": "limit", "msg": "Дневной лимит нейросети исчерпан. С 👑 Gold — почти без лимита"}, 429)
         for k in [k for k, v in _jobs.items() if v["done"] and time.time() - v["ts"] > 600]:
             _jobs.pop(k, None)
         job_id = uuid.uuid4().hex
@@ -962,7 +1056,14 @@ async def api_mini(request: web.Request):
                    "channels": n("SELECT COUNT(*) n FROM channels WHERE owner=? AND active=1", uid),
                    "reminders": n("SELECT COUNT(*) n FROM reminders WHERE uid=? AND done=0", uid),
                    "notes": n("SELECT COUNT(*) n FROM notes WHERE uid=?", uid),
-                   "notify_deleted": me["notify_deleted"], "notify_edited": me["notify_edited"]})
+                   "notify_deleted": me["notify_deleted"], "notify_edited": me["notify_edited"],
+                   "gold_until": db.gold_until(uid), "gold_price": GOLD_PRICE, "gold_days": GOLD_DAYS})
+    if a == "gold_link":
+        try:
+            return js({"ok": True, "link": await BOT.create_invoice_link(**gold_invoice())})
+        except Exception:
+            log.exception("invoice link")
+            return js({"ok": False, "msg": "Не получилось создать счёт"})
     if a == "deleted":
         rows = deleted_list(uid, 100, str(body.get("q", ""))[:60])
         return js({"ok": True, "items": [{"who": r["sender_name"] or r["chat_name"], "text": r["text"], "media": MEDIA_NAMES.get(r["media_type"], ""),

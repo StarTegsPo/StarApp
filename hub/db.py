@@ -47,7 +47,10 @@ CREATE TABLE IF NOT EXISTS notes(id INTEGER PRIMARY KEY AUTOINCREMENT, uid INTEG
 -- связь с приложением StarTegs: стиль для друзей, витрина, облачный архив
 CREATE TABLE IF NOT EXISTS looks(uid INTEGER PRIMARY KEY, data TEXT, ts INTEGER);
 CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT);
+-- StarTegs Gold: оплаты звёздами Telegram
+CREATE TABLE IF NOT EXISTS payments(charge TEXT PRIMARY KEY, uid INTEGER, amount INTEGER, days INTEGER, ts INTEGER, refunded INTEGER DEFAULT 0);
 """
+MIGRATIONS = ["ALTER TABLE users ADD COLUMN gold_until INTEGER DEFAULT 0"]
 
 
 class DB:
@@ -56,6 +59,11 @@ class DB:
         self.c.row_factory = sqlite3.Row
         self.c.execute("PRAGMA journal_mode=WAL")
         self.c.executescript(SCHEMA)
+        for m in MIGRATIONS:
+            try:
+                self.c.execute(m)
+            except sqlite3.OperationalError:
+                pass  # уже применено
         self.c.commit()
 
     def q(self, sql, args=()):
@@ -79,6 +87,19 @@ class DB:
 
     def user(self, uid: int):
         return self.one("SELECT * FROM users WHERE id=?", (uid,))
+
+    # ------------------------------------------------------------ StarTegs Gold
+    def gold_until(self, uid: int) -> int:
+        r = self.one("SELECT gold_until FROM users WHERE id=?", (uid,))
+        return int(r["gold_until"] or 0) if r else 0
+
+    def gold(self, uid: int) -> bool:
+        return self.gold_until(uid) > int(time.time())
+
+    def add_gold(self, uid: int, days: int) -> int:
+        until = max(self.gold_until(uid), int(time.time())) + days * 86400
+        self.x("UPDATE users SET gold_until=? WHERE id=?", (until, uid))
+        return until
 
     def kv_get(self, k, default=None):
         r = self.one("SELECT v FROM kv WHERE k=?", (k,))

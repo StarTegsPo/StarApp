@@ -65,7 +65,7 @@ public final class StarSilk {
     static void decorate(BaseFragment f, int[] colors, android.view.View list) {
         try {
             if (barsOn() && f.getActionBar() != null) {
-                GradientDrawable g = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, colors);
+                GradientDrawable g = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, StarSkin.bar(colors)); // 6.2: стиль интерфейса
                 f.getActionBar().setBackground(g);
                 f.getActionBar().setItemsColor(Color.WHITE, false);
                 f.getActionBar().setTitleColor(Color.WHITE);
@@ -110,6 +110,7 @@ public final class StarSilk {
         if (v == null) return;
         v.setElevation(AndroidUtilities.dp(3));
         v.setTranslationZ(0);
+        StarSkin.style(v); // 6.2
         spring(v);
     }
 
@@ -138,7 +139,7 @@ public final class StarSilk {
             float w = getWidth(), h = getHeight();
             if (w == 0) return;
             if (sweep == null || w != lastW || h != lastH) {
-                sweep = new SweepGradient(w / 2, h / 2, new int[]{0xFFFF7EB3, 0xFFFFD166, 0xFF5EDB76, 0xFF4FB2FF, 0xFFB46CFF, 0xFFFF7EB3}, null);
+                sweep = new SweepGradient(w / 2, h / 2, StarSkin.ring(), null);
                 lastW = w;
                 lastH = h;
             }
@@ -148,7 +149,7 @@ public final class StarSilk {
             p.setShader(sweep);
             float s = p.getStrokeWidth() / 2;
             r.set(s, s, w - s, h - s);
-            canvas.drawRoundRect(r, AndroidUtilities.dp(22), AndroidUtilities.dp(22), p);
+            canvas.drawRoundRect(r, StarSkin.radius(), StarSkin.radius(), p);
             if (anim && isShown()) postInvalidateDelayed(40);
         }
     }

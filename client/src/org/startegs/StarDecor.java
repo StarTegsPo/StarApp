@@ -701,6 +701,10 @@ public final class StarDecor {
             if (style >= 0 && style < StarStyle.STYLES.length) out = StarStyle.apply(style, out.toString());
             String suffix = medal(l.optInt("l")) + (l.optBoolean("b") ? "🎂" : "");
             int color = l.optInt("c", 0);
+            if (l.optInt("g") == 1) { // 6.2: у друга StarTegs Gold — золотое имя и ✦
+                out = StarGold.goldName(out);
+                color = 0;
+            }
             if (color != 0) {
                 SpannableString sp = new SpannableString(out);
                 sp.setSpan(new ForegroundColorSpan(color), 0, sp.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
