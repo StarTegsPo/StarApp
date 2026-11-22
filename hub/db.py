@@ -50,7 +50,11 @@ CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT);
 -- StarTegs Gold: оплаты звёздами Telegram
 CREATE TABLE IF NOT EXISTS payments(charge TEXT PRIMARY KEY, uid INTEGER, amount INTEGER, days INTEGER, ts INTEGER, refunded INTEGER DEFAULT 0);
 """
-MIGRATIONS = ["ALTER TABLE users ADD COLUMN gold_until INTEGER DEFAULT 0"]
+MIGRATIONS = ["ALTER TABLE users ADD COLUMN gold_until INTEGER DEFAULT 0",
+              "ALTER TABLE users ADD COLUMN trial_used INTEGER DEFAULT 0",
+              "ALTER TABLE users ADD COLUMN ref_by INTEGER DEFAULT 0",
+              "ALTER TABLE users ADD COLUMN refs INTEGER DEFAULT 0",
+              "ALTER TABLE users ADD COLUMN digest INTEGER DEFAULT 1"]
 
 
 class DB:
@@ -100,6 +104,14 @@ class DB:
         until = max(self.gold_until(uid), int(time.time())) + days * 86400
         self.x("UPDATE users SET gold_until=? WHERE id=?", (until, uid))
         return until
+
+    def trial(self, uid: int, days: int):
+        """Пробный Gold один раз на аккаунт Telegram. Возвращает дату окончания или None."""
+        r = self.user(uid)
+        if not r or r["trial_used"]:
+            return None
+        self.x("UPDATE users SET trial_used=1 WHERE id=?", (uid,))
+        return self.add_gold(uid, days)
 
     def kv_get(self, k, default=None):
         r = self.one("SELECT v FROM kv WHERE k=?", (k,))

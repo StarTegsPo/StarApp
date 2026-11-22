@@ -253,7 +253,8 @@ public final class StarSkin {
                 c.drawRoundRect(r, rad, rad, p);
                 p.setStyle(Paint.Style.FILL);
             }
-            if (anim && isShown() && (s.glass || s.neon || s.gold)) postInvalidateDelayed(50);
+            // анимируем только выбранный стиль и стили Gold — остальные превью статичны (меньше нагрузка)
+            if (anim && isShown() && (selected || s.gold)) postInvalidateDelayed(50);
         }
 
         private void glassEdge(Canvas c, float rad) {

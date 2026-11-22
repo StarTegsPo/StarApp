@@ -56,6 +56,13 @@ public final class StarGold {
 
     static int days() { return prefs().getInt("gold_days", 30); }
 
+    /** 6.3: пробный Gold ещё доступен (по словам бота). */
+    static boolean trialAvailable() { return !active() && StarCloud.online() && prefs().getBoolean("gold_trial", true); }
+
+    static int trialDays() { return prefs().getInt("gold_trial_days", 3); }
+
+    static int refDays() { return prefs().getInt("gold_ref_days", 3); }
+
     public static String title() {
         return active() ? "👑 Gold до " + new SimpleDateFormat("d MMMM", new Locale("ru")).format(new Date(until() * 1000)) : "👑 Gold — " + price() + " ⭐";
     }
@@ -67,7 +74,8 @@ public final class StarGold {
             @Override
             public void ok(JSONObject res) {
                 prefs().edit().putLong("gold_until", res.optLong("gold_until", 0)).putInt("gold_price", res.optInt("price", 49))
-                        .putInt("gold_days", res.optInt("days", 30)).apply();
+                        .putInt("gold_days", res.optInt("days", 30)).putBoolean("gold_trial", res.optBoolean("trial", false))
+                        .putInt("gold_trial_days", res.optInt("trial_days", 3)).putInt("gold_ref_days", res.optInt("ref_days", 3)).apply();
                 if (done != null) done.run();
             }
 
@@ -116,6 +124,55 @@ public final class StarGold {
         });
     }
 
+    /** 6.3: пробный период — один раз на аккаунт, бот проверяет сам. */
+    static void trial(BaseFragment f, Runnable done) {
+        if (f.getParentActivity() == null) return;
+        StarCloud.call(f.getCurrentAccount(), "gold_trial", null, new StarCloud.Result() {
+            @Override
+            public void ok(JSONObject res) {
+                prefs().edit().putLong("gold_until", res.optLong("gold_until", 0)).putBoolean("gold_trial", false).apply();
+                if (f.getParentActivity() != null) {
+                    new AlertDialog.Builder(f.getParentActivity()).setTitle("🎁 Gold включён!")
+                            .setMessage("Целых " + trialDays() + " дня: золотое имя ✦ у друзей, рамки Алмаз и Корона, эффекты и стили Gold. Попробуй всё!")
+                            .setPositiveButton("Выбрать стиль", (d, w) -> f.presentFragment(new StarSkin.Screen()))
+                            .setNegativeButton("Рамки", (d, w) -> f.presentFragment(new StarCosmetics.Shop())).show();
+                }
+                if (done != null) done.run();
+            }
+
+            @Override
+            public void fail(String why) {
+                if (why != null && why.contains("уже")) prefs().edit().putBoolean("gold_trial", false).apply();
+                if (f.getParentActivity() != null) Toast.makeText(f.getParentActivity(), why, Toast.LENGTH_LONG).show();
+                if (done != null) done.run();
+            }
+        });
+    }
+
+    /** 6.3: ссылка-приглашение: +N дней Gold за каждого нового друга. */
+    static void invite(BaseFragment f) {
+        if (f.getParentActivity() == null) return;
+        if (!StarCloud.online()) {
+            Toast.makeText(f.getParentActivity(), "Приглашения работают через бота StarTegs Hub", Toast.LENGTH_LONG).show();
+            return;
+        }
+        StarCloud.call(f.getCurrentAccount(), "gold_ref", null, new StarCloud.Result() {
+            @Override
+            public void ok(JSONObject res) {
+                if (f.getParentActivity() == null) return;
+                android.content.Intent i = new android.content.Intent(android.content.Intent.ACTION_SEND);
+                i.setType("text/plain");
+                i.putExtra(android.content.Intent.EXTRA_TEXT, "Заходи в StarTegs ⭐ удалённые сообщения, нейросеть и стиль, которого нет у других: " + res.optString("link"));
+                f.getParentActivity().startActivity(android.content.Intent.createChooser(i, "Пригласить друга (уже позвал: " + res.optInt("refs") + ")"));
+            }
+
+            @Override
+            public void fail(String why) {
+                if (f.getParentActivity() != null) Toast.makeText(f.getParentActivity(), why, Toast.LENGTH_LONG).show();
+            }
+        });
+    }
+
     // ================================================================ имя друга с Gold
 
     static final int[] GOLD = {0xFFFFD86B, 0xFFFFB13B, 0xFFFF8A00, 0xFFFFE9A8};
@@ -139,7 +196,9 @@ public final class StarGold {
             {"🎆", "Эффекты отправки", "Фейерверк, Золотой дождь, Сердечный взрыв"},
             {"✨", "Стили интерфейса Gold Luxe и Diamond", "Самые дорогие на вид стили StarTegs"},
             {"🪪", "Золотая карточка профиля", "Золотое сияние и корона в твоей карточке и картинке для сторис"},
-            {"🤖", "Звёздочка почти без лимита", "300 вопросов в день вместо 40"},
+            {"🤖", "Звёздочка почти без лимита", "300 вопросов в день вместо 40 и в 3 раза больше памяти"},
+            {"🛍", "Маркет: твои объявления первыми", "С отметкой 👑 Gold — их видят раньше всех"},
+            {"📤", "Экспорт всего архива", "Удалённые и правки за всё время одним файлом"},
             {"💛", "Поддержка StarTegs", "Ты помогаешь делать приложение лучше"},
     };
 
@@ -198,12 +257,14 @@ public final class StarGold {
         @Override
         protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
             if (getParentActivity() != null) items.add(UItem.asCustom(hero(getParentActivity())));
+            if (trialAvailable()) items.add(UItem.asButton(4, "🎁 Попробовать " + trialDays() + " дня бесплатно", "").accent());
             items.add(UItem.asButton(1, active() ? "Продлить ещё на " + days() + " дней — " + price() + " ⭐" : "Получить Gold — " + price() + " ⭐", "").accent());
             items.add(UItem.asHeader("Что даёт Gold"));
             for (int i = 0; i < PERKS.length; i++) {
                 items.add(org.telegram.ui.SettingsActivity.SettingCell.Factory.of(100 + i, 0xFFFFC94D, 0xFFFF8A3D, org.telegram.messenger.R.drawable.settings_premium,
                         PERKS[i][0] + "  " + PERKS[i][1], PERKS[i][2]));
             }
+            items.add(UItem.asButton(5, "👥 Позвать друга — +" + refDays() + " дня Gold", "за каждого"));
             if (active()) {
                 items.add(UItem.asHeader("Включить золотые фишки"));
                 items.add(UItem.asButton(2, "💎 Рамки и эффекты Gold → Магазин", ""));
@@ -219,6 +280,8 @@ public final class StarGold {
             if (item.id == 1) buy(this, this::update);
             else if (item.id == 2) presentFragment(new StarCosmetics.Shop());
             else if (item.id == 3) presentFragment(new StarSkin.Screen());
+            else if (item.id == 4) trial(this, this::update);
+            else if (item.id == 5) invite(this);
         }
 
         @Override
@@ -246,6 +309,7 @@ public final class StarGold {
         col.setOrientation(LinearLayout.VERTICAL);
         col.addView(StarYou.text(ctx, on ? goldName("StarTegs Gold") : "StarTegs Gold", 17, on ? 0xFFFFD86B : Color.WHITE, true));
         col.addView(StarYou.text(ctx, on ? "активен до " + new SimpleDateFormat("d MMMM", new Locale("ru")).format(new Date(until() * 1000)) + " · твои золотые фишки →"
+                : trialAvailable() ? "🎁 " + trialDays() + " дня бесплатно · золотое имя ✦, рамки и стили"
                 : "Золотое имя ✦, эксклюзивные рамки и стили · " + price() + " ⭐", 13, 0xEEFFFFFF, false));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         lp.leftMargin = AndroidUtilities.dp(12);

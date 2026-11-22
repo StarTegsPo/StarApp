@@ -1296,6 +1296,18 @@ patch("TMessagesProj/src/main/AndroidManifest.xml",
 
     </application>""")
 
+print("== 6.3: размер стикеров")
+patch(CELL,
+      """                    String filter;
+                    if (messageObject.isAnimatedEmoji() || messageObject.isDice()) {""",
+      """                    if (!messageObject.isAnimatedEmoji() && !messageObject.isDice()) { // StarTegs 6.3: размер стикеров
+                        float starK = org.startegs.StarMove.stickerScale();
+                        maxWidth = (int) (maxWidth * starK);
+                        maxHeight = maxHeight * starK;
+                    }
+                    String filter;
+                    if (messageObject.isAnimatedEmoji() || messageObject.isDice()) {""")
+
 print("== отчёт о сбоях")
 patch("TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java",
       """        try {

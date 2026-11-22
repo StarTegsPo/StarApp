@@ -120,12 +120,14 @@ public final class StarSections {
                 items.add(UItem.asCustom(StarSilk.dayCard(this))); // 5.6: «Мой день»
             }
             items.add(UItem.asButton(905, R.drawable.msg_search, "🔎 Поиск по настройкам StarTegs"));
+            items.add(UItem.asButton(911, R.drawable.msg_forward, "🔁 Переезд из AyuGram, exteraGram и др.", "")); // 6.3
             if (getParentActivity() != null) items.add(UItem.asCustom(StarPolish.tipCard(this, -1))); // 5.3: совет дня
             if (getParentActivity() != null) items.add(UItem.asCustom(StarBonus.quoteCard(getParentActivity()))); // 5.5: цитата дня
             if (!StarMod.isPro()) {
                 items.add(UItem.asButton(99, R.drawable.msg_premium_badge, StarTrial.available() ? "🎁 Premium на 3 дня — бесплатно" : "⭐ Открыть всё с Premium").accent());
             }
             items.add(UItem.asHeader("⚡ Быстро"));
+            items.add(UItem.asButton(910, R.drawable.msg_settings, "🚀 Оптимизировать телефон", StarOptimize.due() ? "пора!" : "здоровье ✓").accent()); // 6.3
             items.add(UItem.asButton(909, R.drawable.msg_edit, "⚡ Свои быстрые кнопки вверху", "настроить"));
             items.add(UItem.asCheck(901, "👻 Режим призрака" + (StarMod.isPro() ? "" : "  ⭐")).setChecked(ghostAll()));
             items.add(UItem.asCheck(902, "🫥 Шторка приватности" + (StarMod.isPro() ? "" : "  ⭐")).setChecked(StarShade.enabled()));
@@ -191,6 +193,12 @@ public final class StarSections {
                     return;
                 case 909:
                     StarQuick.customize(this, this::refresh);
+                    return;
+                case 910:
+                    presentFragment(new StarOptimize.Screen());
+                    return;
+                case 911:
+                    presentFragment(new StarMove.Screen());
                     return;
             }
             int i = item.id - 100;

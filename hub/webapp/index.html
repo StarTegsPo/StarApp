@@ -127,6 +127,15 @@ nav button.on span{transform:scale(1.15) translateY(-1px)}
 .skel{height:76px;border-radius:22px;margin-bottom:10px;background:linear-gradient(90deg,var(--glass),var(--glass2),var(--glass));background-size:200% 100%;animation:sk 1.2s infinite}
 @keyframes sk{to{background-position:-200% 0}}
 a{color:inherit}
+.stats3{display:flex;gap:8px;margin-bottom:12px}.stats3 div{flex:1;text-align:center;padding:10px 4px;border-radius:16px;background:rgba(255,255,255,.08)}
+.stats3 b{display:block;font-size:22px}.stats3 span{font-size:12px;opacity:.7}
+.bar-row{display:flex;margin-top:8px;font-size:14px}.bar{height:6px;border-radius:6px;background:rgba(255,255,255,.1);margin-top:4px;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,#7b5cff,#33a6ff);animation:grow .8s ease}
+@keyframes grow{from{width:0}}
+.trial{background:linear-gradient(135deg,rgba(94,219,118,.25),rgba(31,181,160,.18))}
+.goldb{background:linear-gradient(90deg,#ffd86b,#ff9f1c);color:#3a2a00;margin-left:6px}
+.confetti{position:fixed;inset:0;pointer-events:none;z-index:99}.confetti i{position:absolute;top:-30px;font-style:normal;animation:fall 2.2s cubic-bezier(.3,.6,.4,1) forwards}
+@keyframes fall{to{transform:translateY(110vh) rotate(540deg);opacity:.2}}
 </style>
 </head>
 <body>
@@ -145,7 +154,20 @@ a{color:inherit}
         <div class="grow"><div style="font-weight:800" id="gold-title">StarTegs Gold</div><div class="muted" id="gold-sub">Золотая отметка, переливающееся имя, эксклюзивные рамки</div></div>
         <div class="badge" id="gold-price">49 ⭐</div></div>
     </div>
+    <div class="glass card press trial" id="trial-card" onclick="takeTrial()" style="display:none">
+      <div class="row"><div class="icon" style="--c1:#5edb76;--c2:#1fb5a0">🎁</div>
+        <div class="grow"><div style="font-weight:800" id="trial-title">Gold на 3 дня — бесплатно</div><div class="muted">Попробуй золотое имя, рамки и стили. Без оплаты</div></div>
+        <div class="badge">0 ⭐</div></div>
+    </div>
     <div class="grid" id="tiles"></div>
+    <h2>📈 Твоя неделя</h2>
+    <div class="glass card" id="week-card"><div class="muted">Загрузка…</div></div>
+    <h2>👥 Друзья = Gold</h2>
+    <div class="glass card">
+      <div class="row"><div class="icon" style="--c1:#ff7eb3;--c2:#8a5cff">👥</div>
+        <div class="grow"><div style="font-weight:700" id="ref-title">Пригласи друга</div><div class="muted" id="ref-sub">+3 дня Gold за каждого</div></div>
+        <button class="btn small" onclick="shareRef()">Позвать</button></div>
+    </div>
     <h2>Быстро</h2>
     <div class="glass card">
       <div class="row" style="margin-bottom:12px"><div class="icon" style="--c1:#7b5cff;--c2:#33a6ff">🤖</div>
@@ -162,7 +184,9 @@ a{color:inherit}
     <h1>Удалённые</h1>
     <p class="subtitle">Что стёрли и изменили в твоих личных чатах</p>
     <div class="seg" id="del-seg"><button class="on" data-k="deleted">🗑 Удалённые</button><button data-k="edits">✏️ Изменённые</button></div>
-    <input class="search" id="del-q" placeholder="🔎 Поиск по имени или тексту">
+    <div class="row" style="gap:8px"><input class="search grow" id="del-q" placeholder="🔎 Поиск по имени или тексту" style="margin:0">
+      <button class="btn small ghost" onclick="exportArchive()" title="Экспорт">📤</button></div>
+    <div style="height:12px"></div>
     <div id="del-list"></div>
   </section>
 
@@ -199,6 +223,7 @@ a{color:inherit}
     <div class="glass card">
       <div class="row" style="margin-bottom:14px"><div class="grow">Сообщать об удалённых</div><div class="toggle" id="t-del" onclick="setToggle('notify_deleted',this)"></div></div>
       <div class="row" style="margin-bottom:14px"><div class="grow">Сообщать об изменённых</div><div class="toggle" id="t-edit" onclick="setToggle('notify_edited',this)"></div></div>
+      <div class="row" style="margin-bottom:14px"><div class="grow">🌙 Итоги дня вечером</div><div class="toggle" id="t-digest" onclick="setToggle('digest',this)"></div></div>
       <button class="btn ghost" onclick="clearArchive()">🧹 Очистить мой архив</button>
     </div>
   </section>
@@ -274,6 +299,42 @@ async function loadHome() {
   $('#gold-price').textContent = j.gold_price + ' ⭐';
   $('#t-del').classList.toggle('on', !!j.notify_deleted);
   $('#t-edit').classList.toggle('on', !!j.notify_edited);
+  $('#t-digest').classList.toggle('on', !!j.digest);
+  $('#trial-card').style.display = j.trial && !goldOn ? '' : 'none';
+  $('#trial-title').textContent = `Gold на ${j.trial_days} дня — бесплатно`;
+  window._ref = j.ref_link;
+  $('#ref-title').textContent = j.refs ? `Друзей приглашено: ${j.refs}` : 'Пригласи друга';
+  $('#ref-sub').textContent = `+${j.ref_days} дня Gold за каждого нового друга`;
+  const w = j.week || {};
+  if (!w.in && !w.out) { $('#week-card').innerHTML = '<div class="muted">Подключи бота к личным чатам — и тут появится твоя статистика: топ собеседников, кто чаще удаляет, самое активное время.</div>'; return; }
+  const mx = Math.max(1, ...(w.top || []).map(t => t.n));
+  $('#week-card').innerHTML = `<div class="stats3"><div><b>${w.in}</b><span>получено</span></div><div><b>${w.out}</b><span>отправлено</span></div><div><b>${w.deleted}</b><span>удалили</span></div></div>
+    ${(w.top || []).map((t, k) => `<div class="bar-row"><span class="grow">${['🥇','🥈','🥉','4.','5.'][k]} ${esc(t.name)}</span><span class="muted">${t.n}</span></div>
+      <div class="bar"><i style="width:${Math.round(100 * t.n / mx)}%"></i></div>`).join('')}
+    ${w.peak >= 0 ? `<div class="muted" style="margin-top:10px">⏰ Пик активности: ${w.peak}:00–${(w.peak + 1) % 24}:00</div>` : ''}`;
+}
+
+async function takeTrial() {
+  hap('medium');
+  const j = await api('gold_trial');
+  if (j.ok) { ok(); confetti(); toast('🎁 Gold включён! Открой StarTegs → 👑 Gold'); loadHome(); } else toast(j.msg || 'Не получилось');
+}
+function shareRef() {
+  hap();
+  if (!window._ref) return;
+  const u = 'https://t.me/share/url?url=' + encodeURIComponent(window._ref) + '&text=' + encodeURIComponent('Заходи в StarTegs Hub: удалённые сообщения, нейросеть, маркет ⭐');
+  tg ? tg.openTelegramLink(u) : open(u);
+}
+async function exportArchive() {
+  hap('medium');
+  const j = await api('export');
+  if (j.ok) { ok(); toast('📤 Файл архива пришёл в чат с ботом'); } else toast(j.msg || 'Не получилось');
+}
+function confetti() {
+  const box = document.createElement('div'); box.className = 'confetti'; document.body.appendChild(box);
+  for (let i = 0; i < 40; i++) { const e = document.createElement('i'); e.textContent = ['✨','👑','⭐','💛','🎉'][i % 5];
+    e.style.left = Math.random() * 100 + 'vw'; e.style.animationDelay = Math.random() * .4 + 's'; e.style.fontSize = 14 + Math.random() * 16 + 'px'; box.appendChild(e); }
+  setTimeout(() => box.remove(), 2600);
 }
 
 async function buyGold() {
@@ -351,7 +412,7 @@ async function loadMarket() {
   if (!j.items.length) { $('#mk-list').innerHTML = empty('🛍', 'Здесь пока пусто', 'Размести первое объявление — это бесплатно'); return; }
   $('#mk-list').innerHTML = j.items.map((a, k) => { const c = palette[a.id % palette.length]; return `
     <div class="glass ad item" style="animation-delay:${k*35}ms"><div class="ph" style="--c1:${c[0]};--c2:${c[1]}">${esc(a.cat.split(' ')[0])}</div>
-    <div class="bd"><div class="row"><span class="badge">${a.kind === 'sell' ? '🟢 Продам' : '🔵 Куплю'}</span><div class="grow"></div><span class="muted">👁 ${a.views} · ${ago(a.ts)}</span></div>
+    <div class="bd"><div class="row"><span class="badge">${a.kind === 'sell' ? '🟢 Продам' : '🔵 Куплю'}</span>${a.gold ? '<span class="badge goldb">👑 Gold</span>' : ''}<div class="grow"></div><span class="muted">👁 ${a.views} · ${ago(a.ts)}</span></div>
     <div style="font-weight:700;font-size:18px;margin-top:8px">${esc(a.title)}</div>
     ${a.descr ? `<div class="muted" style="margin-top:4px">${esc(a.descr)}</div>` : ''}
     <div class="row" style="margin-top:12px"><div class="price grow">${esc(a.price)}</div>

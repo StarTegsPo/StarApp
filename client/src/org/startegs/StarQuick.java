@@ -19,10 +19,10 @@ final class StarQuick {
     static final String[][] ACTIONS = {
             {"👻", "Призрак"}, {"✨", "Шрифт"}, {"🪪", "Имя"}, {"🛍", "Магазин"}, {"🐾", "Питомец"},
             {"🎨", "Стиль"}, {"👑", "Gold"}, {"🌙", "Ночь"}, {"🔕", "Тишина"}, {"🛠", "Утилиты"},
-            {"✉️", "Удалённые"}, {"🤖", "ИИ"}, {"🔎", "Поиск"}, {"🧠", "Память"}, {"🔒", "Приватность"}, {"🖌", "Дизайн"},
+            {"✉️", "Удалённые"}, {"🤖", "ИИ"}, {"🔎", "Поиск"}, {"🧠", "Память"}, {"🔒", "Приватность"}, {"🖌", "Дизайн"}, {"🚀", "Ускорить"}, {"👥", "Позвать"},
     };
 
-    private static final int[] DEFAULT = {0, 1, 5, 3, 6};
+    private static final int[] DEFAULT = {0, 1, 5, 16, 6};
 
     private static SharedPreferences prefs() {
         return ApplicationLoader.applicationContext.getSharedPreferences("startegs_mod", Context.MODE_PRIVATE);
@@ -68,6 +68,8 @@ final class StarQuick {
             case 12: f.presentFragment(new StarSections.Search()); break;
             case 13: f.presentFragment(new StarMemory.Screen()); break;
             case 14: f.presentFragment(new StarSections.Screen(1)); break;
+            case 16: f.presentFragment(new StarOptimize.Screen()); break;
+            case 17: StarGold.invite(f); break;
             default: f.presentFragment(new StarSections.Screen(20));
         }
     }

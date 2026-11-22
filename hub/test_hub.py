@@ -178,5 +178,66 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(s["d7"], 30)
 
 
+class Gold63Test(unittest.TestCase):
+    def run_async(self, coro):
+        return asyncio.new_event_loop().run_until_complete(coro)
+
+    def test_trial_once(self):
+        bot.db.x("INSERT OR IGNORE INTO users(id, joined, last_seen) VALUES(5001, 0, 0)")
+        self.assertIsNotNone(bot.db.trial(5001, 3))
+        self.assertTrue(bot.db.gold(5001))
+        self.assertIsNone(bot.db.trial(5001, 3))  # второй раз нельзя
+
+    def test_trial_api(self):
+        async def go():
+            c = TestClient(TestServer(bot.make_web()))
+            await c.start_server()
+            try:
+                a = make_init(5101)
+                r = await (await c.post("/api", json={"init": a, "a": "state"})).json()
+                self.assertTrue(r["trial"])
+                r = await (await c.post("/api", json={"init": a, "a": "gold_trial"})).json()
+                self.assertTrue(r["gold"])
+                r = await (await c.post("/api", json={"init": a, "a": "gold_trial"})).json()
+                self.assertFalse(r["ok"])
+                r = await (await c.post("/mini/api", json={"init": a, "a": "home"})).json()
+                self.assertFalse(r["trial"])
+                self.assertIn("week", r)
+            finally:
+                await c.close()
+        self.run_async(go())
+
+    def test_referral(self):
+        class FakeBot:
+            sent = []
+
+            async def send_message(self, uid, text):
+                self.sent.append(uid)
+
+        class U:
+            id, full_name = 5202, "Новый"
+        bot.db.x("INSERT OR IGNORE INTO users(id, joined, last_seen) VALUES(5201, 0, 0)")
+        bot.db.x("INSERT OR IGNORE INTO users(id, joined, last_seen) VALUES(5202, 0, 0)")
+        fb = FakeBot()
+        self.run_async(bot.reward_referral(fb, U(), "5201"))
+        self.assertTrue(bot.db.gold(5201))
+        self.assertEqual(bot.db.user(5201)["refs"], 1)
+        self.assertEqual(fb.sent, [5201])
+        self.run_async(bot.reward_referral(fb, U(), "5202"))  # сам себя нельзя
+        self.assertEqual(bot.db.user(5202)["refs"], 0)
+
+    def test_stats_export(self):
+        t = bot.now()
+        for mid, out, dl in ((1, 0, 1), (2, 1, 0), (3, 0, 0)):
+            bot.db.x("INSERT INTO msgs(owner, chat, mid, sender, sender_name, chat_name, text, date, out, deleted, deleted_at) VALUES(5301,9,?,9,'Петя','Петя','<b>hi</b>',?,?,?,?)",
+                     (mid, t - 100, out, dl, t if dl else 0))
+        st = bot.my_stats(5301)
+        self.assertEqual((st["in"], st["out"], st["deleted"]), (2, 1, 1))
+        self.assertEqual(st["top"][0]["name"], "Петя")
+        html_ = bot.export_html(5301, False)
+        self.assertIn("&lt;b&gt;hi", html_)  # текст экранирован
+        self.assertNotIn("<b>hi", html_)
+
+
 if __name__ == "__main__":
     unittest.main()

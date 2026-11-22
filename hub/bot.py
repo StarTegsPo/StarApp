@@ -18,7 +18,7 @@ import re
 import secrets
 import time
 import uuid
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qsl, quote
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
@@ -26,7 +26,7 @@ from aiogram.enums import ChatMemberStatus, ChatType, ParseMode
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import (BusinessConnection, BusinessMessagesDeleted, CallbackQuery, ChatMemberUpdated,
+from aiogram.types import (BufferedInputFile, BusinessConnection, BusinessMessagesDeleted, CallbackQuery, ChatMemberUpdated,
                            InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, MenuButtonWebApp, Message,
                            PreCheckoutQuery, WebAppInfo)
 from aiohttp import web
@@ -46,6 +46,10 @@ AI_GOLD_LIMIT = int(os.environ.get("AI_GOLD_LIMIT", "300"))
 GOLD_PRICE = int(os.environ.get("GOLD_PRICE", "49"))  # звёзд Telegram
 GOLD_ITEMS = {"fr_diamond", "fr_crown", "fr_aurora", "fr_phoenix", "fx_firework", "fx_gold", "fx_lovebomb"}
 GOLD_DAYS = int(os.environ.get("GOLD_DAYS", "30"))
+TRIAL_DAYS = int(os.environ.get("TRIAL_DAYS", "3"))     # пробный Gold, один раз
+REF_DAYS = int(os.environ.get("REF_DAYS", "3"))         # Gold за каждого приглашённого друга
+REF_MAX = int(os.environ.get("REF_MAX", "30"))          # максимум оплачиваемых приглашений
+DIGEST_HOUR = int(os.environ.get("DIGEST_HOUR", "21"))  # итоги дня в 21:00 по времени сервера
 WEBAPP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webapp")
 
 db = DB()
@@ -67,8 +71,9 @@ def app_url() -> str:
     return f"{PUBLIC_URL}/app/?api={PUBLIC_URL}/api" if PUBLIC_URL else ""
 
 
-def main_menu() -> InlineKeyboardMarkup:
+def main_menu(uid: int = 0) -> InlineKeyboardMarkup:
     rows = []
+    u = db.user(uid) if uid else None
     if PUBLIC_URL:
         rows.append([InlineKeyboardButton(text="✨ Открыть StarTegs", web_app=WebAppInfo(url=app_url()))])
     rows += [
@@ -76,8 +81,12 @@ def main_menu() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🛍 Маркет", callback_data="m:market"), InlineKeyboardButton(text="📊 Аналитика", callback_data="m:stats")],
         [InlineKeyboardButton(text="⏰ Напоминания", callback_data="m:rem"), InlineKeyboardButton(text="📝 Заметки", callback_data="m:notes")],
         [InlineKeyboardButton(text=f"👑 StarTegs Gold — {GOLD_PRICE} ⭐", callback_data="m:gold")],
+        [InlineKeyboardButton(text="📈 Моя статистика", callback_data="m:me"), InlineKeyboardButton(text="📤 Экспорт архива", callback_data="m:export")],
+        [InlineKeyboardButton(text=f"👥 Пригласить друга (+{REF_DAYS} дня Gold)", callback_data="m:invite")],
         [InlineKeyboardButton(text="⚙️ Настройки", callback_data="m:set"), InlineKeyboardButton(text="❓ Помощь", callback_data="m:help")],
     ]
+    if u is not None and not u["trial_used"] and not db.gold(uid):
+        rows.insert(1 if PUBLIC_URL else 0, [InlineKeyboardButton(text=f"🎁 Gold на {TRIAL_DAYS} дня бесплатно", callback_data="m:trial")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -86,7 +95,9 @@ WELCOME = ("⭐ <b>StarTegs Hub</b> — всё в одном боте\n\n"
            "🤖 <b>Звёздочка</b> — нейросеть: просто напиши вопрос\n"
            "🛍 <b>Маркет</b> — объявления «куплю/продам»\n"
            "📊 <b>Аналитика</b> — рост твоих каналов и групп\n"
-           "⏰ <b>Напоминания</b> и 📝 <b>заметки</b>\n\n"
+           "⏰ <b>Напоминания</b> и 📝 <b>заметки</b>\n"
+           "📈 <b>Статистика</b> своих чатов, 📤 <b>экспорт</b> архива, 🌙 итоги дня\n"
+           "👑 <b>Gold</b> — золотое имя у друзей, рамки и стили; первые дни бесплатно\n\n"
            "А в приложении StarTegs бот включает стиль для друзей и облачный архив.")
 
 HELP = ("<b>Как подключить «Удалённые»</b>\n"
@@ -97,25 +108,33 @@ HELP = ("<b>Как подключить «Удалённые»</b>\n"
         "/tr en текст — перевод\n/sell — разместить объявление, /market — смотреть, /my — мои\n"
         "/stats — аналитика каналов (добавь бота админом в канал)\n"
         "/remind 30m купить хлеб · /remind 18:30 позвонить\n/note текст · /notes\n"
-        "/deleted — последние удалённые · /find слово — поиск по архиву")
+        "/deleted — последние удалённые · /edits — изменённые · /find слово — поиск по архиву\n"
+        "/me — статистика чатов · /export — архив файлом · /digest — итоги дня вкл/выкл\n"
+        "/gold — StarTegs Gold · /trial — попробовать бесплатно · /invite — пригласить друга")
 
 
 @router.message(CommandStart())
 async def cmd_start(m: Message, command: CommandObject):
+    is_new = db.user(m.from_user.id) is None
     db.touch_user(m.from_user)
     arg = command.args or ""
+    if arg.startswith("ref_") and is_new:
+        await reward_referral(m.bot, m.from_user, arg[4:])
+    if arg == "trial":
+        await give_trial(m)
+        return
     if arg.startswith("ad_"):
         try:
             await show_ad(m.chat.id, int(arg[3:]), m.from_user.id)
             return
         except ValueError:
             pass
-    await m.answer(WELCOME, reply_markup=main_menu())
+    await m.answer(WELCOME, reply_markup=main_menu(m.from_user.id))
 
 
 @router.message(Command("help"))
 async def cmd_help(m: Message):
-    await m.answer(HELP, reply_markup=main_menu())
+    await m.answer(HELP, reply_markup=main_menu(m.from_user.id))
 
 
 @router.callback_query(F.data == "m:help")
@@ -294,7 +313,8 @@ def ai_allowed(uid: int) -> bool:
     return True
 
 
-def history(uid: int, limit: int = 12) -> list:
+def history(uid: int, limit: int = 0) -> list:
+    limit = limit or (40 if db.gold(uid) else 12)  # Gold: Звёздочка помнит больше
     rows = db.q("SELECT role, content FROM ai_hist WHERE uid=? ORDER BY ts DESC, rowid DESC LIMIT ?", (uid, limit))
     return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
 
@@ -466,8 +486,8 @@ async def sell_photo(m: Message, state: FSMContext):
 @router.callback_query(F.data.startswith("m:market"))
 async def market(ev):
     m = ev.message if isinstance(ev, CallbackQuery) else ev
-    rows = db.q("SELECT * FROM ads WHERE active=1 ORDER BY ts DESC LIMIT 10")
-    kb = [[InlineKeyboardButton(text=f"{'🟢' if a['kind'] == 'sell' else '🔵'} {a['title'][:28]} · {a['price'][:12]}", callback_data=f"ad:{a['id']}")] for a in rows]
+    rows = db.q("SELECT a.*, (COALESCE(u.gold_until,0)>?) AS g FROM ads a LEFT JOIN users u ON u.id=a.uid WHERE a.active=1 ORDER BY g DESC, a.ts DESC LIMIT 10", (now(),))
+    kb = [[InlineKeyboardButton(text=f"{'👑' if a['g'] else ('🟢' if a['kind'] == 'sell' else '🔵')} {a['title'][:28]} · {a['price'][:12]}", callback_data=f"ad:{a['id']}")] for a in rows]
     kb.append([InlineKeyboardButton(text="➕ Разместить", callback_data="mk:new"), InlineKeyboardButton(text="📋 Мои", callback_data="mk:my")])
     if PUBLIC_URL:
         kb.append([InlineKeyboardButton(text="✨ Маркет в приложении", web_app=WebAppInfo(url=app_url() + "#market"))])
@@ -718,6 +738,7 @@ async def cmd_admin(m: Message):
                    f"👥 Пользователей: {n('SELECT COUNT(*) n FROM users')} · за сутки: {n(f'SELECT COUNT(*) n FROM users WHERE last_seen>{now() - 86400}')}\n"
                    f"🔗 Business-подключений: {n('SELECT COUNT(*) n FROM biz WHERE enabled=1')}\n"
                    f"🗑 Сохранено удалённых: {n('SELECT COUNT(*) n FROM msgs WHERE deleted=1')}\n"
+                   f"🎁 Пробный Gold: {n('SELECT COUNT(*) n FROM users WHERE trial_used=1')} · 👥 по приглашениям: {n('SELECT COUNT(*) n FROM users WHERE ref_by>0')}\n"
                    f"🛍 Объявлений: {n('SELECT COUNT(*) n FROM ads WHERE active=1')}\n"
                    f"📊 Каналов в аналитике: {n('SELECT COUNT(*) n FROM channels WHERE active=1')}\n"
                    f"👑 Gold активен у: {n(f'SELECT COUNT(*) n FROM users WHERE gold_until>{now()}')} · "
@@ -763,7 +784,10 @@ GOLD_PERKS = ("👑 <b>StarTegs Gold</b> — выделяйся среди вс�
               "💎 Эксклюзивные анимированные рамки: Алмаз, Корона, Аврора, Феникс\n"
               "🎆 Эффекты отправки: Фейерверк, Золотой дождь, Сердечный взрыв\n"
               "✨ Эксклюзивные стили интерфейса: Gold Luxe и Diamond\n"
-              "🤖 Звёздочка почти без лимита\n\n")
+              "🪪 Золотая карточка профиля\n"
+              "🤖 Звёздочка: 300 вопросов в день и в 3 раза больше памяти\n"
+              "🛍 Объявления в маркете — первыми и с 👑\n"
+              "📤 Экспорт всего архива, а не только за 30 дней\n\n")
 
 
 def gold_invoice() -> dict:
@@ -825,6 +849,218 @@ async def cmd_refund(m: Message, command: CommandObject, bot: Bot):
         await m.answer("✅ Звёзды возвращены")
     except Exception as e:
         await m.answer(f"Не получилось: {esc(str(e))}")
+
+
+
+# ====================================================================== 6.3: пробный Gold, друзья, статистика, экспорт, итоги дня
+
+def fmt_date(ts: int) -> str:
+    return time.strftime("%d.%m.%Y", time.localtime(ts))
+
+
+async def give_trial(m: Message, uid: int = 0):
+    uid = uid or m.from_user.id
+    db.touch_user(m.from_user)
+    if db.gold(uid) and db.user(uid)["trial_used"]:
+        await m.answer(f"👑 Gold уже активен до {fmt_date(db.gold_until(uid))}")
+        return
+    until = db.trial(uid, TRIAL_DAYS)
+    if until is None:
+        await m.answer("🎁 Пробный период уже был. Gold можно продлить: /gold — или получить бесплатно, пригласив друзей: /invite")
+        return
+    await m.answer(f"🎁 <b>Gold на {TRIAL_DAYS} дня включён!</b> До {fmt_date(until)}.\n\n"
+                   "Открой StarTegs → ⭐ StarTegs → 👑 Gold: золотое имя ✦ у друзей, рамки Алмаз и Корона, стили Gold Luxe и Diamond.\n"
+                   f"Понравится — /gold ({GOLD_PRICE} ⭐ за {GOLD_DAYS} дней) или /invite: +{REF_DAYS} дня за каждого друга.")
+
+
+@router.message(Command("trial"))
+async def cmd_trial(m: Message):
+    await give_trial(m)
+
+
+@router.callback_query(F.data == "m:trial")
+async def cb_trial(c: CallbackQuery):
+    await give_trial(c.message, c.from_user.id)
+    await c.answer()
+
+
+_me_cache = {}
+
+
+async def bot_username(bot: Bot) -> str:
+    if "u" not in _me_cache:
+        _me_cache["u"] = (await bot.me()).username
+    return _me_cache["u"]
+
+
+async def ref_link(bot: Bot, uid: int) -> str:
+    return f"https://t.me/{await bot_username(bot)}?start=ref_{uid}"
+
+
+async def reward_referral(bot: Bot, user, inviter_raw: str):
+    try:
+        inviter = int(inviter_raw)
+    except ValueError:
+        return
+    if inviter == user.id or db.user(inviter) is None:
+        return
+    db.x("UPDATE users SET ref_by=? WHERE id=?", (inviter, user.id))
+    db.x("UPDATE users SET refs=refs+1 WHERE id=?", (inviter,))
+    refs = db.user(inviter)["refs"]
+    if refs > REF_MAX:
+        return
+    until = db.add_gold(inviter, REF_DAYS)
+    try:
+        await bot.send_message(inviter, f"🎉 По твоей ссылке пришёл <b>{esc(user.full_name)}</b>!\n"
+                                        f"👑 +{REF_DAYS} дня Gold — теперь до {fmt_date(until)}. Друзей: {refs}")
+    except Exception:
+        pass
+
+
+@router.message(Command("invite"))
+@router.callback_query(F.data == "m:invite")
+async def invite(ev):
+    m = ev.message if isinstance(ev, CallbackQuery) else ev
+    uid = ev.from_user.id
+    db.touch_user(ev.from_user)
+    link = await ref_link(ev.bot, uid)
+    refs = db.user(uid)["refs"]
+    share = "https://t.me/share/url?url=" + quote(link) + "&text=" + quote("Заходи в StarTegs Hub: удалённые сообщения, нейросеть, маркет ⭐")
+    await m.answer(f"👥 <b>Пригласи друзей — получи Gold</b>\n\nЗа каждого нового друга: <b>+{REF_DAYS} дня Gold</b> (до {REF_MAX} друзей).\n"
+                   f"Приглашено: <b>{refs}</b>\n\nТвоя ссылка:\n<code>{link}</code>",
+                   reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📨 Отправить другу", url=share)]]))
+    if isinstance(ev, CallbackQuery):
+        await ev.answer()
+
+
+def my_stats(uid: int, days: int = 7) -> dict:
+    since = now() - days * 86400
+    n = lambda sql, *p: db.one(sql, p)["n"]
+    top = db.q("SELECT chat_name, COUNT(*) c FROM msgs WHERE owner=? AND date>? GROUP BY chat ORDER BY c DESC LIMIT 5", (uid, since))
+    dels = db.q("SELECT sender_name, COUNT(*) c FROM msgs WHERE owner=? AND deleted=1 AND out=0 AND deleted_at>? GROUP BY sender ORDER BY c DESC LIMIT 3", (uid, since))
+    hours = db.q("SELECT CAST(strftime('%H', date, 'unixepoch', 'localtime') AS INTEGER) h, COUNT(*) c FROM msgs WHERE owner=? AND date>? GROUP BY h ORDER BY c DESC LIMIT 1", (uid, since))
+    return {"days": days,
+            "in": n("SELECT COUNT(*) n FROM msgs WHERE owner=? AND out=0 AND date>?", uid, since),
+            "out": n("SELECT COUNT(*) n FROM msgs WHERE owner=? AND out=1 AND date>?", uid, since),
+            "deleted": n("SELECT COUNT(*) n FROM msgs WHERE owner=? AND deleted=1 AND out=0 AND deleted_at>?", uid, since),
+            "edited": n("SELECT COUNT(*) n FROM edits WHERE owner=? AND ts>?", uid, since),
+            "chats": n("SELECT COUNT(DISTINCT chat) n FROM msgs WHERE owner=? AND date>?", uid, since),
+            "top": [{"name": r["chat_name"] or "—", "n": r["c"]} for r in top],
+            "deleters": [{"name": r["sender_name"] or "—", "n": r["c"]} for r in dels],
+            "peak": hours[0]["h"] if hours else -1}
+
+
+@router.message(Command("me"))
+@router.callback_query(F.data == "m:me")
+async def cmd_me(ev):
+    m = ev.message if isinstance(ev, CallbackQuery) else ev
+    st = my_stats(ev.from_user.id)
+    if not st["in"] and not st["out"]:
+        await m.answer("📈 Статистика появится, когда бот подключён к личным чатам (Telegram для бизнеса → Чат-боты). /help")
+    else:
+        bar = lambda v, mx: "▰" * max(1, round(8 * v / mx)) if mx else ""
+        mx = max([t["n"] for t in st["top"]] or [1])
+        top = "\n".join(f"{i + 1}. {esc(t['name'][:24])} — {t['n']}  {bar(t['n'], mx)}" for i, t in enumerate(st["top"]))
+        dels = ", ".join(f"{esc(d['name'][:20])} ({d['n']})" for d in st["deleters"]) or "никто 😇"
+        peak = f"\n⏰ Самое активное время: <b>{st['peak']}:00–{(st['peak'] + 1) % 24}:00</b>" if st["peak"] >= 0 else ""
+        await m.answer(f"📈 <b>Твоя неделя в чатах</b>\n\n📥 Получено: <b>{st['in']}</b> · 📤 Отправлено: <b>{st['out']}</b> · 💬 Чатов: {st['chats']}\n"
+                       f"🗑 Удалили при тебе: <b>{st['deleted']}</b> · ✏️ Изменили: <b>{st['edited']}</b>{peak}\n\n"
+                       f"🏆 <b>Топ собеседников</b>\n{top}\n\n🕵️ Чаще всех удаляют: {dels}")
+    if isinstance(ev, CallbackQuery):
+        await ev.answer()
+
+
+@router.message(Command("edits"))
+async def cmd_edits(m: Message):
+    rows = db.q("SELECT e.*, m.sender_name FROM edits e LEFT JOIN msgs m ON m.owner=e.owner AND m.chat=e.chat AND m.mid=e.mid "
+                "WHERE e.owner=? ORDER BY e.ts DESC LIMIT 12", (m.from_user.id,))
+    if not rows:
+        await m.answer("✏️ Изменённых сообщений пока нет.")
+        return
+    await m.answer("✏️ <b>Последние правки</b>\n\n" + "\n\n".join(
+        f"<b>{esc(r['sender_name'] or 'Собеседник')}</b> · {fmt_time(r['ts'])}\n<s>{esc((r['old'] or '—')[:150])}</s>\n→ {esc((r['new'] or '—')[:150])}" for r in rows))
+
+
+EXPORT_CSS = ("body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:linear-gradient(135deg,#1a1035,#0b1d3a);color:#eee;margin:0;padding:20px}"
+              "h1{font-size:22px}.m{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:16px;padding:12px 14px;margin:10px 0;"
+              "backdrop-filter:blur(12px)}.w{font-weight:600;color:#b9a4ff}.t{color:#aaa;font-size:12px}.o{color:#ff8a8a;text-decoration:line-through}"
+              ".n{color:#8affc1}.tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;background:#ff4d6d33;color:#ff8fa3;margin-left:6px}")
+
+
+def export_html(uid: int, everything: bool) -> str:
+    since = 0 if everything else now() - 30 * 86400
+    dels = db.q("SELECT * FROM msgs WHERE owner=? AND deleted=1 AND deleted_at>? ORDER BY deleted_at DESC", (uid, since))
+    eds = db.q("SELECT e.*, m.sender_name FROM edits e LEFT JOIN msgs m ON m.owner=e.owner AND m.chat=e.chat AND m.mid=e.mid "
+               "WHERE e.owner=? AND e.ts>? ORDER BY e.ts DESC", (uid, since))
+    out = [f"<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'><title>Архив StarTegs</title><style>{EXPORT_CSS}</style>",
+           f"<h1>⭐ Архив StarTegs Hub</h1><p class=t>{'Весь архив' if everything else 'За 30 дней'} · создан {fmt_time(now())} · "
+           f"удалённых: {len(dels)}, правок: {len(eds)}</p><h2>🗑 Удалённые</h2>"]
+    for r in dels:
+        out.append(f"<div class=m><span class=w>{esc(r['sender_name'] or r['chat_name'] or '—')}</span><span class=tag>удалено {fmt_time(r['deleted_at'])}</span>"
+                   f"<div>{esc((MEDIA_NAMES.get(r['media_type'], '') + ' ' + (r['text'] or '')).strip()) or '—'}</div><div class=t>отправлено {fmt_time(r['date'])}</div></div>")
+    out.append("<h2>✏️ Изменённые</h2>")
+    for r in eds:
+        out.append(f"<div class=m><span class=w>{esc(r['sender_name'] or '—')}</span> <span class=t>{fmt_time(r['ts'])}</span>"
+                   f"<div class=o>{esc(r['old'] or '—')}</div><div class=n>{esc(r['new'] or '—')}</div></div>")
+    return "".join(out)
+
+
+async def send_export(bot: Bot, uid: int):
+    everything = db.gold(uid)
+    data = export_html(uid, everything).encode()
+    await bot.send_document(uid, BufferedInputFile(data, filename=f"startegs-archive-{time.strftime('%Y%m%d')}.html"),
+                            caption="📤 Твой архив удалённых и изменённых. Открой файл в браузере." +
+                                    ("" if everything else f"\n\nЗа последние 30 дней. Весь архив — с 👑 Gold (/gold или /trial)."))
+
+
+@router.message(Command("export"))
+@router.callback_query(F.data == "m:export")
+async def cmd_export(ev):
+    if not rate_ok(ev.from_user.id, "export", 3):
+        if isinstance(ev, CallbackQuery):
+            await ev.answer("Подожди минуту", show_alert=True)
+        return
+    try:
+        await send_export(ev.bot, ev.from_user.id)
+    except Exception:
+        log.exception("export")
+    if isinstance(ev, CallbackQuery):
+        await ev.answer()
+
+
+@router.message(Command("digest"))
+async def cmd_digest(m: Message):
+    db.touch_user(m.from_user)
+    db.x("UPDATE users SET digest=1-digest WHERE id=?", (m.from_user.id,))
+    on = db.user(m.from_user.id)["digest"]
+    await m.answer(f"🌙 Итоги дня в {DIGEST_HOUR}:00 — {'включены ✅' if on else 'выключены'}")
+
+
+async def digest_loop(bot: Bot):
+    while True:
+        try:
+            day = time.strftime("%Y-%m-%d")
+            if time.localtime().tm_hour >= DIGEST_HOUR and db.kv_get("digest_day") != day:
+                db.kv_set("digest_day", day)
+                since = now() - 86400
+                owners = db.q("SELECT DISTINCT b.owner FROM biz b JOIN users u ON u.id=b.owner WHERE b.enabled=1 AND u.digest=1")
+                for o in owners:
+                    uid = o["owner"]
+                    n = lambda sql: db.one(sql, (uid, since))["n"]
+                    d = n("SELECT COUNT(*) n FROM msgs WHERE owner=? AND deleted=1 AND out=0 AND deleted_at>?")
+                    e = n("SELECT COUNT(*) n FROM edits WHERE owner=? AND ts>?")
+                    got = n("SELECT COUNT(*) n FROM msgs WHERE owner=? AND out=0 AND date>?")
+                    if not (d or e or got):
+                        continue
+                    try:
+                        await bot.send_message(uid, f"🌙 <b>Итоги дня</b>\n\n📥 Сообщений: {got}\n🗑 Удалили: {d}\n✏️ Изменили: {e}\n\n"
+                                                    "Подробно — /deleted, /edits, /me · выключить — /digest")
+                    except Exception:
+                        pass
+                    await asyncio.sleep(0.05)
+        except Exception:
+            log.exception("digest")
+        await asyncio.sleep(600)
 
 
 # ---------------------------------------------------------------------- любой текст в личке → Звёздочка
@@ -940,14 +1176,25 @@ async def api_app(request: web.Request):
 
     if a in ("ping", "state", "gold"):
         g = db.gold_until(uid)
+        me_row = db.user(uid)
         return js({"ok": True, "state": {"tier": "Premium" if g > now() else "Free"}, "hub": True,
-                   "gold_until": g, "gold": g > now(), "price": GOLD_PRICE, "days": GOLD_DAYS})
+                   "gold_until": g, "gold": g > now(), "price": GOLD_PRICE, "days": GOLD_DAYS,
+                   "trial": bool(me_row and not me_row["trial_used"]), "trial_days": TRIAL_DAYS, "ref_days": REF_DAYS})
     if a == "gold_link":
         try:
             return js({"ok": True, "link": await BOT.create_invoice_link(**gold_invoice())})
         except Exception:
             log.exception("invoice link")
             return js({"ok": False, "msg": "Не получилось создать счёт, попробуй /gold в боте"}, 502)
+    if a == "gold_trial":
+        until = db.trial(uid, TRIAL_DAYS)
+        if until is None:
+            return js({"ok": False, "msg": "Пробный период уже использован"})
+        return js({"ok": True, "gold_until": until, "gold": True})
+    if a == "gold_ref":
+        return js({"ok": True, "link": await ref_link(BOT, uid), "refs": (db.user(uid) or {"refs": 0})["refs"], "days": REF_DAYS})
+    if a == "mystats":
+        return js({"ok": True, **my_stats(uid, int(body.get("days", 7) or 7))})
     if a == "cos_state":
         return js({"ok": True, "premium": True, "crystals": 0, "frame": look.get("frame", ""), "effect": look.get("effect", ""),
                    "badge": look.get("badge", "")})
@@ -1057,7 +1304,19 @@ async def api_mini(request: web.Request):
                    "reminders": n("SELECT COUNT(*) n FROM reminders WHERE uid=? AND done=0", uid),
                    "notes": n("SELECT COUNT(*) n FROM notes WHERE uid=?", uid),
                    "notify_deleted": me["notify_deleted"], "notify_edited": me["notify_edited"],
-                   "gold_until": db.gold_until(uid), "gold_price": GOLD_PRICE, "gold_days": GOLD_DAYS})
+                   "gold_until": db.gold_until(uid), "gold_price": GOLD_PRICE, "gold_days": GOLD_DAYS,
+                   "trial": not me["trial_used"], "trial_days": TRIAL_DAYS, "refs": me["refs"], "ref_days": REF_DAYS,
+                   "ref_link": await ref_link(BOT, uid) if BOT else "", "digest": me["digest"], "week": my_stats(uid)})
+    if a == "gold_trial":
+        until = db.trial(uid, TRIAL_DAYS)
+        return js({"ok": until is not None, "gold_until": until or 0, "msg": "" if until else "Пробный период уже был"})
+    if a == "export":
+        try:
+            await send_export(BOT, uid)
+            return js({"ok": True})
+        except Exception:
+            log.exception("export")
+            return js({"ok": False, "msg": "Не получилось отправить файл"})
     if a == "gold_link":
         try:
             return js({"ok": True, "link": await BOT.create_invoice_link(**gold_invoice())})
@@ -1094,7 +1353,7 @@ async def api_mini(request: web.Request):
         return js({"ok": True})
     if a == "market":
         q, cat = str(body.get("q", ""))[:60], str(body.get("cat", ""))[:40]
-        sql, args = "SELECT * FROM ads WHERE active=1", []
+        sql, args = "SELECT ads.*, (COALESCE(u.gold_until,0)>?) AS g FROM ads LEFT JOIN users u ON u.id=ads.uid WHERE active=1", [now()]
         if q:
             sql += " AND (title LIKE ? OR descr LIKE ?)"
             args += [f"%{q}%", f"%{q}%"]
@@ -1102,18 +1361,18 @@ async def api_mini(request: web.Request):
             sql += " AND cat=?"
             args.append(cat)
         if body.get("mine"):
-            sql += " AND uid=?"
+            sql += " AND ads.uid=?"
             args.append(uid)
         if body.get("favs"):
-            sql += " AND id IN (SELECT ad FROM favs WHERE uid=?)"
+            sql += " AND ads.id IN (SELECT ad FROM favs WHERE uid=?)"
             args.append(uid)
-        rows = db.q(sql + " ORDER BY ts DESC LIMIT 80", args)
+        rows = db.q(sql + " ORDER BY g DESC, ts DESC LIMIT 80", args)
         favs = {r["ad"] for r in db.q("SELECT ad FROM favs WHERE uid=?", (uid,))}
         out = []
         for r in rows:
             seller = db.user(r["uid"])
             out.append({"id": r["id"], "kind": r["kind"], "cat": r["cat"], "title": r["title"], "descr": r["descr"], "price": r["price"],
-                        "photo": bool(r["photo"]), "ts": r["ts"], "views": r["views"], "mine": r["uid"] == uid, "fav": r["id"] in favs,
+                        "photo": bool(r["photo"]), "ts": r["ts"], "views": r["views"], "mine": r["uid"] == uid, "fav": r["id"] in favs, "gold": bool(r["g"]),
                         "seller": (seller["name"] if seller else ""), "contact": (f"https://t.me/{seller['username']}" if seller and seller["username"] else "")})
         return js({"ok": True, "items": out, "cats": CATS})
     if a == "market_add":
@@ -1168,7 +1427,7 @@ async def api_mini(request: web.Request):
         return js({"ok": True})
     if a == "settings_set":
         k = str(body.get("key", ""))
-        if k in ("notify_deleted", "notify_edited"):
+        if k in ("notify_deleted", "notify_edited", "digest"):
             db.x(f"UPDATE users SET {k}=? WHERE id=?", (1 if body.get("value") else 0, uid))
         elif k == "clear_archive":
             db.x("DELETE FROM msgs WHERE owner=?", (uid,))
@@ -1221,6 +1480,7 @@ async def main():
             log.exception("menu button")
     asyncio.get_running_loop().create_task(reminder_loop(BOT))
     asyncio.get_running_loop().create_task(snapshot_loop(BOT))
+    asyncio.get_running_loop().create_task(digest_loop(BOT))
     await BOT.delete_webhook(drop_pending_updates=False)
     await dp.start_polling(BOT, allowed_updates=dp.resolve_used_update_types())
 
