@@ -143,7 +143,7 @@ public final class StarSections {
                 if (!GROUP_TITLES[g].isEmpty()) items.add(UItem.asHeader(GROUP_TITLES[g]));
                 else items.add(UItem.asShadow(null));
                 for (int i : GROUPS[g]) {
-                    if (!StarCloud.online() && (i == 16 || i == 17)) continue; // 6.0: без ботов — без кошелька и сервисов
+                    if (!StarCloud.legacy() && (i == 16 || i == 17)) continue; // 6.0: без ботов — без кошелька и сервисов
                     items.add(StarYou.tile(100 + i, i)); // 5.0: цветные плитки
                 }
                 if (g == 0 && getParentActivity() != null) {
@@ -244,7 +244,7 @@ public final class StarSections {
         private void build() {
             if (!index.isEmpty()) return;
             for (int sec = 0; sec < SECTIONS.length; sec++) {
-                if (sec == 19 || sec == 17 || !StarCloud.online() && sec == 16) continue;
+                if (sec == 19 || sec == 17 || !StarCloud.legacy() && sec == 16) continue;
                 index.add(new Object[]{sec, SECTIONS[sec][1] + " " + SECTIONS[sec][2]});
                 ArrayList<UItem> tmp = new ArrayList<>();
                 try {
@@ -356,7 +356,7 @@ public final class StarSections {
             if (getParentActivity() != null && section != 19) items.add(UItem.asCustom(StarGlow.banner(getParentActivity(), section))); // 5.1
             switch (section) {
                 case 0:
-                    if (!StarCloud.online()) { // 6.0
+                    if (!StarCloud.legacy()) { // 6.0
                         items.add(UItem.asShadow("✨ В StarTegs всё включено бесплатно: призрак, шторка, темы, рамки, значки, эффекты и все функции. Никаких подписок и ботов."));
                         button(items, 4, "🧪 Что нового в StarTegs");
                         button(items, 83, "🤖 Подключить нейросеть", StarAiKey.title());
@@ -475,12 +475,12 @@ public final class StarSections {
                     break;
                 case 9:
                     button(items, 100, "🛍 Магазин: рамки, значки, эффекты, темы");
-                    if (StarCloud.online()) button(items, 101, "🎨 Темы от пользователей");
+                    if (StarCloud.legacy()) button(items, 101, "🎨 Темы от пользователей");
                     button(items, 102, "🖼 Иконка приложения");
                     button(items, 103, "Палитры, шрифты, пузыри, обои — все настройки оформления");
                     break;
                 case 10:
-                    if (StarCloud.online()) button(items, 110, "💼 Бизнес-кабинет", StarBiz.on() ? "вкл" : "");
+                    if (StarCloud.legacy()) button(items, 110, "💼 Бизнес-кабинет", StarBiz.on() ? "вкл" : "");
                     check(items, 111, "🌙 Автоответ «Нет на месте»", StarPremium.awayOn());
                     button(items, 112, "Текст «Нет на месте»");
                     check(items, 113, "👋 Приветствие новым собеседникам", StarPremium.greetOn());
@@ -489,10 +489,10 @@ public final class StarSections {
                 case 11:
                     button(items, 150, "🐾 Мой питомец", StarFun.petTitle());
                     button(items, 151, "🔮 Гороскоп дня", StarFun.sign() >= 0 ? StarFun.SIGNS[StarFun.sign()] : "");
-                    if (StarCloud.online()) button(items, 152, "🎡 Колесо бонусов", "раз в день");
+                    if (StarCloud.legacy()) button(items, 152, "🎡 Колесо бонусов", "раз в день");
                     button(items, 120, "🎮 Игры в чате");
                     button(items, 121, "💞 Лучшие друзья и стрики");
-                    if (StarCloud.online()) button(items, 122, "🤫 Анонимные вопросы");
+                    if (StarCloud.legacy()) button(items, 122, "🤫 Анонимные вопросы");
                     button(items, 123, "🏆 Достижения · уровень " + StarAchieve.level());
                     button(items, 124, "🎁 Итоги года");
                     button(items, 125, "🪪 Визитка с QR-кодом");
@@ -562,7 +562,7 @@ public final class StarSections {
                     break;
                 case 16:
                     button(items, 200, "💰 Баланс и пополнение");
-                    if (StarCloud.online()) button(items, 152, "🎡 Колесо бонусов", "раз в день");
+                    if (StarCloud.legacy()) button(items, 152, "🎡 Колесо бонусов", "раз в день");
                     button(items, 201, "🫶 Поддержать StarTegs — значок навсегда");
                     items.add(UItem.asShadow("Перевести 💎 другу: чат с ним → ⋮ → «💎 Перевести кристаллы». Чаевые автору темы: магазин тем → долгое нажатие на тему. Нужен бот v62."));
                     break;
@@ -657,7 +657,7 @@ public final class StarSections {
                     break;
                 case 19:
                     for (int k : new int[]{0, 8, 10, 17, 13}) {
-                        if (!StarCloud.online() && k == 17) continue;
+                        if (!StarCloud.legacy() && k == 17) continue;
                         items.add(StarYou.tile(5000 + k, k));
                     }
                     break;

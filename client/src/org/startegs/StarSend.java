@@ -138,7 +138,7 @@ public final class StarSend {
                 TLRPC.User u = MessagesController.getInstance(account).getUser(p.peer);
                 if (u != null && u.bot) return false;
             }
-            String styled = StarStyle.maybeAuto(p.message); // «всегда писать красиво»
+            String styled = p.entities == null || p.entities.isEmpty() ? StarStyle.maybeAuto(p.message) : p.message; // «всегда писать красиво» (6.1: не трогаем текст с разметкой)
             if (!styled.equals(p.message)) {
                 p.message = styled;
                 p.entities = null;
@@ -186,7 +186,8 @@ public final class StarSend {
     /** Отправка с эффектом StarTegs (невидимая метка — эффект увидит друг с модом). */
     private static void finalSend(int account, SendMessagesHelper.SendMessageParams p) {
         String fx = StarCosmetics.myEffect();
-        if (!fx.isEmpty() && isPlainText(p) && StarCodec.read(p.message) == null) {
+        boolean dice = p.message != null && java.util.Arrays.asList("🎲", "🎯", "🏀", "⚽", "🎳", "🎰").contains(p.message.trim().replace("\ufe0f", ""));
+        if (!fx.isEmpty() && !dice && isPlainText(p) && StarCodec.read(p.message) == null) { // 6.1: не ломаем анимированные игры
             p.message = StarCodec.attach(p.message, "fx|" + fx);
             StarFx.play(top(), fx);
             StarQuest.progress("fx", 1);

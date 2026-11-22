@@ -45,7 +45,7 @@ public final class StarTrial {
     }
 
     static boolean available() {
-        return !StarModConfig.ECO_BOT.isEmpty() && !used() && !"pro".equals(StarCloud.tier()) && !"vip".equals(StarCloud.tier());
+        return StarCloud.legacy() && !used() && !"pro".equals(StarCloud.tier()) && !"vip".equals(StarCloud.tier());
     }
 
     static String untilText() {

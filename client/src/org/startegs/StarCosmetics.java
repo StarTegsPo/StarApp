@@ -126,8 +126,27 @@ public final class StarCosmetics {
         return "";
     }
 
+    /** Отправить надетое в StarTegs Hub (если бот подключён), чтобы друзья видели. Молча. */
+    static void pushHub(String action, String k1, String v1, String k2, String v2) {
+        if (!StarCloud.online()) return;
+        try {
+            JSONObject b = new JSONObject().put(k1, v1);
+            if (k2 != null) b.put(k2, v2);
+            StarCloud.call(UserConfig.selectedAccount, action, b, new StarCloud.Result() {
+                @Override
+                public void ok(JSONObject res) {
+                }
+
+                @Override
+                public void fail(String why) {
+                }
+            });
+        } catch (Exception ignore) {
+        }
+    }
+
     static boolean owns(String id) {
-        if (!StarCloud.online()) return true;
+        if (!StarCloud.legacy()) return true; // 6.1: всё бесплатно
         JSONArray a = state().optJSONArray("owned");
         if (a == null) return id.equals("fr_star") || id.equals("fx_hearts") || id.equals("fx_confetti");
         for (int i = 0; i < a.length(); i++) if (id.equals(a.optString(i))) return true;
@@ -517,7 +536,7 @@ public final class StarCosmetics {
         }
 
         private void load() {
-            if (!StarCloud.online()) { // 6.0: без сервера — всё бесплатно и сразу
+            if (!StarCloud.legacy()) { // 6.0: всё бесплатно и сразу
                 buildLocal();
                 loading = false;
                 error = null;
@@ -567,7 +586,7 @@ public final class StarCosmetics {
                 return;
             }
             boolean premium = s.optBoolean("premium");
-            if (StarCloud.online()) {
+            if (StarCloud.legacy()) {
                 list.add(UItem.asButton(ID_TOPUP, R.drawable.msg_premium_badge, "💎 Кристаллы: " + s.optInt("crystals"), "пополнить").accent());
                 list.add(UItem.asShadow(premium ? "У вас Premium — весь магазин открыт ✨"
                         : "Кристаллы покупаются за ⭐ Stars в боте @" + StarModConfig.ECO_BOT + ". Premium открывает всё сразу."));
@@ -614,7 +633,7 @@ public final class StarCosmetics {
                         : "Рамка видна вокруг твоей аватарки в карточке профиля и в картинке для сторис."));
                 if (k.equals("badge")) list.add(UItem.asShadow(StarCloud.online() ? "Значок стоит справа от вашего имени в списке чатов у друзей со StarTegs."
                         : "Значок стоит рядом с твоим именем в карточке профиля."));
-                if (k.equals("theme") && StarCloud.online()) list.add(UItem.asButton(ID_STYLES, R.drawable.msg_palette, "🎨 Темы от пользователей — купить или продать свою").accent());
+                if (k.equals("theme") && StarCloud.legacy()) list.add(UItem.asButton(ID_STYLES, R.drawable.msg_palette, "🎨 Темы от пользователей — купить или продать свою").accent());
                 if (k.equals("effect")) list.add(UItem.asShadow("Эффект проигрывается при отправке у вас и у друга с модом, когда он в этом чате."));
                 if (k.equals("sound")) list.add(UItem.asShadow("Поставить звук другу: профиль → ⋮ → «Свой звук для чата»."));
             }
@@ -708,8 +727,9 @@ public final class StarCosmetics {
         }
 
         private void equipBadge(String badge) {
-            if (!StarCloud.online()) {
+            if (!StarCloud.legacy()) {
                 setLocal("badge", badge);
+                pushHub("badge_set", "badge", badge, null, null); // 6.1: друзья увидят через StarTegs Hub
                 if (listView != null) listView.adapter.update(true);
                 return;
             }
@@ -733,9 +753,10 @@ public final class StarCosmetics {
 
         private void equip(String frame, String effect) {
             prefs().edit().remove("fx_local").apply();
-            if (!StarCloud.online()) {
+            if (!StarCloud.legacy()) {
                 setLocal("frame", frame);
                 setLocal("effect", effect);
+                pushHub("cos_equip", "frame", frame, "effect", effect); // 6.1
                 NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.dialogsNeedReload);
                 if (listView != null) listView.adapter.update(true);
                 return;

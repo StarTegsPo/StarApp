@@ -58,6 +58,11 @@ public final class StarAi {
         return StarAiKey.has() || TextUtils.isEmpty(StarModConfig.AI_BOT) && TextUtils.isEmpty(StarModConfig.ECO_BOT);
     }
 
+    /** Чат с ИИ ведёт историю на телефоне (нет отдельного ИИ-бота). */
+    static boolean chatLocal() {
+        return StarAiKey.has() || TextUtils.isEmpty(StarModConfig.AI_BOT);
+    }
+
     // ================================================================ 4.5: нейросеть напрямую через сервер StarTegs (бот v63)
 
     /** Прямой режим: сервер бота StarTegs сам обращается к нейросети (ключ API только на сервере). */

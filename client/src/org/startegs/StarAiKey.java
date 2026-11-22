@@ -19,7 +19,6 @@ import org.json.JSONObject;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.FileLog;
-import org.telegram.messenger.Utilities;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -163,7 +162,7 @@ public final class StarAiKey {
 
     static void ask(String prompt, StarAi.Stream cb) {
         String key = prefs().getString("key", "");
-        Utilities.globalQueue.postRunnable(() -> {
+        new Thread(() -> { // 6.1: отдельный поток — длинный ответ не тормозит очередь Telegram
             HttpURLConnection c = null;
             try {
                 JSONObject body = new JSONObject();
@@ -231,6 +230,6 @@ public final class StarAiKey {
             } finally {
                 if (c != null) c.disconnect();
             }
-        });
+        }, "StarAiKey").start();
     }
 }

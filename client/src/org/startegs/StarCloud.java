@@ -198,6 +198,14 @@ public final class StarCloud {
     }
 
     /** Запрос к API бота StarTegs: {init, a, ...extra}. Колбэк — на главном потоке. */
+    /**
+     * 6.1: старые платные функции сервера (кошелёк, колесо, кристаллы, анонимные вопросы, бизнес-кабинет,
+     * темы пользователей). StarTegs Hub их не делает — всё бесплатно и на телефоне.
+     */
+    public static boolean legacy() {
+        return false;
+    }
+
     /** 6.0: есть ли сервер StarTegs. Без него всё работает на телефоне. */
     public static boolean online() {
         return !android.text.TextUtils.isEmpty(StarModConfig.ECO_BOT);
@@ -252,7 +260,7 @@ public final class StarCloud {
 
     /** Узнать тариф у бота. force — без ограничения «не чаще раза в 6 часов», с сообщением о результате. */
     public static void refreshTier(BaseFragment fragment, boolean force, Runnable done) {
-        if (busy || !online()) return;
+        if (busy || !legacy()) return;
         if (!force && System.currentTimeMillis() - tierCheckedAt() < 6 * 3600_000L) return;
         busy = true;
         int account = fragment.getCurrentAccount();

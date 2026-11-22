@@ -136,9 +136,9 @@ public class StarAiChatActivity extends BaseFragment {
     private final java.util.ArrayList<String[]> localTurns = new java.util.ArrayList<>(); // 6.0: диалог без бота
 
     private void loadHistory() {
-        if (StarAi.local()) {
+        if (StarAi.chatLocal()) {
             list.removeAllViews();
-            hint(StarAiKey.has() ? "Привет! Я Звёздочка ✨ Спроси что угодно — отвечу прямо здесь."
+            hint(StarAi.ready() ? "Привет! Я Звёздочка ✨ Спроси что угодно — отвечу прямо здесь."
                     : "Чтобы поговорить со Звёздочкой, подключи нейросеть: StarTegs → 🤖 Нейросеть → «Подключить нейросеть». Есть бесплатный вариант.");
             return;
         }
@@ -192,7 +192,7 @@ public class StarAiChatActivity extends BaseFragment {
 
     private void newChat() {
         if (busy) return;
-        if (StarAi.local()) {
+        if (StarAi.chatLocal()) {
             localTurns.clear();
             list.removeAllViews();
             hint("Новый диалог. О чём поговорим?");
@@ -233,7 +233,7 @@ public class StarAiChatActivity extends BaseFragment {
         bubble(text, true);
         TextView answer = bubble("✨ Думаю…", false);
         String prompt = text;
-        if (StarAi.local() && !localTurns.isEmpty()) {
+        if (StarAi.chatLocal() && !localTurns.isEmpty()) {
             StringBuilder b = new StringBuilder("Продолжи диалог.\n");
             for (int i = Math.max(0, localTurns.size() - 10); i < localTurns.size(); i++) {
                 b.append("Пользователь: ").append(localTurns.get(i)[0]).append("\nЗвёздочка: ").append(localTurns.get(i)[1]).append("\n");
@@ -250,7 +250,7 @@ public class StarAiChatActivity extends BaseFragment {
             @Override
             public void done(String t) {
                 answer.setText(t);
-                if (StarAi.local()) localTurns.add(new String[]{text, t});
+                if (StarAi.chatLocal()) localTurns.add(new String[]{text, t});
                 finish();
             }
 

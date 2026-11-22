@@ -79,7 +79,7 @@ public final class StarQuest {
 
     static void claim(Runnable done) {
         if (!complete() || claimed()) return;
-        if (!StarCloud.online()) { // 6.0
+        if (!StarCloud.legacy()) { // 6.0
             prefs().edit().putBoolean("q_claimed_" + today(), true).apply();
             android.widget.Toast.makeText(org.telegram.messenger.ApplicationLoader.applicationContext, "🎯 Задание дня выполнено! Так держать 🔥", android.widget.Toast.LENGTH_LONG).show();
             if (done != null) done.run();
