@@ -121,6 +121,11 @@ public final class StarSections {
             }
             items.add(UItem.asButton(905, R.drawable.msg_search, "🔎 Поиск по настройкам StarTegs"));
             items.add(UItem.asButton(911, R.drawable.msg_forward, "🔁 Переезд из AyuGram, exteraGram и др.", "")); // 6.3
+            View navChips = getParentActivity() != null ? StarNav.chips(this) : null; // 6.4: избранное и недавние
+            if (navChips != null) {
+                items.add(UItem.asHeader("⭐ Избранное и недавнее"));
+                items.add(UItem.asCustom(navChips));
+            }
             if (getParentActivity() != null) items.add(UItem.asCustom(StarPolish.tipCard(this, -1))); // 5.3: совет дня
             if (getParentActivity() != null) items.add(UItem.asCustom(StarBonus.quoteCard(getParentActivity()))); // 5.5: цитата дня
             if (!StarMod.isPro()) {
@@ -129,6 +134,7 @@ public final class StarSections {
             items.add(UItem.asHeader("⚡ Быстро"));
             items.add(UItem.asButton(910, R.drawable.msg_settings, "🚀 Оптимизировать телефон", StarOptimize.due() ? "пора!" : "здоровье ✓").accent()); // 6.3
             items.add(UItem.asButton(909, R.drawable.msg_edit, "⚡ Свои быстрые кнопки вверху", "настроить"));
+            items.add(UItem.asCheck(912, "🧭 Нижняя панель вкладок").setChecked(StarNav.barOn()));
             items.add(UItem.asCheck(901, "👻 Режим призрака" + (StarMod.isPro() ? "" : "  ⭐")).setChecked(ghostAll()));
             items.add(UItem.asCheck(902, "🫥 Шторка приватности" + (StarMod.isPro() ? "" : "  ⭐")).setChecked(StarShade.enabled()));
             items.add(UItem.asCheck(903, "🔕 Отправлять без звука").setChecked(StarMedia.silentDefault()));
@@ -200,6 +206,11 @@ public final class StarSections {
                 case 911:
                     presentFragment(new StarMove.Screen());
                     return;
+                case 912:
+                    StarNav.setBar(!StarNav.barOn());
+                    android.widget.Toast.makeText(getParentActivity(), StarNav.barOn() ? "🧭 Панель появится на экранах StarTegs" : "Панель вкладок выключена", android.widget.Toast.LENGTH_SHORT).show();
+                    refresh();
+                    return;
             }
             int i = item.id - 100;
             if (i == 23) {
@@ -215,7 +226,18 @@ public final class StarSections {
 
         @Override
         protected boolean onLongClick(UItem item, View view, int position, float x, float y) {
-            return false;
+            int k = item.id - 100; // 6.4: плитка раздела → избранное; ярлык на рабочий стол
+            if (k < 0 || k >= SECTIONS.length || getParentActivity() == null) return false;
+            new AlertDialog.Builder(getParentActivity())
+                    .setTitle(SECTIONS[k][0] + " " + SECTIONS[k][1])
+                    .setItems(new CharSequence[]{StarNav.isFavorite(k) ? "☆ Убрать из избранного" : "⭐ В избранное (наверху главной)", "📌 Ярлык на рабочий стол телефона"}, (d, w) -> {
+                        if (w == 0) {
+                            boolean on = StarNav.toggleFavorite(k);
+                            android.widget.Toast.makeText(getParentActivity(), on ? "⭐ Добавлено в избранное" : "Убрано из избранного", android.widget.Toast.LENGTH_SHORT).show();
+                            refresh();
+                        } else StarNav.pinShortcut(getParentActivity(), k);
+                    }).show();
+            return true;
         }
     }
 
@@ -322,7 +344,7 @@ public final class StarSections {
         }
 
 
-        private final int section;
+        final int section;
 
         public Screen(int section) {
             this.section = section;

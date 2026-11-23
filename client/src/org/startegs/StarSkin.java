@@ -98,12 +98,37 @@ public final class StarSkin {
             new Skin("🌌 Aurora Gold", "Северное сияние на ночном небе", 0xFF00FFA3, 0xFF7A5CFF, 0xFF050B1A, 0xFF101A3A, 0xFF00FFA3, 26, true, true, 160, true, true, 3, 3, true),
     };
 
+    /** 6.4: 0 — один стиль, 1 — днём/ночью разный, 2 — сюрприз: новый стиль каждый день. */
+    static int autoMode() {
+        return prefs().getInt("skin_auto", 0);
+    }
+
+    static boolean isNight() {
+        int h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
+        return h < 7 || h >= 21;
+    }
+
+    private static int surprise() {
+        int day = (int) (System.currentTimeMillis() / 86400_000L);
+        int n = 0;
+        for (Skin s : SKINS) if (!s.gold || StarGold.active()) n++;
+        int pick = 1 + Math.floorMod(day * 7919, Math.max(1, n - 1)); // без «Классики»
+        for (int i = 0, k = 0; i < SKINS.length; i++) {
+            if (SKINS[i].gold && !StarGold.active()) continue;
+            if (k++ == pick) return i;
+        }
+        return 1;
+    }
+
     static int current() {
-        int i = prefs().getInt("skin", 0);
+        int i = autoMode() == 1 ? prefs().getInt(isNight() ? "skin_night" : "skin_day", isNight() ? 9 : 1)
+                : autoMode() == 2 ? surprise() : prefs().getInt("skin", 0);
         if (i < 0 || i >= SKINS.length) return 0;
         if (SKINS[i].gold && !StarGold.active()) return 0; // Gold закончился — тихо возвращаем классику
         return i;
     }
+
+    static final String[] AUTO_NAMES = {"выключена", "днём и ночью разный", "🎲 сюрприз: новый каждый день"};
 
     static Skin skin() {
         return SKINS[current()];
@@ -149,7 +174,7 @@ public final class StarSkin {
     static void apply(BaseFragment f, int i, Runnable done) {
         Skin s = SKINS[i];
         if (s.gold && !StarGold.require(f, "Стиль «" + s.name.substring(s.name.indexOf(' ') + 1) + "»")) return;
-        prefs().edit().putInt("skin", i).apply();
+        prefs().edit().putInt("skin", i).putInt("skin_auto", 0).apply(); // выбор вручную выключает автосмену
         if (paintTelegram() && s.hue >= 0) {
             StarLook.setBubbleMaterial(s.material);
             StarLook.setBubbleShape(s.shape);
@@ -362,6 +387,11 @@ public final class StarSkin {
             Skin cur = skin();
             items.add(UItem.asShadow("Сейчас: " + cur.name + " — " + cur.about + ". Нажми на превью, чтобы примерить."));
             items.add(UItem.asCheck(1, "Перекрашивать и сам Telegram").setChecked(paintTelegram()));
+            items.add(UItem.asButton(7, "🌗 Автосмена стиля", AUTO_NAMES[autoMode()]));
+            if (autoMode() == 1) {
+                items.add(UItem.asButton(8, "☀️ Днём (7:00–21:00)", SKINS[Math.min(SKINS.length - 1, prefs().getInt("skin_day", 1))].name));
+                items.add(UItem.asButton(9, "🌙 Ночью", SKINS[Math.min(SKINS.length - 1, prefs().getInt("skin_night", 9))].name));
+            }
             items.add(UItem.asShadow("Вместе со StarTegs поменяются тема Telegram, форма и материал пузырей и размытие. Выключи, если хочешь менять только экраны StarTegs."));
             if (getParentActivity() == null) return;
             int g = goldFrom();
@@ -385,6 +415,27 @@ public final class StarSkin {
                 case 1:
                     prefs().edit().putBoolean("skin_tg", !paintTelegram()).apply();
                     refresh();
+                    return;
+                case 7:
+                    if (getParentActivity() == null) return;
+                    new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity()).setTitle("🌗 Автосмена стиля")
+                            .setItems(AUTO_NAMES, (d, w) -> {
+                                prefs().edit().putInt("skin_auto", w).apply();
+                                refresh();
+                            }).show();
+                    return;
+                case 8:
+                case 9:
+                    if (getParentActivity() == null) return;
+                    String key = item.id == 8 ? "skin_day" : "skin_night";
+                    CharSequence[] names = new CharSequence[SKINS.length];
+                    for (int i = 0; i < SKINS.length; i++) names[i] = SKINS[i].name + (SKINS[i].gold && !StarGold.active() ? " 🔒" : "");
+                    new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity()).setTitle(item.id == 8 ? "☀️ Стиль днём" : "🌙 Стиль ночью")
+                            .setItems(names, (d, w) -> {
+                                if (SKINS[w].gold && !StarGold.require(this, "Стиль Gold")) return;
+                                prefs().edit().putInt(key, w).apply();
+                                refresh();
+                            }).show();
                     return;
                 case 2: presentFragment(new StarGold.Screen()); return;
                 case 3: presentFragment(new StarSections.Screen(9)); return;

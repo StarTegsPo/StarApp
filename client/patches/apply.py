@@ -1308,6 +1308,14 @@ patch(CELL,
                     String filter;
                     if (messageObject.isAnimatedEmoji() || messageObject.isDice()) {""")
 
+print("== 6.4: ярлыки разделов StarTegs на рабочем столе")
+patch("TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java",
+      """    private boolean handleIntent(Intent intent, boolean isNew, boolean restore, boolean fromPassword, Browser.Progress progress, boolean rebuildFragments, boolean openedTelegram) {
+        if (GiftInfoBottomSheet.handleIntent(intent, progress)) {""",
+      """    private boolean handleIntent(Intent intent, boolean isNew, boolean restore, boolean fromPassword, Browser.Progress progress, boolean rebuildFragments, boolean openedTelegram) {
+        org.startegs.StarNav.handleIntent(intent); // StarTegs 6.4
+        if (GiftInfoBottomSheet.handleIntent(intent, progress)) {""")
+
 print("== отчёт о сбоях")
 patch("TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java",
       """        try {

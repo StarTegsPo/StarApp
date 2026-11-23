@@ -71,6 +71,7 @@ public final class StarSilk {
                 f.getActionBar().setTitleColor(Color.WHITE);
                 f.getActionBar().setItemsBackgroundColor(0x33FFFFFF, false);
             }
+            if (list != null) StarNav.attach(f, list); // 6.4: панель вкладок, недавние
             if (list instanceof ViewGroup && motion()) {
                 AnimationSet set = new AnimationSet(true);
                 TranslateAnimation tr = new TranslateAnimation(0, 0, AndroidUtilities.dp(18), 0);

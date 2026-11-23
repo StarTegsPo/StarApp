@@ -226,6 +226,26 @@ class Gold63Test(unittest.TestCase):
         self.run_async(bot.reward_referral(fb, U(), "5202"))  # сам себя нельзя
         self.assertEqual(bot.db.user(5202)["refs"], 0)
 
+    def test_qa_api(self):
+        async def go():
+            c = TestClient(TestServer(bot.make_web()))
+            await c.start_server()
+            try:
+                a = make_init(5401)
+                await c.post("/mini/api", json={"init": a, "a": "home"})
+                bot.db.x("INSERT INTO qa(owner, asker, text, ts) VALUES(5401, 5402, 'вопрос', 1)")
+                r = await (await c.post("/mini/api", json={"init": a, "a": "home"})).json()
+                self.assertEqual(r["qa_new"], 1)
+                r = await (await c.post("/mini/api", json={"init": a, "a": "qa"})).json()
+                qid = r["items"][0]["id"]
+                r = await (await c.post("/mini/api", json={"init": make_init(5403), "a": "qa_answer", "id": qid, "text": "чужой"})).json()
+                self.assertFalse(r["ok"])  # отвечать может только владелец
+                await c.post("/mini/api", json={"init": a, "a": "qa_block", "id": qid})
+                self.assertIsNotNone(bot.db.one("SELECT 1 FROM qa_block WHERE owner=5401 AND asker=5402"))
+            finally:
+                await c.close()
+        self.run_async(go())
+
     def test_stats_export(self):
         t = bot.now()
         for mid, out, dl in ((1, 0, 1), (2, 1, 0), (3, 0, 0)):

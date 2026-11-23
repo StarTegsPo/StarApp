@@ -266,6 +266,7 @@ function empty(e, t, s) { return `<div class="empty"><div class="e">${e}</div><d
 // ---------- навигация
 const loaders = {home: loadHome, del: loadDel, ai: loadAi, market: loadMarket, more: loadMore};
 function go(v) {
+  if (v === 'qa') { openQa(); return; }
   hap('soft');
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
   document.querySelectorAll('.view').forEach(s => s.classList.toggle('on', s.id === 'v-' + v));
@@ -289,8 +290,10 @@ async function loadHome() {
     ['📊', j.channels ? 'Каналов в аналитике' : 'Подключи канал', j.channels || '＋', '#3fd0f5', '#1aa3d6', 'more'],
     ['⏰', 'Напоминания', j.reminders, '#ffae52', '#f0781d', 'more'],
     ['📝', 'Заметки', j.notes, '#5edb76', '#2eae4c', 'more'],
+    ['💌', j.qa_new ? 'Новых вопросов' : 'Анонимные вопросы', j.qa_new || '＋', '#ff7eb3', '#b46cff', 'qa'],
+    ['🔗', 'Позвать друзей', j.refs || '＋', '#34d1bf', '#16a394', 'ref'],
   ];
-  $('#tiles').innerHTML = tiles.map(t => `<div class="glass tile" onclick="go('${t[5]}')"><div class="icon" style="--c1:${t[3]};--c2:${t[4]}">${t[0]}</div>
+  $('#tiles').innerHTML = tiles.map(t => `<div class="glass tile" onclick="${t[5] === 'ref' ? 'shareRef()' : `go('${t[5]}')`}"><div class="icon" style="--c1:${t[3]};--c2:${t[4]}">${t[0]}</div>
     <div class="num">${esc(t[2])}</div><div class="lbl">${t[1]}</div></div>`).join('');
   const goldOn = j.gold_until * 1000 > Date.now();
   $('#gold-title').textContent = goldOn ? '👑 Gold активен' : 'StarTegs Gold';
@@ -319,6 +322,30 @@ async function takeTrial() {
   const j = await api('gold_trial');
   if (j.ok) { ok(); confetti(); toast('🎁 Gold включён! Открой StarTegs → 👑 Gold'); loadHome(); } else toast(j.msg || 'Не получилось');
 }
+async function openQa() {
+  hap('medium');
+  const j = await api('qa');
+  if (!j.ok) return;
+  window._qa = j;
+  const items = j.items.length ? j.items.map(q => `<div class="glass item"><div class="txt" style="font-weight:600">❓ ${esc(q.text)}</div>
+    ${q.answer ? `<div class="muted" style="margin-top:6px">↳ ${esc(q.answer)}</div>` :
+      `<div class="row" style="gap:8px;margin-top:10px"><input class="search grow" id="qa-${q.id}" placeholder="Твой ответ…" style="margin:0">
+       <button class="btn small" onclick="qaAnswer(${q.id})">↑</button><button class="btn small ghost" onclick="qaBlock(${q.id})">🚫</button></div>`}</div>`).join('')
+    : empty('💌', 'Пока нет вопросов', 'Поделись ссылкой — друзья смогут спросить анонимно');
+  sheet(`<h2 style="margin-top:0">💌 Анонимные вопросы</h2><p class="muted">Ставь ссылку в сторис — тебе пишут анонимно, ты отвечаешь здесь. Кто спросил — не видно никому.</p>
+    <button class="btn" style="width:100%;margin:8px 0 14px" onclick="shareQa()">📨 Поделиться ссылкой</button><div style="max-height:52vh;overflow:auto">${items}</div>`);
+}
+function shareQa() {
+  const l = window._qa && window._qa.link; if (!l) return;
+  const u = 'https://t.me/share/url?url=' + encodeURIComponent(l) + '&text=' + encodeURIComponent('Задай мне анонимный вопрос 💌');
+  tg ? tg.openTelegramLink(u) : open(u);
+}
+async function qaAnswer(id) {
+  const t = ($('#qa-' + id).value || '').trim(); if (!t) return;
+  const j = await api('qa_answer', {id, text: t});
+  if (j.ok) { ok(); toast('✅ Ответ отправлен'); openQa(); }
+}
+async function qaBlock(id) { hap('medium'); await api('qa_block', {id}); toast('🚫 Больше не сможет спрашивать'); }
 function shareRef() {
   hap();
   if (!window._ref) return;

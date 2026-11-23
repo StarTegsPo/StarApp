@@ -81,6 +81,7 @@ def main_menu(uid: int = 0) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🛍 Маркет", callback_data="m:market"), InlineKeyboardButton(text="📊 Аналитика", callback_data="m:stats")],
         [InlineKeyboardButton(text="⏰ Напоминания", callback_data="m:rem"), InlineKeyboardButton(text="📝 Заметки", callback_data="m:notes")],
         [InlineKeyboardButton(text=f"👑 StarTegs Gold — {GOLD_PRICE} ⭐", callback_data="m:gold")],
+        [InlineKeyboardButton(text="💌 Анонимные вопросы", callback_data="m:qa")],
         [InlineKeyboardButton(text="📈 Моя статистика", callback_data="m:me"), InlineKeyboardButton(text="📤 Экспорт архива", callback_data="m:export")],
         [InlineKeyboardButton(text=f"👥 Пригласить друга (+{REF_DAYS} дня Gold)", callback_data="m:invite")],
         [InlineKeyboardButton(text="⚙️ Настройки", callback_data="m:set"), InlineKeyboardButton(text="❓ Помощь", callback_data="m:help")],
@@ -110,11 +111,12 @@ HELP = ("<b>Как подключить «Удалённые»</b>\n"
         "/remind 30m купить хлеб · /remind 18:30 позвонить\n/note текст · /notes\n"
         "/deleted — последние удалённые · /edits — изменённые · /find слово — поиск по архиву\n"
         "/me — статистика чатов · /export — архив файлом · /digest — итоги дня вкл/выкл\n"
+        "/questions — анонимные вопросы: ссылка для сторис, входящие, ответы\n"
         "/gold — StarTegs Gold · /trial — попробовать бесплатно · /invite — пригласить друга")
 
 
 @router.message(CommandStart())
-async def cmd_start(m: Message, command: CommandObject):
+async def cmd_start(m: Message, command: CommandObject, state: FSMContext):
     is_new = db.user(m.from_user.id) is None
     db.touch_user(m.from_user)
     arg = command.args or ""
@@ -122,6 +124,9 @@ async def cmd_start(m: Message, command: CommandObject):
         await reward_referral(m.bot, m.from_user, arg[4:])
     if arg == "trial":
         await give_trial(m)
+        return
+    if arg.startswith("q_"):
+        await ask_start(m, arg[2:], state)
         return
     if arg.startswith("ad_"):
         try:
@@ -1063,6 +1068,123 @@ async def digest_loop(bot: Bot):
         await asyncio.sleep(600)
 
 
+# ====================================================================== 6.4: анонимные вопросы (ссылка для сторис)
+
+class AskForm(StatesGroup):
+    question = State()
+    answer = State()
+
+
+QA_DAY_LIMIT = 30  # вопросов от одного человека одному владельцу в сутки
+
+
+async def qa_link(bot: Bot, uid: int) -> str:
+    return f"https://t.me/{await bot_username(bot)}?start=q_{uid}"
+
+
+async def ask_start(m: Message, owner_raw: str, state: FSMContext = None):
+    try:
+        owner = int(owner_raw)
+    except ValueError:
+        return
+    o = db.user(owner)
+    if not o:
+        await m.answer("Ссылка устарела 🙈")
+        return
+    if owner == m.from_user.id:
+        await m.answer("Это твоя ссылка 🙂 Отправь её друзьям или поставь в сторис — вопросы придут сюда. /questions")
+        return
+    await state.set_state(AskForm.question)
+    await state.update_data(owner=owner)
+    await m.answer(f"💌 Напиши анонимный вопрос для <b>{esc(o['name'] or 'друга')}</b>.\n"
+                   "Он не узнает, кто ты. Ответ придёт сюда. /cancel — отмена")
+
+
+@router.message(Command("cancel"))
+async def cmd_cancel(m: Message, state: FSMContext):
+    await state.clear()
+    await m.answer("Отменил ✅")
+
+
+@router.message(AskForm.question, F.text)
+async def ask_text(m: Message, state: FSMContext):
+    data = await state.get_data()
+    owner = int(data.get("owner", 0))
+    await state.clear()
+    if not owner:
+        return
+    if db.one("SELECT 1 FROM qa_block WHERE owner=? AND asker=?", (owner, m.from_user.id)):
+        await m.answer("✉️ Отправлено")  # заблокированный не узнаёт о блокировке
+        return
+    n = db.one("SELECT COUNT(*) n FROM qa WHERE owner=? AND asker=? AND ts>?", (owner, m.from_user.id, now() - 86400))["n"]
+    if n >= QA_DAY_LIMIT:
+        await m.answer("Слишком много вопросов за сутки — попробуй завтра 🙂")
+        return
+    text = m.text.strip()[:1000]
+    cur = db.x("INSERT INTO qa(owner, asker, text, ts) VALUES(?,?,?,?)", (owner, m.from_user.id, text, now()))
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="💬 Ответить", callback_data=f"qa:a:{cur.lastrowid}"),
+                                                InlineKeyboardButton(text="🚫 Блок", callback_data=f"qa:b:{cur.lastrowid}")]])
+    try:
+        await m.bot.send_message(owner, f"💌 <b>Новый анонимный вопрос</b>\n\n{esc(text)}", reply_markup=kb)
+        await m.answer("✉️ Вопрос отправлен анонимно! Ответ придёт сюда.\n\nХочешь свои анонимные вопросы? /questions")
+    except Exception:
+        await m.answer("Не получилось доставить — владелец ссылки остановил бота 😔")
+
+
+@router.callback_query(F.data.startswith("qa:"))
+async def qa_action(c: CallbackQuery, state: FSMContext):
+    _, act, qid = c.data.split(":")
+    q = db.one("SELECT * FROM qa WHERE id=? AND owner=?", (int(qid), c.from_user.id))
+    if not q:
+        await c.answer("Вопрос не найден")
+        return
+    if act == "b":
+        db.x("INSERT OR IGNORE INTO qa_block(owner, asker) VALUES(?,?)", (c.from_user.id, q["asker"]))
+        await c.answer("🚫 Этот человек больше не сможет задавать тебе вопросы. Кто это — по-прежнему тайна.", show_alert=True)
+        return
+    await state.set_state(AskForm.answer)
+    await state.update_data(qid=q["id"])
+    await c.message.answer(f"💬 Напиши ответ на вопрос:\n<i>{esc(q['text'][:300])}</i>\n\n/cancel — отмена")
+    await c.answer()
+
+
+@router.message(AskForm.answer, F.text)
+async def qa_answer(m: Message, state: FSMContext):
+    data = await state.get_data()
+    await state.clear()
+    q = db.one("SELECT * FROM qa WHERE id=? AND owner=?", (int(data.get("qid", 0)), m.from_user.id))
+    if not q:
+        return
+    ans = m.text.strip()[:2000]
+    db.x("UPDATE qa SET answer=? WHERE id=?", (ans, q["id"]))
+    try:
+        await m.bot.send_message(q["asker"], f"💌 <b>{esc(m.from_user.first_name or 'Тебе')}</b> ответил(а) на твой вопрос\n\n"
+                                             f"<i>{esc(q['text'][:500])}</i>\n\n{esc(ans)}\n\nСвои анонимные вопросы — /questions")
+        await m.answer("✅ Ответ отправлен. Кто задал вопрос — так и останется тайной 🤫")
+    except Exception:
+        await m.answer("Автор вопроса остановил бота — ответ сохранён в /questions")
+
+
+@router.message(Command("questions"))
+@router.callback_query(F.data == "m:qa")
+async def questions(ev):
+    m = ev.message if isinstance(ev, CallbackQuery) else ev
+    uid = ev.from_user.id
+    db.touch_user(ev.from_user)
+    link = await qa_link(ev.bot, uid)
+    rows = db.q("SELECT * FROM qa WHERE owner=? ORDER BY ts DESC LIMIT 8", (uid,))
+    total = db.one("SELECT COUNT(*) n FROM qa WHERE owner=?", (uid,))["n"]
+    lines = "\n\n".join(f"{'✅' if r['answer'] else '❓'} {esc(r['text'][:160])}" + (f"\n   ↳ {esc(r['answer'][:120])}" if r["answer"] else "") for r in rows)
+    share = "https://t.me/share/url?url=" + quote(link) + "&text=" + quote("Задай мне анонимный вопрос 💌")
+    kb = [[InlineKeyboardButton(text="📨 Поделиться ссылкой", url=share)]]
+    kb += [[InlineKeyboardButton(text=f"💬 Ответить: {r['text'][:28]}", callback_data=f"qa:a:{r['id']}")] for r in rows if not r["answer"]][:4]
+    await m.answer(f"💌 <b>Анонимные вопросы</b>\n\nПоставь ссылку в сторис или профиль — тебе будут писать анонимно, ты отвечаешь здесь.\n"
+                   f"<code>{link}</code>\n\nВсего вопросов: <b>{total}</b>" + (f"\n\n{lines}" if lines else ""),
+                   reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+    if isinstance(ev, CallbackQuery):
+        await ev.answer()
+
+
 # ---------------------------------------------------------------------- любой текст в личке → Звёздочка
 
 @router.message(F.chat.type == ChatType.PRIVATE, F.text & ~F.text.startswith("/"))
@@ -1306,7 +1428,28 @@ async def api_mini(request: web.Request):
                    "notify_deleted": me["notify_deleted"], "notify_edited": me["notify_edited"],
                    "gold_until": db.gold_until(uid), "gold_price": GOLD_PRICE, "gold_days": GOLD_DAYS,
                    "trial": not me["trial_used"], "trial_days": TRIAL_DAYS, "refs": me["refs"], "ref_days": REF_DAYS,
-                   "ref_link": await ref_link(BOT, uid) if BOT else "", "digest": me["digest"], "week": my_stats(uid)})
+                   "ref_link": await ref_link(BOT, uid) if BOT else "", "digest": me["digest"], "week": my_stats(uid),
+                   "qa_new": n("SELECT COUNT(*) n FROM qa WHERE owner=? AND answer=''", uid)})
+    if a == "qa":
+        rows = db.q("SELECT * FROM qa WHERE owner=? ORDER BY ts DESC LIMIT 50", (uid,))
+        return js({"ok": True, "link": await qa_link(BOT, uid) if BOT else "",
+                   "items": [{"id": r["id"], "text": r["text"], "answer": r["answer"], "ts": r["ts"]} for r in rows]})
+    if a == "qa_answer":
+        q = db.one("SELECT * FROM qa WHERE id=? AND owner=?", (int(body.get("id", 0) or 0), uid))
+        ans = str(body.get("text", "")).strip()[:2000]
+        if not q or not ans:
+            return js({"ok": False, "msg": "Пустой ответ"})
+        db.x("UPDATE qa SET answer=? WHERE id=?", (ans, q["id"]))
+        try:
+            await BOT.send_message(q["asker"], f"💌 <b>{esc(u.get('first_name') or 'Тебе')}</b> ответил(а) на твой вопрос\n\n<i>{esc(q['text'][:500])}</i>\n\n{esc(ans)}")
+        except Exception:
+            pass
+        return js({"ok": True})
+    if a == "qa_block":
+        q = db.one("SELECT * FROM qa WHERE id=? AND owner=?", (int(body.get("id", 0) or 0), uid))
+        if q:
+            db.x("INSERT OR IGNORE INTO qa_block(owner, asker) VALUES(?,?)", (uid, q["asker"]))
+        return js({"ok": True})
     if a == "gold_trial":
         until = db.trial(uid, TRIAL_DAYS)
         return js({"ok": until is not None, "gold_until": until or 0, "msg": "" if until else "Пробный период уже был"})
