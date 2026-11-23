@@ -1,0 +1,9 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>StarTegs TikTok</title>
+<link rel="stylesheet" href="style.css"></head><body>
+<div id="stage"><canvas id="bg" width="1080" height="1920"></canvas><div id="flash"></div></div>
+<script src="engine.js"></script><script src="videos.js"></script>
+<script>
+const id=new URLSearchParams(location.search).get('v')||'01';
+const c=document.getElementById('bg');c.getContext('2d').scale(2,2);
+build(VIDEOS[id]);seek(+(new URLSearchParams(location.search).get('t')||0));
+</script></body></html>
