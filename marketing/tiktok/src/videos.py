@@ -5,7 +5,7 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 from engine import *  # noqa
 
-OUT = os.path.join(os.path.dirname(__file__), '..', 'video')
+OUT = os.path.join(os.path.dirname(__file__), '..', 'video', 'silent')
 
 
 # ---------- общие сцены ----------
