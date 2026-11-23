@@ -4,16 +4,22 @@
 
 ```
 avatar.png              аватарка 1080×1080 (TikTok обрежет её кругом)
-video/01…06_*.mp4       ролики 1080×1920, 12–14 с, С ОЗВУЧКОЙ (женский голос, громкость под TikTok −14 LUFS)
+video/01…06_*.mp4       ролики 1080×1920, 12–14 с, озвучка женским голосом (Piper «Ирина»)
+video/07…16_*.mp4       вторая серия, озвучка мужским голосом (RHVoice «Александр HQ»)
+golosa_obrazcy.mp3      образцы мужских голосов: Александр, Артемий, Михаил, Виталий
 video/silent/*.mp4      те же ролики без звука
 src/engine.py           движок роликов (Pillow + ffmpeg)
 src/videos.py           сценарии: python3 src/videos.py      → пересобрать все (в video/silent/)
                                   python3 src/videos.py 3    → только третий
+src/videos2.py          сценарии второй серии: python3 src/videos2.py [7…16]
 src/voice.py            озвучка: тексты реплик и тайминги в словаре VO; python3 src/voice.py [номер]
 src/avatar.py           аватарка
 ```
 
-Озвучка сделана офлайн-синтезом Piper (`pip install piper-tts`), голос `ru-irinia-medium`.
+Мужской голос: `apt install rhvoice rhvoice-russian`. Другой голос для любого ролика:
+`VOICE=rhvoice:artemiy python3 src/voice.py 7` (варианты: aleksandr-hq, artemiy, mikhail, vitaliy, pavel, yuriy).
+
+Женская озвучка сделана офлайн-синтезом Piper (`pip install piper-tts`), голос `ru-irinia-medium`.
 Модель (~60 МБ) в репозиторий не кладём, перед пересборкой скачайте и распакуйте её в `marketing/tiktok/voice/`:
 ```
 curl -L https://github.com/rhasspy/piper/releases/download/v0.0.2/voice-ru-irinia-medium.tar.gz | tar xz -C voice
@@ -104,6 +110,23 @@ Telegram, который умеет больше 🤫
 Какая фишка лучшая? Пиши номер 👇 Сохрани, чтобы не потерять
 #telegram #телеграм #фишкителеграм #топ #startegs
 ```
+
+### Вторая серия (07–16, мужской голос)
+
+| № | Тема | Текст к посту |
+|---|---|---|
+| 07 | Отмена отправки | Отправил не тому? Есть 5 секунд 😅 А у тебя было такое? 👇 `#telegram #телеграм #лайфхак #работа #startegs` |
+| 08 | Фальшивый код-пароль | Второй пароль — и Telegram пустой 🎭 Пригодилось бы? `#telegram #приватность #лайфхак #секреты #startegs` |
+| 09 | Статистика переписки | Кто из вас пишет больше? Отметь его 👇 `#telegram #отношения #статистика #пара #startegs` |
+| 10 | Проверка тона ИИ | ИИ спас от ссоры 🕊 Тебе бы пригодилось? `#telegram #нейросеть #ии #отношения #startegs` |
+| 11 | 10 аккаунтов | 10 аккаунтов в одном Telegram 👥 Сколько у тебя? `#telegram #телеграм #smm #бизнес #startegs` |
+| 12 | Итоги года | Telegram Wrapped 🎁 Какое у тебя любимое время переписки? `#telegram #итогигода #wrapped #2026 #startegs` |
+| 13 | Автоответ ИИ | Нейросеть отвечает, пока ты спишь 😴 `#telegram #ии #нейросеть #лайфхак #startegs` |
+| 14 | Перевод | Общайся с кем угодно на любом языке 🌍 `#telegram #перевод #английский #путешествия #startegs` |
+| 15 | Напоминания | Больше не забудешь, о чём договорился ⏰ `#telegram #продуктивность #лайфхак #startegs` |
+| 16 | Telegram vs StarTegs | Какой пункт решает для тебя? Пиши номер 👇 `#telegram #сравнение #телеграм #фишки #startegs` |
+
+К каждому посту добавляй строку: *«Ищи в Telegram: @StarTegsEcosistem_bot»*.
 
 ---
 
