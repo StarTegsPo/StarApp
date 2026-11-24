@@ -8,7 +8,10 @@ TMP = os.path.join(OUT, "_build"); os.makedirs(TMP, exist_ok=True)
 FB = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FR = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 FM = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
-VOICE = "aleksandr-hq"
+VOICE = os.environ.get("VOICE", "artemiy")
+# обработка голоса: теплота, разборчивость, компрессия, лёгкая «комната», громкость под TikTok
+VOICE_FX = ("highpass=f=70,equalizer=f=180:t=q:w=1:g=3,equalizer=f=3500:t=q:w=1.5:g=2,deesser,"
+            "acompressor=threshold=-20dB:ratio=3:attack=5:release=80,aecho=0.8:0.6:25:0.12,loudnorm=I=-16:TP=-1.5")
 CYAN, PINK, BG1, BG2 = (0, 229, 255), (255, 46, 136), (10, 12, 28), (32, 10, 60)
 
 def gradient(w, h):
@@ -103,7 +106,9 @@ def frame(title, big, sub, idx, total, path, emoji=None):
     img.convert("RGB").save(path)
 
 def tts(text, path):
-    subprocess.run(["RHVoice-test", "-p", VOICE, "-r", "110", "-o", path], input=text.encode(), check=True)
+    raw = path + ".raw.wav"
+    subprocess.run(["RHVoice-test", "-q", "max", "-p", VOICE, "-r", "105", "-o", raw], input=text.encode(), check=True)
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", raw, "-af", VOICE_FX, "-ar", "44100", path], check=True)
     dur = float(subprocess.check_output(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path]))
     return dur
 
@@ -124,11 +129,19 @@ def video(name, title, slides):
         parts.append(mp4)
     lst = os.path.join(TMP, f"{name}.txt")
     open(lst, "w").write("".join(f"file '{p}'\n" for p in parts))
-    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", lst, "-c", "copy",
-                    "-movflags", "+faststart", os.path.join(OUT, f"{name}.mp4")], check=True)
+    joined = os.path.join(TMP, f"{name}_joined.mp4")
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", lst, "-c", "copy", joined], check=True)
+    # фоновая музыка тише голоса и приглушается, когда он звучит (ducking)
+    music = os.path.join(TMP, "music.wav")
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", joined, "-stream_loop", "-1", "-i", music, "-filter_complex",
+        "[1:a]volume=0.22[m];[0:a]asplit[v][sc];[m][sc]sidechaincompress=threshold=0.05:ratio=4:attack=20:release=300[md];"
+        "[v][md]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[a]",
+        "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest",
+        "-movflags", "+faststart", os.path.join(OUT, f"{name}.mp4")], check=True)
 
 if __name__ == "__main__":
     avatar()
+    subprocess.run(["python3", os.path.join(OUT, "music.py")], check=True)
     data = json.load(open(os.path.join(OUT, "videos.json"), encoding="utf-8"))
     for v in data:
         video(v["file"], v["title"], v["slides"])
