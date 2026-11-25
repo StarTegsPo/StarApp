@@ -86,18 +86,49 @@ def user(uid):
 
 # ---------- Telegram API ----------
 
-def api(method, _http_timeout=30, **params):
-    url = "https://api.telegram.org/bot%s/%s" % (TOKEN, method)
+API_URL = os.getenv("API_URL", "https://api.telegram.org").rstrip("/")
+PROXY = os.getenv("PROXY", "").strip()  # например http://127.0.0.1:8080
+
+# На мобильном интернете IPv6 до Telegram часто рвётся (Errno 103) — ходим только по IPv4.
+if os.getenv("FORCE_IPV4", "1") != "0":
+    import socket
+    _orig_gai = socket.getaddrinfo
+
+    def _gai_v4(host, *a, **kw):
+        res = _orig_gai(host, *a, **kw)
+        v4 = [r for r in res if r[0] == socket.AF_INET]
+        return v4 or res
+    socket.getaddrinfo = _gai_v4
+
+_handlers = [urllib.request.ProxyHandler({"http": PROXY, "https": PROXY})] if PROXY else []
+_opener = urllib.request.build_opener(*_handlers)
+
+
+class NetError(Exception):
+    pass
+
+
+def api(method, _http_timeout=30, _tries=3, **params):
+    url = "%s/bot%s/%s" % (API_URL, TOKEN, method)
     body = json.dumps(params).encode()
-    req = urllib.request.Request(url, body, {"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=_http_timeout) as r:
-            res = json.load(r)
-    except urllib.error.HTTPError as e:
+    last = None
+    for attempt in range(_tries):
+        req = urllib.request.Request(url, body, {"Content-Type": "application/json"})
         try:
-            res = json.load(e)
-        except ValueError:
-            res = {"ok": False, "description": str(e)}
+            with _opener.open(req, timeout=_http_timeout) as r:
+                res = json.load(r)
+            break
+        except urllib.error.HTTPError as e:
+            try:
+                res = json.load(e)
+            except ValueError:
+                res = {"ok": False, "description": str(e)}
+            break
+        except (urllib.error.URLError, OSError, ValueError) as e:
+            last = e
+            time.sleep(1 + attempt)
+    else:
+        raise NetError(str(getattr(last, "reason", last)))
     if not res.get("ok"):
         print("API %s: %s" % (method, res.get("description")), file=sys.stderr)
         return None
@@ -325,33 +356,60 @@ def handle(update):
         on_callback(update["callback_query"])
 
 
+VPN_HINT = ("\n⚠️ Telegram недоступен из этой сети (провайдер обрывает соединение).\n"
+            "   Включите VPN на телефоне и перезапустите бота,\n"
+            "   или укажите прокси в .env: PROXY=http://адрес:порт\n")
+
+
+def safe_handle(up):
+    try:
+        handle(up)
+    except NetError as e:
+        print("Не удалось отправить ответ (сеть: %s)" % e, file=sys.stderr)
+    except Exception as e:
+        print("Ошибка обработки:", repr(e), file=sys.stderr)
+
+
 def main():
     if not TOKEN:
         sys.exit("Нет BOT_TOKEN: создайте файл .env рядом с main.py со строкой BOT_TOKEN=...")
-    me = api("getMe")
-    if not me:
-        sys.exit("Не удалось подключиться к Telegram — проверьте токен и интернет.")
-    api("deleteWebhook")
-    print("Бот @%s запущен. Админ: %s" % (me["username"], DATA["admin_id"] or "не назначен (/admin)"))
-    offset = 0
+    print("Подключаюсь к Telegram...")
     while True:
         try:
-            # короткий опрос: мобильная сеть часто рвёт долгие соединения (Errno 103)
-            ups = api("getUpdates", _http_timeout=25, offset=offset, timeout=10,
+            me = api("getMe")
+            break
+        except NetError as e:
+            print("Нет связи с Telegram: %s%s" % (e, VPN_HINT), file=sys.stderr)
+            time.sleep(10)
+    if not me:
+        sys.exit("Telegram не принял токен — проверьте BOT_TOKEN в .env.")
+    try:
+        api("deleteWebhook")
+    except NetError:
+        pass
+    print("✅ Бот @%s запущен. Админ: %s" % (me["username"], DATA["admin_id"] or "не назначен (/admin)"))
+    offset, fails = 0, 0
+    while True:
+        try:
+            # короткий опрос: мобильная сеть часто рвёт долгие соединения
+            ups = api("getUpdates", _http_timeout=25, _tries=1, offset=offset, timeout=10,
                       allowed_updates=["message", "callback_query"])
-        except Exception as e:  # сеть пропала — просто пробуем снова
-            print("Сеть моргнула (%s), переподключаюсь..." % e, file=sys.stderr)
-            time.sleep(3)
+        except NetError as e:
+            fails += 1
+            if fails in (1, 5) or fails % 30 == 0:
+                print("Сеть: %s — переподключаюсь (%d)%s" % (e, fails, VPN_HINT if fails >= 5 else ""),
+                      file=sys.stderr)
+            time.sleep(min(3 * fails, 15))
             continue
+        if fails:
+            print("✅ Связь восстановлена")
+            fails = 0
         if ups is None:
             time.sleep(3)
             continue
         for up in ups:
             offset = up["update_id"] + 1
-            try:
-                handle(up)
-            except Exception as e:
-                print("Ошибка обработки:", repr(e), file=sys.stderr)
+            safe_handle(up)
 
 
 if __name__ == "__main__":
