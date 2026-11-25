@@ -1,0 +1,24 @@
+{
+  "name": "StarGames — игровой зал",
+  "short_name": "StarGames",
+  "description": "2048, Змейка, Крестики-нолики онлайн, Мемори, Сапёр и Реакция",
+  "lang": "ru",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b0a16",
+  "theme_color": "#0b0a16",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ],
+  "shortcuts": [
+    { "name": "Змейка", "url": "/?game=snake", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "2048", "url": "/?game=2048", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Крестики-нолики", "url": "/?game=ttt", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

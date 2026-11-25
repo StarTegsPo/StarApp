@@ -625,3 +625,10 @@ button.mode:active { transform: scale(0.97); }
 .r-dots { display: flex; justify-content: center; gap: 10px; margin-top: 16px; }
 .r-dots i { width: 12px; height: 12px; border-radius: 50%; background: var(--surface-3); transition: background 0.3s, transform 0.3s var(--spring); }
 .r-dots i.done { transform: scale(1.25); background: color-mix(in srgb, #ef4444 calc(var(--q, 0) * 100%), #22c55e); }
+
+/* ---- установка приложения ---- */
+.install { margin-top: 14px; padding: 14px; display: flex; align-items: center; gap: 12px; }
+.install img { border-radius: 16px; flex: none; box-shadow: 0 10px 22px -10px var(--accent); }
+.install .duel-text span { display: block; }
+.install-x { width: 32px; height: 32px; border-radius: 10px; background: transparent; color: var(--muted); flex: none; }
+.install-x svg { width: 16px; height: 16px; }

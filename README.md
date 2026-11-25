@@ -73,6 +73,18 @@ npm run games
 
 **Mini App** (`games-webapp/`): тёмная и светлая тема по Telegram, «северное сияние» на фоне, у каждой игры свой градиент; зелёные пульсирующие онлайн-кнопки и счётчики «N онлайн» (общий и по каждой игре), переходы между экранами через View Transitions (с запасным вариантом), появление карточек «лесенкой», волна от касания, анимированная нижняя навигация, шторка результата с конфетти на рекорде, подиум рейтинга, кольцо уровня в профиле, вибрация через Telegram HapticFeedback. При «Уменьшении движения» анимации отключаются. Вне Telegram игры работают офлайн, рекорды хранятся в `localStorage`.
 
+**Как приложение (PWA).** Mini App можно установить на главный экран: манифест, иконки и service worker (`games-webapp/sw.js`). На Android в браузере появляется карточка «Установить StarGames», на iPhone — подсказка «Поделиться → На экран Домой». Установленное приложение открывается без интерфейса браузера и работает без интернета; рекорды вне Telegram хранятся на устройстве, а рейтинги и онлайн-дуэли доступны при запуске из бота.
+
+**Запуск на телефоне (Termux)** — бот, приложение и HTTPS-туннель cloudflared одной командой:
+
+```bash
+pkg install -y curl && curl -fsSL https://raw.githubusercontent.com/StarTegsPo/StarApp/ccr-af53deb1-q7hoyl/termux/stargames.sh -o ~/stargames.sh
+bash ~/stargames.sh setup <ТОКЕН_ИГРОВОГО_БОТА>
+bash ~/stargames.sh start        # stop | restart | status | logs | update
+```
+
+Код ставится в `~/StarGames`, отдельно от StarApp. Адрес туннеля меняется при каждом запуске — бот сам обновляет кнопку «Играть».
+
 **Онлайн** — пинг из Mini App раз в 20 с, игрок «онлайн» 45 с после пинга. Партии крестиков-ноликов хранятся в памяти процесса; клиент опрашивает состояние раз в секунду, а соперник, молчащий 25 с, проигрывает по тайм-ауту.
 
 API (всё, кроме `/api/games`, требует initData): `GET /api/games`, `GET /api/me`, `POST /api/ping {game}`, `POST /api/score {game, score}`, `GET /api/leaderboard/:game`, `GET /api/profile`, `GET /api/ttt`, `POST /api/ttt/find|create|join {code}|move {cell}|leave`.

@@ -216,7 +216,7 @@ const SCREENS = {
         </div>
       </button>
 
-      ${online ? `
+      ${online && !S.offline ? `
       <div class="card duel rise" style="--i:2">
         <div class="duel-icon">⚔️</div>
         <div class="duel-text">
@@ -225,6 +225,8 @@ const SCREENS = {
         </div>
         <button class="btn online small" data-play="${online.id}" data-mode="find"><span class="dot"></span>Найти</button>
       </div>` : ''}
+
+      <div id="installSlot"></div>
 
       <div class="section-title rise" style="--i:3"><h2>Все игры</h2><span>${S.games.length} ${plural(S.games.length, 'игра', 'игры', 'игр')}</span></div>
       <div class="grid">
@@ -239,6 +241,7 @@ const SCREENS = {
             </div>
           </button>`).join('')}
       </div>`;
+    mountInstall();
     if (p) requestAnimationFrame(() => (document.getElementById('xp').style.width = `${(p.levelXp / p.levelNeed) * 100}%`));
     view.querySelectorAll('[data-play]').forEach((b) =>
       b.addEventListener('click', (e) => {
@@ -485,4 +488,46 @@ async function boot() {
   if (g && S.games.some((x) => x.id === g)) openGame(g, startParams.get('join') ? { mode: 'join', join: startParams.get('join') } : {});
   ping();
 }
+// ================= УСТАНОВКА КАК ПРИЛОЖЕНИЕ (PWA) =================
+const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+let installEvt = null;
+let installHidden = (() => { try { return localStorage.getItem('sg-install-hide') === '1'; } catch { return false; } })();
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  installEvt = e;
+  mountInstall();
+});
+window.addEventListener('appinstalled', () => { installEvt = null; mountInstall(); toast('📲 StarGames установлен на главный экран'); });
+
+function mountInstall() {
+  const slot = document.getElementById('installSlot');
+  if (!slot) return;
+  // В Telegram приложение и так открывается кнопкой бота; уже установленному — тоже не нужно
+  if (inTelegram || standalone || installHidden || (!installEvt && !isIOS)) { slot.innerHTML = ''; return; }
+  slot.innerHTML = `
+    <div class="card install rise" style="--i:3">
+      <img src="/icons/icon-192.png" alt="" width="52" height="52">
+      <div class="duel-text">
+        <b>Установить StarGames</b>
+        <span>${isIOS && !installEvt ? 'Safari: «Поделиться» → «На экран Домой»' : 'Значок на главном экране, игры без интернета'}</span>
+      </div>
+      ${installEvt ? '<button class="btn primary small" id="installBtn">Установить</button>' : ''}
+      <button class="icon-btn install-x" id="installX" aria-label="Скрыть"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>`;
+  document.getElementById('installBtn')?.addEventListener('click', async () => {
+    tap('medium');
+    installEvt.prompt();
+    const { outcome } = await installEvt.userChoice.catch(() => ({}));
+    if (outcome === 'accepted') { installEvt = null; mountInstall(); }
+  });
+  document.getElementById('installX').onclick = () => {
+    installHidden = true;
+    try { localStorage.setItem('sg-install-hide', '1'); } catch {}
+    slot.firstElementChild.animate([{ opacity: 1 }, { opacity: 0, transform: 'scale(.96)' }], { duration: 220 }).finished.then(mountInstall);
+  };
+}
+
 boot();
