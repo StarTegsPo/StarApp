@@ -5,3 +5,4 @@ data/
 *.db-*
 __pycache__/
 .claude/worktrees/
+rentbot_data.json*
