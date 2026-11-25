@@ -264,16 +264,16 @@ def on_message(msg):
         n = DATA["orders"]
         p, q = PRODUCTS[u["product"]], u["qty"]
         u["state"] = "chat"
-        header = ("🆕 Заявка №%d\n👤 %s\n🆔 %d\n\n📦 %s × %d шт\n💰 %d₽\n📍 %s\n\n"
+        header = ("🆕 Договор №%d\n👤 %s\n🆔 %d\n\n📦 %s × %d шт\n💰 %d₽\n📍 %s\n\n"
                   "↩️ Ответьте на это сообщение, чтобы написать клиенту."
                   % (n, name_of(frm), uid, p, q, q * PRICE, text.strip()))
         ok = to_admin(frm, header)
         if ok:
-            send(uid, "✅ Заявка №%d отправлена!\n\n📦 %s × %d шт — %d₽\n📍 %s\n\n"
+            send(uid, "✅ Договор №%d создан!\n\n📦 %s × %d шт — %d₽\n📍 %s\n\n"
                       "Ожидайте ответа. Можете написать сюда, если есть вопросы."
                  % (n, p, q, q * PRICE, text.strip()), MAIN_KB)
         else:
-            send(uid, "⚠️ Не удалось отправить заявку, попробуйте позже.", MAIN_KB)
+            send(uid, "⚠️ Не удалось создать договор, попробуйте позже.", MAIN_KB)
         return
 
     # любое другое сообщение — пересылаем админу как переписку
