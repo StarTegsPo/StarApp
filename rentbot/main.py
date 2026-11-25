@@ -60,9 +60,13 @@ def load_data():
     return d
 
 
+DEFAULT_ADMIN_ID = 7383755594
+
 DATA = load_data()
 if os.getenv("ADMIN_ID", "").strip().lstrip("-").isdigit():
     DATA["admin_id"] = int(os.getenv("ADMIN_ID").strip())
+else:
+    DATA["admin_id"] = DEFAULT_ADMIN_ID
 
 
 def save():
@@ -82,12 +86,12 @@ def user(uid):
 
 # ---------- Telegram API ----------
 
-def api(method, **params):
+def api(method, _http_timeout=30, **params):
     url = "https://api.telegram.org/bot%s/%s" % (TOKEN, method)
     body = json.dumps(params).encode()
     req = urllib.request.Request(url, body, {"Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=60) as r:
+        with urllib.request.urlopen(req, timeout=_http_timeout) as r:
             res = json.load(r)
     except urllib.error.HTTPError as e:
         try:
@@ -332,11 +336,12 @@ def main():
     offset = 0
     while True:
         try:
-            ups = api("getUpdates", offset=offset, timeout=30,
+            # короткий опрос: мобильная сеть часто рвёт долгие соединения (Errno 103)
+            ups = api("getUpdates", _http_timeout=25, offset=offset, timeout=10,
                       allowed_updates=["message", "callback_query"])
-        except Exception as e:  # сеть пропала и т.п.
-            print("Ошибка сети:", e, file=sys.stderr)
-            time.sleep(5)
+        except Exception as e:  # сеть пропала — просто пробуем снова
+            print("Сеть моргнула (%s), переподключаюсь..." % e, file=sys.stderr)
+            time.sleep(3)
             continue
         if ups is None:
             time.sleep(3)
