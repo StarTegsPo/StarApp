@@ -5,4 +5,4 @@ data/
 *.db-*
 __pycache__/
 .claude/worktrees/
-rentbot_data.json*
+coursebot_data.json*
