@@ -1,0 +1,13 @@
+{
+  "name": "tiktok-warmup",
+  "version": "1.0.0",
+  "description": "Прогрев своего TikTok-аккаунта: листает ленту «Для вас» и ставит лайк через случайное число роликов (1–18)",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node warmup.js"
+  },
+  "dependencies": {
+    "playwright": "^1.48.0"
+  }
+}
