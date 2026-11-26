@@ -24,7 +24,7 @@ final class Premium {
 
     static final int FREE_DAILY = 100;
     /** Бот, где продаётся Premium. Поменяйте на username своего бота. */
-    static final String BUY_URL = "https://t.me/StarTegsShop_bot";
+    static final String BUY_URL = "https://t.me/Vibe2Scool_bot";
 
     private static final String SALT = "tw-premium-v1:";
     /** SHA-256 хеши кодов (assets/codes.sha): 31 первых кодов + 5000 кодов, которые выдаёт бот. */
