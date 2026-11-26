@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Прогрев TikTok</string>
+    <string name="service_desc">Листает ленту TikTok и ставит лайк через случайное число роликов. Работает только когда вы нажали «Старт» в приложении и только внутри TikTok.</string>
+</resources>

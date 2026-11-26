@@ -1,0 +1,41 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.startegs.warmup'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.startegs.warmup'
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName '1.0'
+    }
+
+    // Постоянный ключ, чтобы новые версии ставились поверх старых без удаления
+    signingConfigs {
+        fixed {
+            storeFile file('warmup.keystore')
+            storePassword 'android'
+            keyAlias 'warmup'
+            keyPassword 'android'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.fixed
+        }
+        debug {
+            signingConfig signingConfigs.fixed
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
