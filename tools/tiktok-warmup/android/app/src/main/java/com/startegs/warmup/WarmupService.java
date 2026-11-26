@@ -8,6 +8,7 @@ import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -43,21 +44,39 @@ public class WarmupService extends AccessibilityService {
             "com.zhiliaoapp.musically", "com.ss.android.ugc.trill", "com.ss.android.ugc.aweme"
     };
 
-    static final String IDLE = "idle", RUNNING = "running", PAUSED = "paused", BREAK = "break", PHOTOS = "photos";
+    static final String IDLE = "idle", RUNNING = "running", PAUSED = "paused", BREAK = "break", PHOTOS = "photos",
+            SKIP = "skip", COMMENT = "comment";
+
+    static final String DEFAULT_EMOJI = "🔥 😂 ❤️ 😍 👍 💯 🤣 👏 😮 🙌 ✨ 😁";
 
     /** Настройки запуска. videos = 0 — без ограничения, *Chance — проценты. */
     static class Config {
         int videos = 120, likeMin = 1, likeMax = 18, watchMin = 5, watchMax = 25;
-        int skipChance = 15, longChance = 10, favChance = 4, repostChance = 2;
-        boolean photos = true;
+        int skipChance = 15, longChance = 10, favChance = 4, repostChance = 2, commentChance = 2;
+        boolean photos = true, skipLive = true, skipAds = true;
+        String[] emoji = DEFAULT_EMOJI.split("\\s+");
     }
 
     // Подписи кнопок TikTok (английский и русский интерфейс)
-    private static final Pattern P_SHARE = Pattern.compile("(?i)(share|поделит|отправить)");
-    private static final Pattern P_NOT_SHARE = Pattern.compile("(?i)(comment|коммент|like|лайк)");
-    private static final Pattern P_FAV = Pattern.compile("(?i)(favou?rite|избранн|bookmark|закладк)");
-    private static final Pattern P_FAV_DONE = Pattern.compile("(?i)(remove from|удалить из|убрать из)");
-    private static final Pattern P_REPOST = Pattern.compile("(?i)^\\s*(repost|репост|сделать репост)\\s*$");
+    private static final Pattern P_SHARE = Pattern.compile("(?iu)(share|поделит|отправить)");
+    private static final Pattern P_NOT_SHARE = Pattern.compile("(?iu)(comment|коммент|like|лайк)");
+    private static final Pattern P_FAV = Pattern.compile("(?iu)(favou?rite|избранн|bookmark|закладк)");
+    private static final Pattern P_FAV_DONE = Pattern.compile("(?iu)(remove from|удалить из|убрать из)");
+    private static final Pattern P_REPOST = Pattern.compile("(?iu)^\\s*(repost|репост|сделать репост)\\s*$");
+    // Прямые эфиры и реклама в ленте
+    private static final Pattern P_LIVE = Pattern.compile(
+            "(?iu)(^\\s*(live|live now|прямой эфир|в эфире|эфир)\\s*$|watch live|смотреть live|смотреть эфир|tap to watch live|нажмите, чтобы смотреть)");
+    private static final Pattern P_AD = Pattern.compile(
+            "(?iu)^\\s*(sponsored|реклама|спонсорский контент|спонсировано|promoted|продвигается|ad|промо)\\s*$");
+    // Комментарии
+    private static final Pattern P_COMMENT = Pattern.compile("(?iu)(comment|коммент)");
+    private static final Pattern P_NOT_COMMENT = Pattern.compile("(?iu)(like|лайк|share|подел)");
+    private static final Pattern P_INPUT_HINT = Pattern.compile(
+            "(?iu)(add comment|add a comment|добав\\S* комментар|оставь\\S* комментар|напиш\\S* комментар)");
+    // Заголовок открытой панели комментариев: «1 234 комментария», «56 comments»
+    private static final Pattern P_SHEET = Pattern.compile(
+            "(?iu)^\\s*[\\d][\\d\\s.,]*\\s*(k|m|тыс\\.?|млн)?\\s*(comments?|комментари\\S*)\\s*$");
+    private static final Pattern P_SEND = Pattern.compile("(?iu)(^|\\s)(post|send|отправ\\S*|опубликов\\S*)(\\s|$)");
     private static final Pattern P_PHOTO = Pattern.compile("^\\s*(\\d{1,2})\\s*/\\s*(\\d{1,2})\\s*$");
 
     private interface Act { long run(); }
@@ -73,7 +92,7 @@ public class WarmupService extends AccessibilityService {
 
     private boolean running;
     private Config cfg = new Config();
-    private int done, likes, favorites, reposts, photos, untilLike, untilBreak;
+    private int done, likes, favorites, reposts, photos, comments, skipped, untilLike, untilBreak;
     private int photoLeft;
     private boolean photoWentBack;
     private long startedAt;
@@ -119,6 +138,8 @@ public class WarmupService extends AccessibilityService {
     int favorites() { return favorites; }
     int reposts() { return reposts; }
     int photos() { return photos; }
+    int comments() { return comments; }
+    int skipped() { return skipped; }
     int videos() { return cfg.videos; }
     long elapsedMs() { return running ? SystemClock.elapsedRealtime() - startedAt : 0; }
 
@@ -127,7 +148,7 @@ public class WarmupService extends AccessibilityService {
     void start(Config c) {
         stop();
         cfg = c;
-        done = likes = favorites = reposts = photos = 0;
+        done = likes = favorites = reposts = photos = comments = skipped = 0;
         untilLike = rand(c.likeMin, c.likeMax);
         untilBreak = rand(30, 50);
         startedAt = SystemClock.elapsedRealtime();
@@ -164,6 +185,14 @@ public class WarmupService extends AccessibilityService {
             Win w = tiktok();
             if (pauseIfHidden(w, this)) return;
             state = RUNNING;
+            // прямой эфир или реклама — быстро пролистываем, без лайков и действий
+            if ((cfg.skipLive && findInPost(w, P_LIVE) != null) || (cfg.skipAds && findInPost(w, P_AD) != null)) {
+                skipped++;
+                state = SKIP;
+                updateOverlay();
+                handler.postDelayed(next, rand(900, 2500));
+                return;
+            }
             int[] ph = cfg.photos ? photoCounter(w) : null;
             if (ph != null && ph[1] > 1 && ph[0] < ph[1]) {
                 photos++;
@@ -221,6 +250,7 @@ public class WarmupService extends AccessibilityService {
             }
             if (roll(cfg.favChance)) acts.add(WarmupService.this::actFavorite);
             if (roll(cfg.repostChance)) acts.add(WarmupService.this::actRepost);
+            if (roll(cfg.commentChance) && cfg.emoji.length > 0) acts.add(WarmupService.this::actComment);
             updateOverlay();
             runChain(new ArrayDeque<>(acts), () -> {
                 if (cfg.videos > 0 && done >= cfg.videos) stop();
@@ -304,6 +334,138 @@ public class WarmupService extends AccessibilityService {
             }
         }, rand(1400, 2200));
         return 5000;
+    }
+
+    /**
+     * Комментарий из 1–3 случайных эмодзи: открыть комментарии → поле ввода → текст → отправить → закрыть.
+     * Если на каком-то шаге кнопка не нашлась — аккуратно закрывает панель и идёт дальше.
+     */
+    private long actComment() {
+        Win w = tiktok();
+        if (w == null) return 0;
+        AccessibilityNodeInfo btn = find(w, P_COMMENT, P_NOT_COMMENT);
+        if (btn == null) return 0;
+        state = COMMENT;
+        updateOverlay();
+        click(btn);
+        handler.postDelayed(() -> {
+            if (!running) return;
+            AccessibilityNodeInfo input = findInput();
+            if (input == null) { closeComments(0); return; }
+            click(input);
+            handler.postDelayed(() -> {
+                if (!running) return;
+                AccessibilityNodeInfo field = findInput();
+                if (field == null) { closeComments(0); return; }
+                Bundle args = new Bundle();
+                args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, randomEmoji());
+                if (!field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
+                    closeComments(0);
+                    return;
+                }
+                handler.postDelayed(() -> {
+                    if (!running) return;
+                    AccessibilityNodeInfo f = findInput();
+                    AccessibilityNodeInfo send = f == null ? null : findSendNear(f);
+                    if (send != null) {
+                        click(send);
+                        comments++;
+                        bumpOverlay();
+                    }
+                    handler.postDelayed(() -> closeComments(0), rand(1200, 1800));
+                }, rand(1000, 2000));
+            }, rand(900, 1400));
+        }, rand(1500, 2300));
+        return 11000;
+    }
+
+    private CharSequence randomEmoji() {
+        int n = rand(1, 3);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < n; i++) sb.append(cfg.emoji[rnd.nextInt(cfg.emoji.length)]);
+        return sb;
+    }
+
+    /** Закрывает клавиатуру и панель комментариев кнопкой «Назад» (не больше 3 раз). */
+    private void closeComments(int attempt) {
+        if (!running) return;
+        boolean open = findInput(false) != null || findAnyTikTokWindow(P_SHEET) != null;
+        if (attempt >= 3 || !open) {
+            state = RUNNING;
+            updateOverlay();
+            return;
+        }
+        performGlobalAction(GLOBAL_ACTION_BACK);
+        handler.postDelayed(() -> closeComments(attempt + 1), 800);
+    }
+
+    /** Поле ввода комментария в любом окне TikTok. */
+    private AccessibilityNodeInfo findInput() {
+        return findInput(true);
+    }
+
+    /** allowHint=false — только настоящее поле ввода (без надписи «Добавить комментарий» в ленте). */
+    private AccessibilityNodeInfo findInput(boolean allowHint) {
+        try {
+            for (AccessibilityWindowInfo w : getWindows()) {
+                AccessibilityNodeInfo root = w.getRoot();
+                if (root == null || root.getPackageName() == null || !isTikTok(root.getPackageName().toString())) continue;
+                AccessibilityNodeInfo n = findEditable(root, allowHint);
+                if (n != null) return n;
+            }
+        } catch (RuntimeException ignored) { }
+        return null;
+    }
+
+    private AccessibilityNodeInfo findEditable(AccessibilityNodeInfo root, boolean allowHint) {
+        ArrayDeque<AccessibilityNodeInfo> q = new ArrayDeque<>();
+        q.add(root);
+        int seen = 0;
+        AccessibilityNodeInfo byHint = null;
+        while (!q.isEmpty() && seen++ < 4000) {
+            AccessibilityNodeInfo n = q.poll();
+            if (n == null) continue;
+            if (n.isVisibleToUser()) {
+                CharSequence cls = n.getClassName();
+                if (n.isEditable() || (cls != null && cls.toString().contains("EditText"))) return n;
+                if (allowHint && byHint == null && P_INPUT_HINT.matcher(label(n)).find()) byHint = n;
+            }
+            for (int i = 0; i < n.getChildCount(); i++) q.add(n.getChild(i));
+        }
+        return byHint;
+    }
+
+    /** Кнопка «Отправить» рядом с полем ввода (по вертикали). */
+    private AccessibilityNodeInfo findSendNear(AccessibilityNodeInfo input) {
+        Rect in = new Rect();
+        input.getBoundsInScreen(in);
+        int near = dp(120);
+        try {
+            for (AccessibilityWindowInfo w : getWindows()) {
+                AccessibilityNodeInfo root = w.getRoot();
+                if (root == null || root.getPackageName() == null || !isTikTok(root.getPackageName().toString())) continue;
+                ArrayDeque<AccessibilityNodeInfo> q = new ArrayDeque<>();
+                q.add(root);
+                Rect b = new Rect();
+                int seen = 0;
+                while (!q.isEmpty() && seen++ < 4000) {
+                    AccessibilityNodeInfo n = q.poll();
+                    if (n == null) continue;
+                    if (n.isVisibleToUser() && P_SEND.matcher(label(n)).find()) {
+                        n.getBoundsInScreen(b);
+                        if (Math.abs(b.centerY() - in.centerY()) < near) return n;
+                    }
+                    for (int i = 0; i < n.getChildCount(); i++) q.add(n.getChild(i));
+                }
+            }
+        } catch (RuntimeException ignored) { }
+        return null;
+    }
+
+    /** Элемент в области самого поста (без верхних вкладок «LIVE / Подписки / Для вас»). */
+    private AccessibilityNodeInfo findInPost(Win w, Pattern p) {
+        Rect post = new Rect(w.r.left, w.r.top + w.r.height() * 18 / 100, w.r.right, w.r.bottom - w.r.height() * 4 / 100);
+        return findIn(w.root, post, p, null);
     }
 
     // ---------- поиск окна и кнопок TikTok ----------
@@ -524,6 +686,8 @@ public class WarmupService extends AccessibilityService {
             case PAUSED: icon = "⏸ откройте TikTok"; break;
             case BREAK:  icon = "☕ перерыв"; break;
             case PHOTOS: icon = "🖼 листаю фото"; break;
+            case SKIP:   icon = "⏭ пропускаю эфир/рекламу"; break;
+            case COMMENT: icon = "💬 комментирую"; break;
             default:     icon = "● прогрев";
         }
         StringBuilder sb = new StringBuilder(icon)
@@ -531,6 +695,8 @@ public class WarmupService extends AccessibilityService {
                 .append("   ❤ ").append(likes);
         if (favorites > 0) sb.append("   ★ ").append(favorites);
         if (reposts > 0) sb.append("   ↻ ").append(reposts);
+        if (comments > 0) sb.append("   💬 ").append(comments);
+        if (skipped > 0) sb.append("   ⏭ ").append(skipped);
         sb.append("   ■");
         overlay.setText(sb);
     }

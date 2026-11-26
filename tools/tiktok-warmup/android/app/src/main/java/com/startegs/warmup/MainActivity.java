@@ -2,6 +2,8 @@ package com.startegs.warmup;
 
 import android.animation.ArgbEvaluator;
 import android.animation.LayoutTransition;
+import android.animation.ObjectAnimator;
+import android.animation.PropertyValuesHolder;
 import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.content.Intent;
@@ -17,12 +19,16 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
+import android.text.Editable;
+import android.text.InputType;
+import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.animation.DecelerateInterpolator;
 import android.view.animation.LinearInterpolator;
 import android.view.animation.OvershootInterpolator;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -43,12 +49,13 @@ public class MainActivity extends Activity {
     private boolean reduceMotion;
 
     private FrameLayout frame;
-    private TextView heroStatus, chipVideos, chipLikes, chipFav, chipRepost, chipPhotos, chipTime;
+    private TextView heroStatus, chipVideos, chipLikes, chipFav, chipRepost, chipPhotos, chipTime, chipComments, chipSkipped;
     private ShimmerButton mainButton;
     private LinearLayout connectBox, connectedBox;
     private TextView parallelHow;
-    private boolean photosOn;
-    private int[] last = {-1, -1, -1, -1, -1};
+    private boolean photosOn, skipLiveOn, skipAdsOn;
+    private String emojiText;
+    private int[] last = {-1, -1, -1, -1, -1, -1, -1};
     private String lastUiState = "";
 
     // ---------- настройка «− значение +» ----------
@@ -87,7 +94,7 @@ public class MainActivity extends Activity {
         }
     }
 
-    private Stepper sVideos, sLikeMin, sLikeMax, sWatchMin, sWatchMax, sSkip, sLong, sFav, sRepost;
+    private Stepper sVideos, sLikeMin, sLikeMax, sWatchMin, sWatchMax, sSkip, sLong, sFav, sRepost, sComment;
 
     // =====================================================================
 
@@ -98,6 +105,9 @@ public class MainActivity extends Activity {
         th = Theme.get(this);
         reduceMotion = Settings.Global.getFloat(getContentResolver(), Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f;
         photosOn = prefs.getBoolean("photos", true);
+        skipLiveOn = prefs.getBoolean("skipLive", true);
+        skipAdsOn = prefs.getBoolean("skipAds", true);
+        emojiText = prefs.getString("emoji", WarmupService.DEFAULT_EMOJI);
 
         getWindow().setStatusBarColor(th.bg);
         getWindow().setNavigationBarColor(th.bg);
@@ -131,6 +141,8 @@ public class MainActivity extends Activity {
         col.addView(buildConnectCard());
         col.addView(buildLikesCard());
         col.addView(buildActionsCard());
+        col.addView(buildSkipCard());
+        col.addView(buildCommentsCard());
         col.addView(buildWatchCard());
         col.addView(buildParallelCard());
         col.addView(buildFooter());
@@ -197,11 +209,14 @@ public class MainActivity extends Activity {
             setChip(2, chipFav, s.favorites(), "★ ", "");
             setChip(3, chipRepost, s.reposts(), "↻ ", "");
             setChip(4, chipPhotos, s.photos(), "🖼 ", "");
+            setChip(5, chipComments, s.comments(), "💬 ", "");
+            setChip(6, chipSkipped, s.skipped(), "⏭ ", "");
             long sec = s.elapsedMs() / 1000;
             chipTime.setText(String.format(Locale.US, "⏱ %d:%02d", sec / 60, sec % 60));
         }
 
         String uiState = running ? "run" : (enabled ? "ready" : "off");
+        boolean first = lastUiState.isEmpty();
         if (!uiState.equals(lastUiState)) {
             lastUiState = uiState;
             if (running) {
@@ -213,7 +228,7 @@ public class MainActivity extends Activity {
                 mainButton.setColors(th.a1, th.a2);
                 mainButton.setShimmer(true);
             }
-            pop(mainButton);
+            if (!first) pop(mainButton);
         }
     }
 
@@ -334,8 +349,15 @@ public class MainActivity extends Activity {
         chipPhotos = chip("🖼 0");
         r2.addView(chipFav);
         r2.addView(chipRepost);
-        r2.addView(chipPhotos);
+        chipComments = chip("💬 0");
+        r2.addView(chipComments);
         hero.addView(r2);
+        LinearLayout r3 = new LinearLayout(this);
+        r3.setPadding(0, dp(8), 0, 0);
+        chipSkipped = chip("⏭ 0");
+        r3.addView(chipPhotos);
+        r3.addView(chipSkipped);
+        hero.addView(r3);
 
         entrance.add(hero);
         return withMargin(hero, dp(14));
@@ -494,6 +516,67 @@ public class MainActivity extends Activity {
         return c;
     }
 
+    private View buildSkipCard() {
+        LinearLayout c = card();
+        c.addView(cardTitle("⏭", "Пропускать"));
+        c.addView(toggleRow("📡 Прямые эфиры (LIVE)", "Эфир в ленте сразу пролистывается, внутрь не заходит",
+                skipLiveOn, on -> {
+                    skipLiveOn = on;
+                    prefs.edit().putBoolean("skipLive", on).apply();
+                }));
+        c.addView(toggleRow("📢 Рекламу", "Посты с пометкой «Реклама» / «Sponsored» — пролист за 1–2 с, без лайков",
+                skipAdsOn, on -> {
+                    skipAdsOn = on;
+                    prefs.edit().putBoolean("skipAds", on).apply();
+                }));
+        return c;
+    }
+
+    private View buildCommentsCard() {
+        LinearLayout c = card();
+        c.addView(cardTitle("💬", "Эмодзи в комментариях"));
+        sComment = stepper(c, "Комментировать", "commentChance", 2, 0, 30, 1, "%", false);
+
+        TextView l = text("Набор эмодзи (через пробел)", 13, th.hint, false);
+        l.setPadding(0, dp(6), 0, dp(6));
+        c.addView(l);
+        EditText e = new EditText(this);
+        e.setText(emojiText);
+        e.setTextSize(20);
+        e.setTextColor(th.text);
+        e.setHintTextColor(th.hint);
+        e.setHint("🔥 😂 ❤️");
+        e.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        e.setPadding(dp(14), dp(10), dp(14), dp(10));
+        final GradientDrawable eb = new GradientDrawable();
+        eb.setColor(th.soft);
+        eb.setCornerRadius(dp(14));
+        eb.setStroke(dp(1), th.line);
+        e.setBackground(eb);
+        e.setOnFocusChangeListener((v, has) -> eb.setStroke(dp(has ? 2 : 1), has ? th.a1 : th.line));
+        e.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int d) { }
+            @Override public void onTextChanged(CharSequence s, int a, int b, int d) { }
+            @Override public void afterTextChanged(Editable s) {
+                emojiText = s.toString();
+                prefs.edit().putString("emoji", emojiText).apply();
+            }
+        });
+        c.addView(e, new LinearLayout.LayoutParams(-1, -2));
+
+        TextView reset = smallButton("Вернуть набор по умолчанию");
+        reset.setOnClickListener(v -> {
+            e.setText(WarmupService.DEFAULT_EMOJI);
+            pop(e);
+        });
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+        lp.topMargin = dp(10);
+        c.addView(reset, lp);
+        c.addView(note("Пишет 1–3 случайных эмодзи из набора и закрывает комментарии. "
+                + "Комментарии видят все — держите процент маленьким."));
+        return c;
+    }
+
     private View buildWatchCard() {
         LinearLayout c = card();
         c.addView(cardTitle("⏱", "Время просмотра"));
@@ -564,6 +647,11 @@ public class MainActivity extends Activity {
         c.favChance = sFav.value;
         c.repostChance = sRepost.value;
         c.photos = photosOn;
+        c.skipLive = skipLiveOn;
+        c.skipAds = skipAdsOn;
+        c.commentChance = sComment.value;
+        String[] em = emojiText.trim().split("\\s+");
+        c.emoji = em.length == 1 && em[0].isEmpty() ? new String[0] : em;
 
         Intent launch = null;
         for (String pkg : WarmupService.TIKTOK) {
@@ -574,7 +662,7 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "TikTok не установлен", Toast.LENGTH_LONG).show();
             return;
         }
-        last = new int[]{-1, -1, -1, -1, -1};
+        last = new int[]{-1, -1, -1, -1, -1, -1, -1};
         WarmupService.instance.start(c);
         refresh();
         startActivity(launch);
@@ -774,6 +862,17 @@ public class MainActivity extends Activity {
                     .setStartDelay(70L * i).setDuration(520)
                     .setInterpolator(new DecelerateInterpolator(2.2f)).start();
         }
+        // страховка: что бы ни случилось с анимацией — через секунду всё видно и на месте
+        ui.postDelayed(() -> {
+            for (View v : entrance) {
+                if (v.getAlpha() < 1f || v.getTranslationY() != 0f) {
+                    v.setAlpha(1f);
+                    v.setTranslationY(0f);
+                    v.setScaleX(1f);
+                    v.setScaleY(1f);
+                }
+            }
+        }, 70L * entrance.size() + 1000);
     }
 
     /** Сердце в шапке «бьётся»: два коротких удара и пауза. */
@@ -808,13 +907,18 @@ public class MainActivity extends Activity {
         return d >= 1f ? 0f : (float) (0.5 + 0.5 * Math.cos(Math.PI * d));
     }
 
+    /**
+     * «Подпрыгивание» — меняет только масштаб отдельным аниматором и не отменяет
+     * другие анимации (раньше отменяло появление кнопки, и она оставалась невидимой).
+     */
     private void pop(View v) {
-        if (reduceMotion || v == null) return;
-        v.animate().cancel();
-        v.setScaleX(1.14f);
-        v.setScaleY(1.14f);
-        v.animate().scaleX(1f).scaleY(1f).setDuration(380).setStartDelay(0)
-                .setInterpolator(new OvershootInterpolator(3f)).start();
+        if (reduceMotion || v == null || v.getAlpha() < 0.99f) return;
+        ObjectAnimator a = ObjectAnimator.ofPropertyValuesHolder(v,
+                PropertyValuesHolder.ofFloat(View.SCALE_X, 1.14f, 1f),
+                PropertyValuesHolder.ofFloat(View.SCALE_Y, 1.14f, 1f));
+        a.setDuration(380);
+        a.setInterpolator(new OvershootInterpolator(3f));
+        a.start();
     }
 
     private void shake(View v) {
