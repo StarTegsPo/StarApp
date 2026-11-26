@@ -12,35 +12,33 @@ import android.view.View;
 import java.util.Random;
 
 /**
- * Живой фон в стиле StarApp: медленно плавающие светящиеся пятна (фиолет / голубой / розовый)
- * и мерцающие светлячки. Если в системе отключены анимации — рисуется статично.
+ * Живой фон: медленно плавающие светящиеся пятна в цветах темы
+ * и поднимающиеся мерцающие искры. Если анимации в системе выключены — статичный.
  */
 public class FxView extends View {
 
-    static final int BG = 0xFF0F1017;
-    static final int A1 = 0xFF7B5CFF, A2 = 0xFF33A6FF, A3 = 0xFFFF5CA8;
-
-    private static final int N = 26;
+    private static final int N = 30;
     private final float[] fx = new float[N], fy = new float[N], vx = new float[N], vy = new float[N],
             ph = new float[N], size = new float[N];
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final long t0 = SystemClock.uptimeMillis();
     private final boolean animate;
     private final float density;
+    private final Theme th;
 
-    public FxView(Context c) {
+    public FxView(Context c, Theme th) {
         super(c);
+        this.th = th;
         density = c.getResources().getDisplayMetrics().density;
-        float scale = Settings.Global.getFloat(c.getContentResolver(), Settings.Global.ANIMATOR_DURATION_SCALE, 1f);
-        animate = scale != 0f;
+        animate = Settings.Global.getFloat(c.getContentResolver(), Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f;
         Random r = new Random();
         for (int i = 0; i < N; i++) {
             fx[i] = r.nextFloat();
             fy[i] = r.nextFloat();
-            vx[i] = (r.nextFloat() - 0.5f) * 0.012f;
-            vy[i] = -0.006f - r.nextFloat() * 0.014f;   // светлячки медленно всплывают
+            vx[i] = (r.nextFloat() - 0.5f) * 0.010f;
+            vy[i] = -0.008f - r.nextFloat() * 0.018f;   // искры поднимаются вверх
             ph[i] = r.nextFloat() * 6.28f;
-            size[i] = 1.2f + r.nextFloat() * 1.8f;
+            size[i] = 1.0f + r.nextFloat() * 1.8f;
         }
     }
 
@@ -48,25 +46,27 @@ public class FxView extends View {
     protected void onDraw(Canvas c) {
         float t = animate ? (SystemClock.uptimeMillis() - t0) / 1000f : 0f;
         int w = getWidth(), h = getHeight();
-        c.drawColor(BG);
+        c.drawColor(th.bg);
+        int k = th.light ? 2 : 3; // в светлой теме пятна мягче
 
-        blob(c, w * (0.18f + 0.10f * (float) Math.sin(t * 0.21)), h * (0.12f + 0.05f * (float) Math.cos(t * 0.17)),
-                w * 0.75f, A1, 0x66);
-        blob(c, w * (0.88f + 0.08f * (float) Math.cos(t * 0.15)), h * (0.42f + 0.07f * (float) Math.sin(t * 0.19)),
-                w * 0.62f, A2, 0x48);
-        blob(c, w * (0.25f + 0.12f * (float) Math.sin(t * 0.13 + 1)), h * (0.86f + 0.05f * (float) Math.sin(t * 0.23)),
-                w * 0.70f, A3, 0x3C);
+        blob(c, w * (0.15f + 0.10f * (float) Math.sin(t * 0.21)), h * (0.10f + 0.05f * (float) Math.cos(t * 0.17)),
+                w * 0.80f, th.a1, 0x22 * k);
+        blob(c, w * (0.90f + 0.08f * (float) Math.cos(t * 0.15)), h * (0.45f + 0.07f * (float) Math.sin(t * 0.19)),
+                w * 0.65f, th.a3, 0x1C * k);
+        blob(c, w * (0.25f + 0.12f * (float) Math.sin(t * 0.13 + 1)), h * (0.88f + 0.05f * (float) Math.sin(t * 0.23)),
+                w * 0.72f, th.a2, 0x14 * k);
 
         paint.setShader(null);
         for (int i = 0; i < N; i++) {
-            float x = wrap(fx[i] + vx[i] * t + 0.02f * (float) Math.sin(t * 0.7 + ph[i])) * w;
+            float x = wrap(fx[i] + vx[i] * t + 0.02f * (float) Math.sin(t * 0.8 + ph[i])) * w;
             float y = wrap(fy[i] + vy[i] * t) * h;
-            float a = 0.25f + 0.75f * (0.5f + 0.5f * (float) Math.sin(t * 1.6 + ph[i]));
+            float flick = 0.5f + 0.5f * (float) Math.sin(t * 2.2 + ph[i]);
+            float a = 0.2f + 0.8f * flick * flick;
             float rad = size[i] * density;
-            int tint = i % 3 == 0 ? 0xFFFFD7F0 : (i % 3 == 1 ? 0xFFD9D1FF : 0xFFCFEFFF);
-            paint.setColor(withAlpha(tint, (int) (a * 50)));
-            c.drawCircle(x, y, rad * 3.2f, paint);
-            paint.setColor(withAlpha(tint, (int) (a * 230)));
+            int col = i % 4 == 0 ? th.a2 : th.spark;
+            paint.setColor(Theme.alpha(col, (int) (a * (th.light ? 40 : 60))));
+            c.drawCircle(x, y, rad * 3.4f, paint);
+            paint.setColor(Theme.alpha(col, (int) (a * (th.light ? 170 : 235))));
             c.drawCircle(x, y, rad, paint);
         }
 
@@ -74,16 +74,12 @@ public class FxView extends View {
     }
 
     private void blob(Canvas c, float cx, float cy, float r, int color, int alpha) {
-        paint.setShader(new RadialGradient(cx, cy, r, withAlpha(color, alpha), withAlpha(color, 0), Shader.TileMode.CLAMP));
+        paint.setShader(new RadialGradient(cx, cy, r, Theme.alpha(color, alpha), Theme.alpha(color, 0), Shader.TileMode.CLAMP));
         c.drawCircle(cx, cy, r, paint);
     }
 
     private static float wrap(float v) {
         v = v % 1f;
         return v < 0 ? v + 1f : v;
-    }
-
-    static int withAlpha(int color, int alpha) {
-        return (Math.max(0, Math.min(255, alpha)) << 24) | (color & 0x00FFFFFF);
     }
 }

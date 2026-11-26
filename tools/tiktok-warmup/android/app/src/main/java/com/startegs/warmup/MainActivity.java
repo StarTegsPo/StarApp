@@ -12,6 +12,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -19,7 +20,6 @@ import android.provider.Settings;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
-import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
 import android.view.animation.LinearInterpolator;
 import android.view.animation.OvershootInterpolator;
@@ -35,39 +35,29 @@ import java.util.Locale;
 
 public class MainActivity extends Activity {
 
-    // ---------- палитра (как в StarApp: «Фиолет») ----------
-    private static final int BG = FxView.BG;
-    private static final int CARD = 0xB31B1D26;
-    private static final int LINE = 0x1FFFFFFF;
-    private static final int TEXT = 0xFFF3F4F8;
-    private static final int HINT = 0xFF8D93A6;
-    private static final int A1 = FxView.A1, A2 = FxView.A2, A3 = FxView.A3;
-    private static final int GOOD = 0xFF34D399;
-    private static final int BAD = 0xFFFF6B6B;
-
+    private Theme th;
     private SharedPreferences prefs;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final List<View> entrance = new ArrayList<>();
-    private final List<Stepper> steppers = new ArrayList<>();
+    private final List<ValueAnimator> loops = new ArrayList<>();
     private boolean reduceMotion;
 
-    // элементы, которые обновляются
-    private TextView heroStatus, chipVideos, chipLikes, chipTime;
-    private TextView mainButton;
-    private GradientDrawable mainButtonBg;
-    private LinearLayout accessCard;
-    private TextView accessDot, accessText, accessButton;
+    private FrameLayout frame;
+    private TextView heroStatus, chipVideos, chipLikes, chipFav, chipRepost, chipPhotos, chipTime;
+    private ShimmerButton mainButton;
+    private LinearLayout connectBox, connectedBox;
     private TextView parallelHow;
-    private int lastDone = -1, lastLikes = -1;
+    private boolean photosOn;
+    private int[] last = {-1, -1, -1, -1, -1};
     private String lastUiState = "";
 
-    // ---------- шаги настроек ----------
+    // ---------- настройка «− значение +» ----------
     private class Stepper {
         final String key;
         final int min, max, step;
-        int value;
         final boolean infiniteZero;
         final String unit;
+        int value;
         TextView valueView;
 
         Stepper(String key, int def, int min, int max, int step, String unit, boolean infiniteZero) {
@@ -81,8 +71,7 @@ public class MainActivity extends Activity {
         }
 
         String text() {
-            if (infiniteZero && value == 0) return "∞";
-            return value + unit;
+            return infiniteZero && value == 0 ? "∞" : value + unit;
         }
 
         void change(int dir) {
@@ -98,7 +87,7 @@ public class MainActivity extends Activity {
         }
     }
 
-    private Stepper sVideos, sLikeMin, sLikeMax, sWatchMin, sWatchMax, sSkip, sLong;
+    private Stepper sVideos, sLikeMin, sLikeMax, sWatchMin, sWatchMax, sSkip, sLong, sFav, sRepost;
 
     // =====================================================================
 
@@ -106,21 +95,29 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle saved) {
         super.onCreate(saved);
         prefs = getSharedPreferences("cfg", MODE_PRIVATE);
+        th = Theme.get(this);
         reduceMotion = Settings.Global.getFloat(getContentResolver(), Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f;
+        photosOn = prefs.getBoolean("photos", true);
 
-        getWindow().setStatusBarColor(BG);
-        getWindow().setNavigationBarColor(BG);
+        getWindow().setStatusBarColor(th.bg);
+        getWindow().setNavigationBarColor(th.bg);
+        int flags = 0;
+        if (th.light) {
+            flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            if (Build.VERSION.SDK_INT >= 26) flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        }
+        getWindow().getDecorView().setSystemUiVisibility(flags);
 
-        FrameLayout frame = new FrameLayout(this);
-        frame.setBackgroundColor(BG);
-        frame.addView(new FxView(this), new FrameLayout.LayoutParams(-1, -1));
+        frame = new FrameLayout(this);
+        frame.setBackgroundColor(th.bg);
+        frame.addView(new FxView(this, th), new FrameLayout.LayoutParams(-1, -1));
 
         ScrollView scroll = new ScrollView(this);
         scroll.setVerticalScrollBarEnabled(false);
         scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
-        col.setPadding(dp(16), dp(20), dp(16), dp(32));
+        col.setPadding(dp(16), dp(14), dp(16), dp(32));
         LayoutTransition lt = new LayoutTransition();
         lt.enableTransitionType(LayoutTransition.CHANGING);
         col.setLayoutTransition(lt);
@@ -128,10 +125,12 @@ public class MainActivity extends Activity {
         frame.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
         setContentView(frame);
 
+        col.addView(buildThemeSwitch());
         col.addView(buildHero());
         col.addView(buildMainButton());
-        col.addView(buildAccessCard());
+        col.addView(buildConnectCard());
         col.addView(buildLikesCard());
+        col.addView(buildActionsCard());
         col.addView(buildWatchCard());
         col.addView(buildParallelCard());
         col.addView(buildFooter());
@@ -151,6 +150,12 @@ public class MainActivity extends Activity {
         ui.removeCallbacks(tick);
     }
 
+    @Override
+    protected void onDestroy() {
+        for (ValueAnimator a : loops) a.cancel();
+        super.onDestroy();
+    }
+
     // ---------- живое обновление ----------
 
     private final Runnable tick = new Runnable() {
@@ -167,14 +172,14 @@ public class MainActivity extends Activity {
         boolean running = WarmupService.isRunning();
         String st = s == null ? "off" : s.state();
 
-        // доступ
-        accessCard.setVisibility(enabled ? View.GONE : View.VISIBLE);
+        connectBox.setVisibility(enabled ? View.GONE : View.VISIBLE);
+        connectedBox.setVisibility(enabled ? View.VISIBLE : View.GONE);
 
-        // статус в шапке
         String status;
         switch (st) {
-            case "off": status = "Нужен доступ к спецвозможностям"; break;
+            case "off": status = "Нужно подключить доступ"; break;
             case WarmupService.RUNNING: status = "Идёт прогрев"; break;
+            case WarmupService.PHOTOS: status = "Листаю фото-пост"; break;
             case WarmupService.PAUSED: status = "Пауза — TikTok не на экране"; break;
             case WarmupService.BREAK: status = "Перерыв, как у живого человека"; break;
             default: status = "Готов к запуску";
@@ -185,37 +190,89 @@ public class MainActivity extends Activity {
             heroStatus.animate().alpha(1f).setDuration(250).start();
         }
 
-        // счётчики
-        int done = running ? s.done() : (lastDone < 0 ? 0 : lastDone);
-        int likes = running ? s.likes() : (lastLikes < 0 ? 0 : lastLikes);
-        if (done != lastDone) {
-            int total = running ? s.videos() : sVideos.value;
-            chipVideos.setText("🎬 " + done + (total > 0 ? " / " + total : ""));
-            if (lastDone >= 0) pop(chipVideos);
-            lastDone = done;
+        if (running) {
+            int total = s.videos();
+            setChip(0, chipVideos, s.done(), "🎬 ", total > 0 ? " / " + total : "");
+            setChip(1, chipLikes, s.likes(), "❤ ", "");
+            setChip(2, chipFav, s.favorites(), "★ ", "");
+            setChip(3, chipRepost, s.reposts(), "↻ ", "");
+            setChip(4, chipPhotos, s.photos(), "🖼 ", "");
+            long sec = s.elapsedMs() / 1000;
+            chipTime.setText(String.format(Locale.US, "⏱ %d:%02d", sec / 60, sec % 60));
         }
-        if (likes != lastLikes) {
-            chipLikes.setText("❤ " + likes);
-            if (lastLikes >= 0) pop(chipLikes);
-            lastLikes = likes;
-        }
-        long sec = running ? s.elapsedMs() / 1000 : 0;
-        if (running) chipTime.setText(String.format(Locale.US, "⏱ %d:%02d", sec / 60, sec % 60));
 
-        // главная кнопка
         String uiState = running ? "run" : (enabled ? "ready" : "off");
         if (!uiState.equals(lastUiState)) {
             lastUiState = uiState;
             if (running) {
                 mainButton.setText("■  Остановить");
-                animateColors(mainButtonBg, new int[]{A3, 0xFFFF8A5C});
+                mainButton.setColors(th.a3, th.a1);
+                mainButton.setShimmer(false);
             } else {
                 mainButton.setText("▶  Начать прогрев");
-                animateColors(mainButtonBg, new int[]{A1, A2});
-                if (!enabled) chipTime.setText("⏱ 0:00");
+                mainButton.setColors(th.a1, th.a2);
+                mainButton.setShimmer(true);
             }
             pop(mainButton);
         }
+    }
+
+    private void setChip(int i, TextView chip, int v, String prefix, String suffix) {
+        if (last[i] == v) return;
+        chip.setText(prefix + v + suffix);
+        if (last[i] >= 0) pop(chip);
+        last[i] = v;
+    }
+
+    // ---------- переключатель темы ----------
+
+    private View buildThemeSwitch() {
+        final FrameLayout box = new FrameLayout(this);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(th.card);
+        bg.setCornerRadius(dp(99));
+        bg.setStroke(dp(1), th.line);
+        box.setBackground(bg);
+        box.setPadding(dp(4), dp(4), dp(4), dp(4));
+
+        final View indicator = new View(this);
+        GradientDrawable ind = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{th.a1, th.a2});
+        ind.setCornerRadius(dp(99));
+        indicator.setBackground(ind);
+        indicator.setElevation(dp(3));
+        box.addView(indicator, new FrameLayout.LayoutParams(0, dp(36)));
+
+        final LinearLayout row = new LinearLayout(this);
+        box.addView(row, new FrameLayout.LayoutParams(-1, dp(36)));
+        int current = 0;
+        for (int i = 0; i < Theme.IDS.length; i++) if (Theme.IDS[i].equals(th.id)) current = i;
+        final int cur = current;
+        for (int i = 0; i < Theme.IDS.length; i++) {
+            final int idx = i;
+            TextView t = text(Theme.TITLES[i], 13, i == cur ? Color.WHITE : th.text, true);
+            t.setGravity(Gravity.CENTER);
+            t.setElevation(dp(4));
+            t.setOnClickListener(v -> {
+                if (idx == cur) return;
+                indicator.animate().translationX(row.getWidth() / 3f * idx).setDuration(260)
+                        .setInterpolator(new DecelerateInterpolator(2f)).start();
+                Theme.save(this, Theme.IDS[idx]);
+                frame.animate().alpha(0f).setStartDelay(160).setDuration(220).withEndAction(() -> {
+                    recreate();
+                    overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
+                }).start();
+            });
+            row.addView(t, new LinearLayout.LayoutParams(0, -1, 1f));
+        }
+        // индикатор под выбранной темой (ширина известна после разметки)
+        row.post(() -> {
+            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) indicator.getLayoutParams();
+            lp.width = row.getWidth() / 3;
+            indicator.setLayoutParams(lp);
+            indicator.setTranslationX(row.getWidth() / 3f * cur);
+        });
+        entrance.add(box);
+        return withMargin(box, dp(14));
     }
 
     // ---------- шапка ----------
@@ -224,35 +281,30 @@ public class MainActivity extends Activity {
         LinearLayout hero = new LinearLayout(this);
         hero.setOrientation(LinearLayout.VERTICAL);
         hero.setPadding(dp(20), dp(20), dp(20), dp(18));
-        final GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[]{A1, A2});
+        final GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[]{th.a1, th.a3});
         bg.setCornerRadius(dp(26));
         hero.setBackground(bg);
         hero.setElevation(dp(10));
+        glow(hero, th.a1);
         if (!reduceMotion) {
-            // градиент медленно «переливается» фиолет → розовый → голубой
-            ValueAnimator va = ValueAnimator.ofFloat(0f, 1f);
-            va.setDuration(7000);
-            va.setRepeatMode(ValueAnimator.REVERSE);
-            va.setRepeatCount(ValueAnimator.INFINITE);
-            va.setInterpolator(new LinearInterpolator());
+            // градиент медленно «переливается»
             final ArgbEvaluator ev = new ArgbEvaluator();
+            ValueAnimator va = loop(7000, true);
             va.addUpdateListener(a -> {
                 float f = (float) a.getAnimatedValue();
-                bg.setColors(new int[]{(int) ev.evaluate(f, A1, A3), (int) ev.evaluate(f, A2, A1)});
+                bg.setColors(new int[]{(int) ev.evaluate(f, th.a1, th.a2), (int) ev.evaluate(f, th.a3, th.a1)});
             });
             va.start();
         }
 
         LinearLayout top = new LinearLayout(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
-        TextView heart = new TextView(this);
-        heart.setText("❤");
-        heart.setTextSize(30);
-        heart.setTextColor(Color.WHITE);
+        TextView heart = text("❤", 30, Color.WHITE, false);
         heart.setGravity(Gravity.CENTER);
         GradientDrawable hb = new GradientDrawable();
         hb.setShape(GradientDrawable.OVAL);
         hb.setColor(0x33FFFFFF);
+        hb.setStroke(dp(1), 0x40FFFFFF);
         heart.setBackground(hb);
         top.addView(heart, new LinearLayout.LayoutParams(dp(58), dp(58)));
         heartbeat(heart);
@@ -260,25 +312,33 @@ public class MainActivity extends Activity {
         LinearLayout titles = new LinearLayout(this);
         titles.setOrientation(LinearLayout.VERTICAL);
         titles.setPadding(dp(14), 0, 0, 0);
-        TextView title = text("Прогрев TikTok", 24, Color.WHITE, true);
-        titles.addView(title);
+        titles.addView(text("Прогрев TikTok", 24, Color.WHITE, true));
         heroStatus = text("Готов к запуску", 14, 0xE6FFFFFF, false);
         titles.addView(heroStatus);
         top.addView(titles);
         hero.addView(top);
 
-        LinearLayout chips = new LinearLayout(this);
-        chips.setPadding(0, dp(16), 0, 0);
+        LinearLayout r1 = new LinearLayout(this);
+        r1.setPadding(0, dp(16), 0, 0);
         chipVideos = chip("🎬 0");
         chipLikes = chip("❤ 0");
         chipTime = chip("⏱ 0:00");
-        chips.addView(chipVideos);
-        chips.addView(chipLikes);
-        chips.addView(chipTime);
-        hero.addView(chips);
+        r1.addView(chipVideos);
+        r1.addView(chipLikes);
+        r1.addView(chipTime);
+        hero.addView(r1);
+        LinearLayout r2 = new LinearLayout(this);
+        r2.setPadding(0, dp(8), 0, 0);
+        chipFav = chip("★ 0");
+        chipRepost = chip("↻ 0");
+        chipPhotos = chip("🖼 0");
+        r2.addView(chipFav);
+        r2.addView(chipRepost);
+        r2.addView(chipPhotos);
+        hero.addView(r2);
 
         entrance.add(hero);
-        return withMargin(hero, 0, 0, 0, dp(14));
+        return withMargin(hero, dp(14));
     }
 
     private TextView chip(String s) {
@@ -297,12 +357,12 @@ public class MainActivity extends Activity {
     // ---------- главная кнопка ----------
 
     private View buildMainButton() {
-        mainButton = text("▶  Начать прогрев", 17, Color.WHITE, true);
-        mainButton.setGravity(Gravity.CENTER);
-        mainButtonBg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{A1, A2});
-        mainButtonBg.setCornerRadius(dp(99));
-        mainButton.setBackground(ripple(mainButtonBg));
+        mainButton = new ShimmerButton(this, th.a1, th.a2);
+        mainButton.setText("▶  Начать прогрев");
+        mainButton.setTextSize(17);
+        mainButton.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         mainButton.setElevation(dp(8));
+        glow(mainButton, th.a1);
         pressable(mainButton);
         mainButton.setOnClickListener(v -> {
             if (WarmupService.isRunning()) {
@@ -319,44 +379,92 @@ public class MainActivity extends Activity {
         return mainButton;
     }
 
-    // ---------- карточка «доступ» ----------
+    // ---------- подключение ----------
 
-    private View buildAccessCard() {
-        accessCard = card();
-        LinearLayout row = new LinearLayout(this);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        accessDot = new TextView(this);
-        GradientDrawable dot = new GradientDrawable();
-        dot.setShape(GradientDrawable.OVAL);
-        dot.setColor(BAD);
-        accessDot.setBackground(dot);
-        row.addView(accessDot, new LinearLayout.LayoutParams(dp(10), dp(10)));
+    private View buildConnectCard() {
+        LinearLayout c = card();
+
+        // --- не подключено ---
+        connectBox = new LinearLayout(this);
+        connectBox.setOrientation(LinearLayout.VERTICAL);
+        connectBox.setGravity(Gravity.CENTER_HORIZONTAL);
+
+        FrameLayout plugWrap = new FrameLayout(this);
+        View ring = new View(this);
+        GradientDrawable rd = new GradientDrawable();
+        rd.setShape(GradientDrawable.OVAL);
+        rd.setStroke(dp(2), th.a1);
+        ring.setBackground(rd);
+        plugWrap.addView(ring, new FrameLayout.LayoutParams(dp(72), dp(72), Gravity.CENTER));
+        TextView plug = text("🔌", 28, Color.WHITE, false);
+        plug.setGravity(Gravity.CENTER);
+        GradientDrawable pd = new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[]{th.a1, th.a3});
+        pd.setShape(GradientDrawable.OVAL);
+        plug.setBackground(pd);
+        plugWrap.addView(plug, new FrameLayout.LayoutParams(dp(64), dp(64), Gravity.CENTER));
+        connectBox.addView(plugWrap, new LinearLayout.LayoutParams(dp(96), dp(96)));
         if (!reduceMotion) {
-            ValueAnimator va = ValueAnimator.ofFloat(1f, 0.25f);
-            va.setDuration(900);
-            va.setRepeatMode(ValueAnimator.REVERSE);
-            va.setRepeatCount(ValueAnimator.INFINITE);
-            va.addUpdateListener(a -> accessDot.setAlpha((float) a.getAnimatedValue()));
+            // расходящееся кольцо-«радар» вокруг иконки
+            ValueAnimator va = loop(1800, false);
+            va.addUpdateListener(a -> {
+                float f = (float) a.getAnimatedValue();
+                ring.setScaleX(0.9f + 0.45f * f);
+                ring.setScaleY(0.9f + 0.45f * f);
+                ring.setAlpha(1f - f);
+            });
             va.start();
         }
-        accessText = text("Включите доступ к спецвозможностям", 15, TEXT, true);
-        accessText.setPadding(dp(10), 0, 0, 0);
-        row.addView(accessText, new LinearLayout.LayoutParams(0, -2, 1f));
-        accessCard.addView(row);
 
-        TextView hint = text("Без него приложение не может листать ленту. "
-                + "Если Android пишет «Настройка ограничена»: Настройки → Приложения → Прогрев TikTok → ⋮ → "
-                + "«Разрешить ограниченные настройки».", 13, HINT, false);
-        hint.setPadding(0, dp(8), 0, dp(12));
-        accessCard.addView(hint);
+        TextView title = text("Подключите прогрев", 18, th.text, true);
+        title.setGravity(Gravity.CENTER);
+        title.setPadding(0, dp(6), 0, dp(4));
+        connectBox.addView(title);
+        TextView sub = text("Один раз включите «Прогрев TikTok» в Спецвозможностях — без этого приложение не может листать ленту.",
+                13, th.hint, false);
+        sub.setGravity(Gravity.CENTER);
+        connectBox.addView(sub);
 
-        accessButton = smallButton("Открыть настройки");
-        accessButton.setOnClickListener(v -> {
+        ShimmerButton connect = new ShimmerButton(this, th.a1, th.a3);
+        connect.setText("Подключить  →");
+        connect.setTextSize(16);
+        connect.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        connect.setElevation(dp(6));
+        glow(connect, th.a1);
+        pressable(connect);
+        breathe(connect);
+        connect.setOnClickListener(v -> {
             startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
             Toast.makeText(this, "Найдите «Прогрев TikTok» и включите", Toast.LENGTH_LONG).show();
         });
-        accessCard.addView(accessButton);
-        return accessCard;
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(-1, dp(54));
+        blp.topMargin = dp(16);
+        connectBox.addView(connect, blp);
+
+        TextView restricted = text("Пишет «Настройка ограничена»? Настройки → Приложения → Прогрев TikTok → ⋮ → "
+                + "«Разрешить ограниченные настройки», затем снова «Подключить».", 12, th.hint, false);
+        restricted.setGravity(Gravity.CENTER);
+        restricted.setPadding(0, dp(12), 0, 0);
+        connectBox.addView(restricted);
+        c.addView(connectBox);
+
+        // --- подключено ---
+        connectedBox = new LinearLayout(this);
+        connectedBox.setGravity(Gravity.CENTER_VERTICAL);
+        TextView ok = text("✓", 18, Color.WHITE, true);
+        ok.setGravity(Gravity.CENTER);
+        GradientDrawable od = new GradientDrawable();
+        od.setShape(GradientDrawable.OVAL);
+        od.setColor(th.good);
+        ok.setBackground(od);
+        connectedBox.addView(ok, new LinearLayout.LayoutParams(dp(34), dp(34)));
+        LinearLayout okText = new LinearLayout(this);
+        okText.setOrientation(LinearLayout.VERTICAL);
+        okText.setPadding(dp(12), 0, 0, 0);
+        okText.addView(text("Доступ подключён", 16, th.text, true));
+        okText.addView(text("Можно запускать прогрев", 13, th.hint, false));
+        connectedBox.addView(okText);
+        c.addView(connectedBox);
+        return c;
     }
 
     // ---------- карточки настроек ----------
@@ -366,8 +474,23 @@ public class MainActivity extends Activity {
         c.addView(cardTitle("❤", "Лайки"));
         sLikeMin = stepper(c, "Лайк через: от", "likeMin", 1, 1, 100, 1, " вид.", false);
         sLikeMax = stepper(c, "Лайк через: до", "likeMax", 18, 1, 100, 1, " вид.", false);
-        sVideos = stepper(c, "Роликов за запуск", "videos", 120, 0, 2000, 10, "", true);
+        sVideos = stepper(c, "Постов за запуск", "videos", 120, 0, 2000, 10, "", true);
         c.addView(note("∞ — без ограничения, до нажатия «Стоп»"));
+        return c;
+    }
+
+    private View buildActionsCard() {
+        LinearLayout c = card();
+        c.addView(cardTitle("✦", "Как живой человек"));
+        sFav = stepper(c, "★ В избранное", "favChance", 4, 0, 50, 1, "%", false);
+        sRepost = stepper(c, "↻ Репост", "repostChance", 2, 0, 50, 1, "%", false);
+        c.addView(toggleRow("🖼 Листать фото-посты", "Смотрит каждое фото 1,5–4,5 с, иногда возвращается назад",
+                photosOn, on -> {
+                    photosOn = on;
+                    prefs.edit().putBoolean("photos", on).apply();
+                }));
+        c.addView(note("Проценты — шанс действия на каждом посте. Репосты видят ваши подписчики — "
+                + "не ставьте много."));
         return c;
     }
 
@@ -384,16 +507,15 @@ public class MainActivity extends Activity {
 
     private View buildParallelCard() {
         LinearLayout c = card();
-        c.addView(cardTitle("📱", "Пользоваться другим приложением"));
-        c.addView(note("Прогрев работает, пока TikTok виден на экране. Откройте его в разделённом экране "
-                + "или в плавающем окне — и пользуйтесь второй половиной экрана как обычно."));
+        c.addView(cardTitle("📱", "Другое приложение параллельно"));
+        c.addView(note("Откройте TikTok в разделённом экране или плавающем окне — прогрев идёт в нём, "
+                + "а второй половиной экрана пользуйтесь как обычно."));
         parallelHow = text("1. Нажмите «Начать прогрев» — откроется TikTok.\n"
                 + "2. Откройте список недавних приложений.\n"
                 + "3. Нажмите на иконку TikTok сверху карточки → «Разделить экран» "
                 + "(или «Открыть в окне» / «Всплывающее окно» на Samsung и Xiaomi).\n"
                 + "4. Во вторую половину выберите нужное приложение.\n\n"
-                + "Плашку «● прогрев» можно перетащить пальцем, чтобы она не мешала. "
-                + "Нажатие на неё — остановка.", 13, TEXT, false);
+                + "Плашку «● прогрев» можно перетащить пальцем. Нажатие на неё — остановка.", 13, th.text, false);
         parallelHow.setPadding(0, dp(10), 0, dp(4));
         parallelHow.setVisibility(View.GONE);
         c.addView(parallelHow);
@@ -416,7 +538,7 @@ public class MainActivity extends Activity {
 
     private View buildFooter() {
         TextView t = text("TikTok запрещает автоматизацию — не гоняйте прогрев часами подряд, "
-                + "чтобы не получить теневой бан.", 12, HINT, false);
+                + "чтобы не получить теневой бан.", 12, th.hint, false);
         t.setGravity(Gravity.CENTER);
         t.setPadding(dp(12), dp(6), dp(12), 0);
         entrance.add(t);
@@ -427,16 +549,21 @@ public class MainActivity extends Activity {
 
     private void startWarmup() {
         if (WarmupService.instance == null) {
-            shake(accessCard);
-            Toast.makeText(this, "Сначала включите доступ", Toast.LENGTH_LONG).show();
+            shake(connectBox);
+            Toast.makeText(this, "Сначала нажмите «Подключить»", Toast.LENGTH_LONG).show();
             return;
         }
-        int likeMin = Math.min(sLikeMin.value, sLikeMax.value);
-        int likeMax = Math.max(sLikeMin.value, sLikeMax.value);
-        int watchMin = Math.min(sWatchMin.value, sWatchMax.value);
-        int watchMax = Math.max(sWatchMin.value, sWatchMax.value);
-        int skip = sSkip.value;
-        int lng = Math.min(sLong.value, 100 - skip);
+        WarmupService.Config c = new WarmupService.Config();
+        c.videos = sVideos.value;
+        c.likeMin = Math.min(sLikeMin.value, sLikeMax.value);
+        c.likeMax = Math.max(sLikeMin.value, sLikeMax.value);
+        c.watchMin = Math.min(sWatchMin.value, sWatchMax.value);
+        c.watchMax = Math.max(sWatchMin.value, sWatchMax.value);
+        c.skipChance = sSkip.value;
+        c.longChance = Math.min(sLong.value, 100 - sSkip.value);
+        c.favChance = sFav.value;
+        c.repostChance = sRepost.value;
+        c.photos = photosOn;
 
         Intent launch = null;
         for (String pkg : WarmupService.TIKTOK) {
@@ -447,9 +574,8 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "TikTok не установлен", Toast.LENGTH_LONG).show();
             return;
         }
-        lastDone = -1;
-        lastLikes = -1;
-        WarmupService.instance.start(sVideos.value, likeMin, likeMax, watchMin, watchMax, skip, lng);
+        last = new int[]{-1, -1, -1, -1, -1};
+        WarmupService.instance.start(c);
         refresh();
         startActivity(launch);
     }
@@ -461,10 +587,14 @@ public class MainActivity extends Activity {
         c.setOrientation(LinearLayout.VERTICAL);
         c.setPadding(dp(18), dp(16), dp(18), dp(16));
         GradientDrawable d = new GradientDrawable();
-        d.setColor(CARD);
+        d.setColor(th.card);
         d.setCornerRadius(dp(22));
-        d.setStroke(dp(1), LINE);
+        d.setStroke(dp(1), th.line);
         c.setBackground(d);
+        if (th.light) c.setElevation(dp(2));
+        LayoutTransition lt = new LayoutTransition();
+        lt.enableTransitionType(LayoutTransition.CHANGING);
+        c.setLayoutTransition(lt);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.bottomMargin = dp(12);
         c.setLayoutParams(lp);
@@ -478,11 +608,11 @@ public class MainActivity extends Activity {
         row.setPadding(0, 0, 0, dp(6));
         TextView i = text(icon, 15, Color.WHITE, false);
         i.setGravity(Gravity.CENTER);
-        GradientDrawable d = new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[]{A1, A2});
+        GradientDrawable d = new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[]{th.a1, th.a3});
         d.setCornerRadius(dp(10));
         i.setBackground(d);
         row.addView(i, new LinearLayout.LayoutParams(dp(32), dp(32)));
-        TextView t = text(title, 17, TEXT, true);
+        TextView t = text(title, 17, th.text, true);
         t.setPadding(dp(12), 0, 0, 0);
         row.addView(t);
         return row;
@@ -495,15 +625,14 @@ public class MainActivity extends Activity {
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(0, dp(8), 0, dp(8));
 
-        TextView l = text(label, 15, TEXT, false);
-        row.addView(l, new LinearLayout.LayoutParams(0, -2, 1f));
+        row.addView(text(label, 15, th.text, false), new LinearLayout.LayoutParams(0, -2, 1f));
 
         TextView minus = roundButton("−");
         minus.setOnClickListener(v -> s.change(-1));
         repeatOnHold(minus, () -> s.change(-1));
         row.addView(minus, new LinearLayout.LayoutParams(dp(36), dp(36)));
 
-        s.valueView = text(s.text(), 16, Color.WHITE, true);
+        s.valueView = text(s.text(), 16, th.text, true);
         s.valueView.setGravity(Gravity.CENTER);
         row.addView(s.valueView, new LinearLayout.LayoutParams(dp(68), -2));
 
@@ -513,38 +642,80 @@ public class MainActivity extends Activity {
         row.addView(plus, new LinearLayout.LayoutParams(dp(36), dp(36)));
 
         parent.addView(row);
-        steppers.add(s);
         return s;
     }
 
+    private interface OnToggle { void on(boolean value); }
+
+    /** Строка с анимированным переключателем. */
+    private View toggleRow(String label, String hint, boolean initial, OnToggle cb) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(10), 0, dp(8));
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        texts.addView(text(label, 15, th.text, false));
+        TextView h = text(hint, 12, th.hint, false);
+        texts.addView(h);
+        row.addView(texts, new LinearLayout.LayoutParams(0, -2, 1f));
+
+        final FrameLayout track = new FrameLayout(this);
+        final GradientDrawable trackBg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                initial ? new int[]{th.a1, th.a2} : new int[]{th.soft, th.soft});
+        trackBg.setCornerRadius(dp(99));
+        trackBg.setStroke(dp(1), th.line);
+        track.setBackground(trackBg);
+        final View thumb = new View(this);
+        GradientDrawable tb = new GradientDrawable();
+        tb.setShape(GradientDrawable.OVAL);
+        tb.setColor(Color.WHITE);
+        thumb.setBackground(tb);
+        thumb.setElevation(dp(2));
+        FrameLayout.LayoutParams tlp = new FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER_VERTICAL);
+        tlp.leftMargin = dp(3);
+        track.addView(thumb, tlp);
+        thumb.setTranslationX(initial ? dp(22) : 0);
+        final boolean[] state = {initial};
+        track.setOnClickListener(v -> {
+            state[0] = !state[0];
+            thumb.animate().translationX(state[0] ? dp(22) : 0).setDuration(220)
+                    .setInterpolator(new OvershootInterpolator(2f)).start();
+            animateColors(trackBg, state[0] ? new int[]{th.a1, th.a2} : new int[]{th.soft, th.soft});
+            cb.on(state[0]);
+        });
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(52), dp(30));
+        lp.leftMargin = dp(12);
+        row.addView(track, lp);
+        return row;
+    }
+
     private TextView roundButton(String s) {
-        TextView b = text(s, 20, Color.WHITE, true);
+        TextView b = text(s, 20, th.text, true);
         b.setGravity(Gravity.CENTER);
         b.setIncludeFontPadding(false);
         GradientDrawable d = new GradientDrawable();
         d.setShape(GradientDrawable.OVAL);
-        d.setColor(0x24FFFFFF);
-        d.setStroke(dp(1), 0x1AFFFFFF);
+        d.setColor(th.soft);
+        d.setStroke(dp(1), th.line);
         b.setBackground(ripple(d));
-        pressable(b);
         return b;
     }
 
     private TextView smallButton(String s) {
-        TextView b = text(s, 14, Color.WHITE, true);
+        TextView b = text(s, 14, th.light ? th.a1 : Color.WHITE, true);
         b.setGravity(Gravity.CENTER);
         b.setPadding(dp(18), dp(10), dp(18), dp(10));
         GradientDrawable d = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{FxView.withAlpha(A1, 0x55), FxView.withAlpha(A2, 0x55)});
+                new int[]{Theme.alpha(th.a1, th.light ? 0x1F : 0x55), Theme.alpha(th.a3, th.light ? 0x14 : 0x55)});
         d.setCornerRadius(dp(99));
-        d.setStroke(dp(1), 0x33FFFFFF);
+        d.setStroke(dp(1), Theme.alpha(th.a1, 0x55));
         b.setBackground(ripple(d));
         pressable(b);
         return b;
     }
 
     private TextView note(String s) {
-        TextView t = text(s, 13, HINT, false);
+        TextView t = text(s, 13, th.hint, false);
         t.setPadding(0, dp(4), 0, 0);
         return t;
     }
@@ -560,17 +731,35 @@ public class MainActivity extends Activity {
     }
 
     private Drawable ripple(Drawable content) {
-        return new RippleDrawable(ColorStateList.valueOf(0x40FFFFFF), content, null);
+        return new RippleDrawable(ColorStateList.valueOf(th.light ? 0x22000000 : 0x40FFFFFF), content, null);
     }
 
-    private View withMargin(View v, int l, int t, int r, int b) {
+    private View withMargin(View v, int bottom) {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.setMargins(l, t, r, b);
+        lp.bottomMargin = bottom;
         v.setLayoutParams(lp);
         return v;
     }
 
+    /** Цветная тень (Android 9+). */
+    private void glow(View v, int color) {
+        if (Build.VERSION.SDK_INT >= 28) {
+            v.setOutlineSpotShadowColor(color);
+            v.setOutlineAmbientShadowColor(color);
+        }
+    }
+
     // ---------- анимации ----------
+
+    private ValueAnimator loop(long ms, boolean reverse) {
+        ValueAnimator va = ValueAnimator.ofFloat(0f, 1f);
+        va.setDuration(ms);
+        va.setRepeatCount(ValueAnimator.INFINITE);
+        va.setRepeatMode(reverse ? ValueAnimator.REVERSE : ValueAnimator.RESTART);
+        va.setInterpolator(new LinearInterpolator());
+        loops.add(va);
+        return va;
+    }
 
     /** Карточки по очереди «всплывают» снизу при открытии. */
     private void runEntrance() {
@@ -582,7 +771,7 @@ public class MainActivity extends Activity {
             v.setScaleX(0.97f);
             v.setScaleY(0.97f);
             v.animate().alpha(1f).translationY(0).scaleX(1f).scaleY(1f)
-                    .setStartDelay(80L * i).setDuration(520)
+                    .setStartDelay(70L * i).setDuration(520)
                     .setInterpolator(new DecelerateInterpolator(2.2f)).start();
         }
     }
@@ -590,13 +779,24 @@ public class MainActivity extends Activity {
     /** Сердце в шапке «бьётся»: два коротких удара и пауза. */
     private void heartbeat(View v) {
         if (reduceMotion) return;
-        ValueAnimator va = ValueAnimator.ofFloat(0f, 1f);
-        va.setDuration(1400);
-        va.setRepeatCount(ValueAnimator.INFINITE);
-        va.setInterpolator(new LinearInterpolator());
+        ValueAnimator va = loop(1400, false);
         va.addUpdateListener(a -> {
             float t = (float) a.getAnimatedValue();
             float s = 1f + 0.16f * bump(t, 0.08f) + 0.10f * bump(t, 0.30f);
+            v.setScaleX(s);
+            v.setScaleY(s);
+        });
+        va.start();
+    }
+
+    /** Кнопка медленно «дышит». */
+    private void breathe(View v) {
+        if (reduceMotion) return;
+        ValueAnimator va = loop(1600, true);
+        va.setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator());
+        va.addUpdateListener(a -> {
+            if (v.isPressed()) return;
+            float s = 1f + 0.025f * (float) a.getAnimatedValue();
             v.setScaleX(s);
             v.setScaleY(s);
         });
@@ -609,7 +809,7 @@ public class MainActivity extends Activity {
     }
 
     private void pop(View v) {
-        if (reduceMotion) return;
+        if (reduceMotion || v == null) return;
         v.animate().cancel();
         v.setScaleX(1.14f);
         v.setScaleY(1.14f);
@@ -636,7 +836,7 @@ public class MainActivity extends Activity {
         }
         final ArgbEvaluator ev = new ArgbEvaluator();
         ValueAnimator va = ValueAnimator.ofFloat(0f, 1f);
-        va.setDuration(400);
+        va.setDuration(300);
         va.addUpdateListener(a -> {
             float f = (float) a.getAnimatedValue();
             int[] c = new int[to.length];
@@ -663,7 +863,7 @@ public class MainActivity extends Activity {
         });
     }
 
-    /** Удержание кнопки «+»/«−» — быстрая прокрутка значения. */
+    /** Удержание «+»/«−» — быстрая прокрутка значения. */
     private void repeatOnHold(View v, Runnable action) {
         final Runnable[] rep = new Runnable[1];
         rep[0] = () -> {
@@ -674,11 +874,10 @@ public class MainActivity extends Activity {
             ui.post(rep[0]);
             return true;
         });
-        // pressable уже назначил OnTouchListener — оборачиваем, чтобы остановить повтор
         v.setOnTouchListener((view, e) -> {
             switch (e.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
-                    view.animate().scaleX(0.92f).scaleY(0.92f).setDuration(110).setStartDelay(0).start();
+                    view.animate().scaleX(0.9f).scaleY(0.9f).setDuration(110).setStartDelay(0).start();
                     break;
                 case MotionEvent.ACTION_UP:
                 case MotionEvent.ACTION_CANCEL:

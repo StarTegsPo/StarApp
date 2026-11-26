@@ -19,16 +19,21 @@ import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
+import android.view.animation.OvershootInterpolator;
 import android.widget.TextView;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
- * Листает ленту TikTok свайпами и ставит лайк двойным тапом через случайное число роликов.
- * Жесты идут только в окно TikTok: в разделённом экране или плавающем окне
- * второй половиной экрана можно пользоваться параллельно.
- * Если TikTok не виден на экране — пауза.
+ * Имитирует живого зрителя в TikTok: смотрит ролики случайное время, листает фото-посты,
+ * ставит лайки, иногда добавляет в избранное и делает репост.
+ * Жесты идут только в окно TikTok (работает и в разделённом экране / плавающем окне).
+ * Если TikTok не виден — пауза.
  */
 public class WarmupService extends AccessibilityService {
 
@@ -38,14 +43,39 @@ public class WarmupService extends AccessibilityService {
             "com.zhiliaoapp.musically", "com.ss.android.ugc.trill", "com.ss.android.ugc.aweme"
     };
 
-    static final String IDLE = "idle", RUNNING = "running", PAUSED = "paused", BREAK = "break";
+    static final String IDLE = "idle", RUNNING = "running", PAUSED = "paused", BREAK = "break", PHOTOS = "photos";
+
+    /** Настройки запуска. videos = 0 — без ограничения, *Chance — проценты. */
+    static class Config {
+        int videos = 120, likeMin = 1, likeMax = 18, watchMin = 5, watchMax = 25;
+        int skipChance = 15, longChance = 10, favChance = 4, repostChance = 2;
+        boolean photos = true;
+    }
+
+    // Подписи кнопок TikTok (английский и русский интерфейс)
+    private static final Pattern P_SHARE = Pattern.compile("(?i)(share|поделит|отправить)");
+    private static final Pattern P_NOT_SHARE = Pattern.compile("(?i)(comment|коммент|like|лайк)");
+    private static final Pattern P_FAV = Pattern.compile("(?i)(favou?rite|избранн|bookmark|закладк)");
+    private static final Pattern P_FAV_DONE = Pattern.compile("(?i)(remove from|удалить из|убрать из)");
+    private static final Pattern P_REPOST = Pattern.compile("(?i)^\\s*(repost|репост|сделать репост)\\s*$");
+    private static final Pattern P_PHOTO = Pattern.compile("^\\s*(\\d{1,2})\\s*/\\s*(\\d{1,2})\\s*$");
+
+    private interface Act { long run(); }
+
+    private static class Win {
+        final Rect r;
+        final AccessibilityNodeInfo root;
+        Win(Rect r, AccessibilityNodeInfo root) { this.r = r; this.root = root; }
+    }
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Random rnd = new Random();
 
     private boolean running;
-    private int videos, likeMin, likeMax, watchMin, watchMax, skipChance, longChance;
-    private int done, likes, untilLike, untilBreak;
+    private Config cfg = new Config();
+    private int done, likes, favorites, reposts, photos, untilLike, untilBreak;
+    private int photoLeft;
+    private boolean photoWentBack;
     private long startedAt;
     private String state = IDLE;
     private String lastPkg = "";
@@ -86,33 +116,27 @@ public class WarmupService extends AccessibilityService {
     String state() { return state; }
     int done() { return done; }
     int likes() { return likes; }
-    int videos() { return videos; }
+    int favorites() { return favorites; }
+    int reposts() { return reposts; }
+    int photos() { return photos; }
+    int videos() { return cfg.videos; }
     long elapsedMs() { return running ? SystemClock.elapsedRealtime() - startedAt : 0; }
 
     // ---------- управление ----------
 
-    /** videos = 0 — без ограничения. skipChance/longChance — шансы в процентах. */
-    void start(int videos, int likeMin, int likeMax, int watchMin, int watchMax,
-               int skipChance, int longChance) {
+    void start(Config c) {
         stop();
-        this.videos = videos;
-        this.likeMin = likeMin;
-        this.likeMax = likeMax;
-        this.watchMin = watchMin;
-        this.watchMax = watchMax;
-        this.skipChance = skipChance;
-        this.longChance = longChance;
-        done = 0;
-        likes = 0;
-        untilLike = rand(likeMin, likeMax);
+        cfg = c;
+        done = likes = favorites = reposts = photos = 0;
+        untilLike = rand(c.likeMin, c.likeMax);
         untilBreak = rand(30, 50);
         startedAt = SystemClock.elapsedRealtime();
         running = true;
         state = RUNNING;
         showOverlay();
         updateOverlay();
-        // 5 c на открытие TikTok + просмотр первого ролика
-        handler.postDelayed(step, 5000 + watchMs());
+        // 5 c на открытие TikTok, затем смотрим первый пост
+        handler.postDelayed(afterSwipe, 5000);
     }
 
     void stop() {
@@ -122,65 +146,170 @@ public class WarmupService extends AccessibilityService {
         hideOverlay();
     }
 
-    // ---------- основной цикл ----------
+    private boolean pauseIfHidden(Win w, Runnable retry) {
+        if (w != null) return false;
+        state = PAUSED;
+        updateOverlay();
+        handler.postDelayed(retry, 2000);
+        return true;
+    }
 
+    // ---------- цикл: пост открыт → смотрим / листаем фото → действия → следующий ----------
+
+    /** Новый пост только что появился на экране. */
+    private final Runnable afterSwipe = new Runnable() {
+        @Override
+        public void run() {
+            if (!running) return;
+            Win w = tiktok();
+            if (pauseIfHidden(w, this)) return;
+            state = RUNNING;
+            int[] ph = cfg.photos ? photoCounter(w) : null;
+            if (ph != null && ph[1] > 1 && ph[0] < ph[1]) {
+                photos++;
+                state = PHOTOS;
+                int remaining = ph[1] - ph[0];
+                // как человек: чаще листает все фото, иногда бросает на середине
+                photoLeft = rnd.nextInt(100) < 60 ? remaining : rand(1, remaining);
+                photoWentBack = false;
+                updateOverlay();
+                handler.postDelayed(photoStep, rand(1500, 4000));
+            } else {
+                updateOverlay();
+                handler.postDelayed(step, watchMs());
+            }
+        }
+    };
+
+    /** Листание фото в карусели: пауза на каждом фото, иногда возврат на одно назад. */
+    private final Runnable photoStep = new Runnable() {
+        @Override
+        public void run() {
+            if (!running) return;
+            Win w = tiktok();
+            if (pauseIfHidden(w, this)) return;
+            if (photoLeft <= 0) {
+                state = RUNNING;
+                handler.postDelayed(step, rand(1000, 3000));
+                return;
+            }
+            if (!photoWentBack && photoLeft > 1 && rnd.nextInt(100) < 12) {
+                swipeHorizontal(w.r, false);
+                photoWentBack = true;
+                photoLeft++;
+            } else {
+                swipeHorizontal(w.r, true);
+                photoLeft--;
+            }
+            handler.postDelayed(this, rand(1500, 4500));
+        }
+    };
+
+    /** Пост просмотрен: случайные действия, затем следующий. */
     private final Runnable step = new Runnable() {
         @Override
         public void run() {
             if (!running) return;
-            Rect r = tiktokBounds();
-            if (r == null) {
-                state = PAUSED;
-                updateOverlay();
-                handler.postDelayed(this, 2000);
-                return;
-            }
+            Win w = tiktok();
+            if (pauseIfHidden(w, this)) return;
             state = RUNNING;
             done++;
-            long delay = rand(300, 900);
+            List<Act> acts = new ArrayList<>();
             if (--untilLike <= 0) {
-                doubleTap(r);
-                likes++;
-                untilLike = rand(likeMin, likeMax);
-                delay = rand(1200, 2500);
-                bumpOverlay();
+                acts.add(WarmupService.this::actLike);
+                untilLike = rand(cfg.likeMin, cfg.likeMax);
             }
+            if (roll(cfg.favChance)) acts.add(WarmupService.this::actFavorite);
+            if (roll(cfg.repostChance)) acts.add(WarmupService.this::actRepost);
             updateOverlay();
-            if (videos > 0 && done >= videos) {
-                handler.postDelayed(WarmupService.this::stop, delay);
-                return;
-            }
-            handler.postDelayed(swipe, delay);
+            runChain(new ArrayDeque<>(acts), () -> {
+                if (cfg.videos > 0 && done >= cfg.videos) stop();
+                else handler.post(next);
+            });
         }
     };
 
-    private final Runnable swipe = new Runnable() {
+    private final Runnable next = new Runnable() {
         @Override
         public void run() {
             if (!running) return;
-            Rect r = tiktokBounds();
-            if (r == null) {
-                state = PAUSED;
-                updateOverlay();
-                handler.postDelayed(this, 2000);
-                return;
-            }
-            swipeUp(r);
-            long next = watchMs();
+            Win w = tiktok();
+            if (pauseIfHidden(w, this)) return;
+            swipeUp(w.r);
+            long delay = rand(1100, 1700);
             if (--untilBreak <= 0) {
-                next += rand(30, 120) * 1000L;
+                delay += rand(30, 120) * 1000L;
                 untilBreak = rand(30, 50);
                 state = BREAK;
             } else {
                 state = RUNNING;
             }
             updateOverlay();
-            handler.postDelayed(step, next);
+            handler.postDelayed(afterSwipe, delay);
         }
     };
 
-    /** Границы окна TikTok на экране, или null, если TikTok сейчас не виден. */
-    private Rect tiktokBounds() {
+    private void runChain(final ArrayDeque<Act> acts, final Runnable then) {
+        if (!running) return;
+        if (acts.isEmpty()) {
+            handler.postDelayed(then, rand(300, 900));
+            return;
+        }
+        long d = acts.poll().run();
+        handler.postDelayed(() -> runChain(acts, then), Math.max(d, 200));
+    }
+
+    // ---------- действия ----------
+
+    private long actLike() {
+        Win w = tiktok();
+        if (w == null) return 0;
+        doubleTap(w.r);
+        likes++;
+        bumpOverlay();
+        return rand(1200, 2500);
+    }
+
+    private long actFavorite() {
+        Win w = tiktok();
+        if (w == null) return 0;
+        AccessibilityNodeInfo n = find(w, P_FAV, null);
+        if (n == null || n.isSelected() || n.isChecked() || P_FAV_DONE.matcher(label(n)).find()) return 0;
+        click(n);
+        favorites++;
+        bumpOverlay();
+        return rand(1000, 2200);
+    }
+
+    private long actRepost() {
+        Win w = tiktok();
+        if (w == null) return 0;
+        AccessibilityNodeInfo share = find(w, P_SHARE, P_NOT_SHARE);
+        if (share == null) return 0;
+        click(share);
+        // ждём панель «Поделиться», ищем «Репост»
+        handler.postDelayed(() -> {
+            if (!running) return;
+            AccessibilityNodeInfo rp = findAnyTikTokWindow(P_REPOST);
+            if (rp != null) {
+                click(rp);
+                reposts++;
+                bumpOverlay();
+                // если панель не закрылась сама — закрываем
+                handler.postDelayed(() -> {
+                    if (running && findAnyTikTokWindow(P_REPOST) != null) performGlobalAction(GLOBAL_ACTION_BACK);
+                }, 1500);
+            } else {
+                performGlobalAction(GLOBAL_ACTION_BACK);
+            }
+        }, rand(1400, 2200));
+        return 5000;
+    }
+
+    // ---------- поиск окна и кнопок TikTok ----------
+
+    /** Окно TikTok на экране или null, если TikTok сейчас не виден. */
+    private Win tiktok() {
         try {
             List<AccessibilityWindowInfo> windows = getWindows();
             for (AccessibilityWindowInfo w : windows) {
@@ -190,23 +319,87 @@ public class WarmupService extends AccessibilityService {
                 if (isTikTok(root.getPackageName().toString())) {
                     Rect r = new Rect();
                     w.getBoundsInScreen(r);
-                    if (r.width() > 100 && r.height() > 200) return r;
+                    if (r.width() > 100 && r.height() > 200) return new Win(r, root);
                 }
             }
             if (!windows.isEmpty()) return null;
         } catch (RuntimeException ignored) { }
-        // запасной вариант: TikTok на весь экран
         AccessibilityNodeInfo root = getRootInActiveWindow();
         String pkg = root != null && root.getPackageName() != null ? root.getPackageName().toString() : lastPkg;
         if (!isTikTok(pkg)) return null;
         DisplayMetrics m = new DisplayMetrics();
         wm.getDefaultDisplay().getRealMetrics(m);
-        return new Rect(0, 0, m.widthPixels, m.heightPixels);
+        return new Win(new Rect(0, 0, m.widthPixels, m.heightPixels), root);
     }
 
     private static boolean isTikTok(String pkg) {
         for (String p : TIKTOK) if (p.equals(pkg)) return true;
         return false;
+    }
+
+    private static String label(AccessibilityNodeInfo n) {
+        CharSequence d = n.getContentDescription(), t = n.getText();
+        return (d != null ? d : "") + " " + (t != null ? t : "");
+    }
+
+    /** Видимый элемент текущего поста, подпись которого подходит под шаблон. */
+    private AccessibilityNodeInfo find(Win w, Pattern p, Pattern exclude) {
+        return findIn(w.root, w.r, p, exclude);
+    }
+
+    private AccessibilityNodeInfo findIn(AccessibilityNodeInfo root, Rect area, Pattern p, Pattern exclude) {
+        if (root == null) return null;
+        ArrayDeque<AccessibilityNodeInfo> q = new ArrayDeque<>();
+        q.add(root);
+        Rect b = new Rect();
+        int seen = 0;
+        while (!q.isEmpty() && seen++ < 4000) {
+            AccessibilityNodeInfo n = q.poll();
+            if (n == null) continue;
+            String s = label(n);
+            if (s.trim().length() > 0 && p.matcher(s).find() && (exclude == null || !exclude.matcher(s).find())
+                    && n.isVisibleToUser()) {
+                n.getBoundsInScreen(b);
+                if (area == null || area.contains(b.centerX(), b.centerY())) return n;
+            }
+            for (int i = 0; i < n.getChildCount(); i++) q.add(n.getChild(i));
+        }
+        return null;
+    }
+
+    private AccessibilityNodeInfo findAnyTikTokWindow(Pattern p) {
+        try {
+            for (AccessibilityWindowInfo w : getWindows()) {
+                AccessibilityNodeInfo root = w.getRoot();
+                if (root == null || root.getPackageName() == null || !isTikTok(root.getPackageName().toString())) continue;
+                AccessibilityNodeInfo n = findIn(root, null, p, null);
+                if (n != null) return n;
+            }
+        } catch (RuntimeException ignored) { }
+        Win w = tiktok();
+        return w == null ? null : findIn(w.root, null, p, null);
+    }
+
+    /** Счётчик фото «2/7» на экране → {2, 7}, иначе null. */
+    private int[] photoCounter(Win w) {
+        AccessibilityNodeInfo n = find(w, P_PHOTO, null);
+        if (n == null) return null;
+        Matcher m = P_PHOTO.matcher(label(n).trim());
+        if (!m.find()) return null;
+        int cur = Integer.parseInt(m.group(1)), total = Integer.parseInt(m.group(2));
+        if (cur < 1 || total > 35 || cur > total) return null;
+        return new int[]{cur, total};
+    }
+
+    private void click(AccessibilityNodeInfo node) {
+        AccessibilityNodeInfo n = node;
+        while (n != null && !n.isClickable()) n = n.getParent();
+        if (n != null && n.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return;
+        Rect b = new Rect();
+        node.getBoundsInScreen(b);
+        Path p = new Path();
+        p.moveTo(b.centerX(), b.centerY());
+        dispatch(new GestureDescription.StrokeDescription(p, 0, rand(40, 90)));
     }
 
     // ---------- жесты (в координатах окна TikTok) ----------
@@ -219,7 +412,18 @@ public class WarmupService extends AccessibilityService {
         dispatch(new GestureDescription.StrokeDescription(p, 0, rand(220, 400)));
     }
 
-    /** Двойной тап по центру ролика — в TikTok он только ставит лайк и никогда не снимает его. */
+    /** Свайп по карусели фото: forward — к следующему (справа налево). */
+    private void swipeHorizontal(Rect r, boolean forward) {
+        float y = r.top + r.height() * rand(38, 52) / 100f;
+        float from = r.left + r.width() * (forward ? rand(72, 82) : rand(18, 28)) / 100f;
+        float to = r.left + r.width() * (forward ? rand(18, 28) : rand(72, 82)) / 100f;
+        Path p = new Path();
+        p.moveTo(from, y);
+        p.lineTo(to, y + rand(-20, 20));
+        dispatch(new GestureDescription.StrokeDescription(p, 0, rand(200, 360)));
+    }
+
+    /** Двойной тап по центру — в TikTok он только ставит лайк и никогда не снимает его. */
     private void doubleTap(Rect r) {
         float x = r.centerX() + rand(-r.width() / 18, r.width() / 18);
         float y = r.top + r.height() * rand(38, 50) / 100f;
@@ -242,6 +446,7 @@ public class WarmupService extends AccessibilityService {
 
     private void showOverlay() {
         if (overlay != null || wm == null) return;
+        Theme th = Theme.get(this);
         overlay = new TextView(this);
         overlay.setTextColor(Color.WHITE);
         overlay.setTextSize(13);
@@ -249,7 +454,7 @@ public class WarmupService extends AccessibilityService {
         int pad = dp(14);
         overlay.setPadding(pad, dp(9), pad, dp(9));
         GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                new int[]{0xEE7B5CFF, 0xEE33A6FF});
+                new int[]{Theme.alpha(th.a1, 0xEE), Theme.alpha(th.a3, 0xEE)});
         bg.setCornerRadius(dp(22));
         bg.setStroke(dp(1), 0x55FFFFFF);
         overlay.setBackground(bg);
@@ -318,20 +523,27 @@ public class WarmupService extends AccessibilityService {
         switch (state) {
             case PAUSED: icon = "⏸ откройте TikTok"; break;
             case BREAK:  icon = "☕ перерыв"; break;
+            case PHOTOS: icon = "🖼 листаю фото"; break;
             default:     icon = "● прогрев";
         }
-        overlay.setText(icon + "   🎬 " + done + (videos > 0 ? "/" + videos : "")
-                + "   ❤ " + likes + "   ■");
+        StringBuilder sb = new StringBuilder(icon)
+                .append("   🎬 ").append(done).append(cfg.videos > 0 ? "/" + cfg.videos : "")
+                .append("   ❤ ").append(likes);
+        if (favorites > 0) sb.append("   ★ ").append(favorites);
+        if (reposts > 0) sb.append("   ↻ ").append(reposts);
+        sb.append("   ■");
+        overlay.setText(sb);
     }
 
-    /** Короткая «пульсация» плашки, когда поставлен лайк. */
+    /** Короткая «пульсация» плашки после действия. */
     private void bumpOverlay() {
         if (overlay == null) return;
+        updateOverlay();
         overlay.animate().cancel();
         overlay.setScaleX(1.12f);
         overlay.setScaleY(1.12f);
         overlay.animate().scaleX(1f).scaleY(1f).setDuration(350)
-                .setInterpolator(new android.view.animation.OvershootInterpolator(3f)).start();
+                .setInterpolator(new OvershootInterpolator(3f)).start();
     }
 
     private void hideOverlay() {
@@ -352,9 +564,13 @@ public class WarmupService extends AccessibilityService {
      */
     private long watchMs() {
         int roll = rnd.nextInt(100);
-        if (roll < skipChance) return rand(1000, 3000);
-        if (roll < skipChance + longChance) return rand(watchMax * 1000, watchMax * 2000);
-        return rand(watchMin * 1000, watchMax * 1000);
+        if (roll < cfg.skipChance) return rand(1000, 3000);
+        if (roll < cfg.skipChance + cfg.longChance) return rand(cfg.watchMax * 1000, cfg.watchMax * 2000);
+        return rand(cfg.watchMin * 1000, cfg.watchMax * 1000);
+    }
+
+    private boolean roll(int percent) {
+        return percent > 0 && rnd.nextInt(100) < percent;
     }
 
     private int rand(int a, int b) {
