@@ -44,11 +44,31 @@ ash() { adb shell "$@" 2>/dev/null | tr -d '\r'; }
 if ! command -v adb >/dev/null; then
   echo "❌ Нет adb. Выполните: pkg install android-tools"; exit 1
 fi
-if [ "$(adb get-state 2>/dev/null)" != "device" ]; then
-  echo "❌ Телефон не подключён к adb."
-  echo "   Включите «Отладку по Wi-Fi» и выполните adb pair / adb connect (см. README.md)."
+pick_device() {  # первое устройство в статусе "device"
+  adb devices 2>/dev/null | tr -d '\r' | awk 'NR>1 && $2=="device" {print $1; exit}'
+}
+DEV=$(pick_device)
+if [ -z "$DEV" ]; then
+  # Пробуем найти порт «Отладки по Wi-Fi» автоматически и подключиться
+  echo "🔌 adb не подключён, ищу телефон…"
+  adb start-server >/dev/null 2>&1
+  for addr in $(adb mdns services 2>/dev/null | tr -d '\r' | grep '_adb-tls-connect' \
+                | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+'); do
+    adb connect "$addr" >/dev/null 2>&1
+  done
+  sleep 2
+  DEV=$(pick_device)
+fi
+if [ -z "$DEV" ]; then
+  echo "❌ Телефон не подключён к adb. Сейчас adb видит:"
+  adb devices 2>&1 | sed 's/^/   /'
+  echo "   1) Проверьте, что «Отладка по Wi-Fi» ВКЛЮЧЕНА и телефон в Wi-Fi."
+  echo "   2) Если ещё не делали pair:  adb pair localhost:ПОРТ_ИЗ_ОКНА_С_КОДОМ КОД"
+  echo "   3) Затем:  adb connect localhost:ПОРТ_С_ГЛАВНОГО_ЭКРАНА_ОТЛАДКИ"
   exit 1
 fi
+export ANDROID_SERIAL=$DEV
+echo "✅ подключено: $DEV"
 
 PKG=""
 for p in com.zhiliaoapp.musically com.ss.android.ugc.trill com.ss.android.ugc.aweme; do
