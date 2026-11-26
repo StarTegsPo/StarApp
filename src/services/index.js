@@ -23,8 +23,9 @@ import shop from './shop/index.js';
 import analytics from './analytics/index.js';
 import support from './support/index.js';
 import eco from './eco/index.js';
+import hub from './hub/index.js';
 
-export const services = [eco, home, analytics, shop, profile, support].sort((a, b) => a.order - b.order);
+export const services = [eco, hub, home, analytics, shop, profile, support].sort((a, b) => a.order - b.order);
 
 export const isAdmin = (config, userId) => config.adminIds.includes(Number(userId));
 

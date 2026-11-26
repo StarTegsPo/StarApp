@@ -1,4 +1,5 @@
 import { readFileSync, existsSync } from 'node:fs';
+import { readAiConfig } from './services/hub/providers.js';
 
 /** Простейший загрузчик .env (без зависимостей). Переменные окружения имеют приоритет. */
 export function loadEnvFile(path = '.env') {
@@ -25,6 +26,8 @@ export function readConfig(env = process.env) {
     referralBonus: Number(env.REFERRAL_BONUS ?? 10),
     channelSnapshotMinutes: Number(env.CHANNEL_SNAPSHOT_MINUTES || 60),
     ecoBots: env.ECO_BOTS || '',
+    ai: readAiConfig(env),
+    hubDailyLimit: Number(env.HUB_DAILY_LIMIT ?? 50),
     devUserId: env.NODE_ENV !== 'production' && env.DEV_USER_ID ? Number(env.DEV_USER_ID) : null,
   };
 }
