@@ -49,12 +49,60 @@ public class WarmupService extends AccessibilityService {
 
     static final String DEFAULT_EMOJI = "🔥 😂 ❤️ 😍 👍 💯 🤣 👏 😮 🙌 ✨ 😁";
 
+    /** Фразы для комментариев (по одной в строке). */
+    static final String DEFAULT_PHRASES = String.join("\n",
+            "Это просто огонь",
+            "Пересмотрел уже раз пять",
+            "Как же жизненно",
+            "Обожаю такой контент",
+            "Вот это поворот",
+            "Сохранил, чтобы не потерять",
+            "Ну это шедевр",
+            "Кто тоже залип на этом видео?",
+            "Лучшее, что я видел сегодня",
+            "Аж настроение поднялось",
+            "Ахаха, это же я",
+            "Очень красиво получилось",
+            "Хочу ещё такого",
+            "Это гениально",
+            "Скинул другу, он в восторге",
+            "Почему это так смешно",
+            "Вот это талант",
+            "Идеально под вечер",
+            "Не ожидал такой концовки",
+            "Автор, ты лучший");
+
+    /** Тексты для репоста — связные предложения (по одному в строке). */
+    static final String DEFAULT_REPOST = String.join("\n",
+            "Это стоит посмотреть каждому",
+            "Не мог не поделиться, это шедевр",
+            "Сохраняю к себе, слишком хорошо",
+            "Пересматриваю уже который раз",
+            "Обязательно досмотрите до конца",
+            "Очень жизненно, согласен на все сто",
+            "Вот такое у меня сегодня настроение",
+            "Лучшее, что попалось мне за день",
+            "Пусть будет у меня на странице",
+            "Покажу это всем друзьям",
+            "Вот это действительно круто",
+            "Не могу перестать смеяться с этого");
+
+    static String[] lines(String text) {
+        List<String> out = new ArrayList<>();
+        if (text != null) for (String l : text.split("\n")) if (!l.trim().isEmpty()) out.add(l.trim());
+        return out.toArray(new String[0]);
+    }
+
     /** Настройки запуска. videos = 0 — без ограничения, *Chance — проценты. */
     static class Config {
         int videos = 120, likeMin = 1, likeMax = 18, watchMin = 5, watchMax = 25;
         int skipChance = 15, longChance = 10, favChance = 4, repostChance = 2, commentChance = 2;
         boolean photos = true, skipLive = true, skipAds = true;
         String[] emoji = DEFAULT_EMOJI.split("\\s+");
+        String[] phrases = lines(DEFAULT_PHRASES);
+        String[] repostTexts = lines(DEFAULT_REPOST);
+        int phrasePercent = 60;   // какая доля комментариев — фразы (остальные — эмодзи)
+        int dailyLimit = 0;       // 0 — без дневного лимита (Premium)
     }
 
     // Подписи кнопок TikTok (английский и русский интерфейс)
@@ -66,6 +114,13 @@ public class WarmupService extends AccessibilityService {
     // Прямые эфиры и реклама в ленте
     private static final Pattern P_LIVE = Pattern.compile(
             "(?iu)(^\\s*(live|live now|прямой эфир|в эфире|эфир)\\s*$|watch live|смотреть live|смотреть эфир|tap to watch live|нажмите, чтобы смотреть)");
+    // Короткая подпись со словом LIVE / эфир (не хэштег и не описание ролика)
+    private static final Pattern P_LIVE_SHORT = Pattern.compile(
+            "(?iu)^(?!\\s*[#@])(?=.{1,40}$).*(\\blive\\b|эфир|трансляци)");
+    private static final Pattern P_LIKE_BTN = Pattern.compile("(?iu)(like|лайк|нрав)");
+    private static final Pattern P_NOT_LIKE = Pattern.compile("(?iu)(comment|коммент|share|подел)");
+    private static final Pattern P_REPOST_CONFIRM = Pattern.compile(
+            "(?iu)(^|\\s)(repost|репост\\S*|post|опубликовать|отправить|готово|done)(\\s|$)");
     private static final Pattern P_AD = Pattern.compile(
             "(?iu)^\\s*(sponsored|реклама|спонсорский контент|спонсировано|promoted|продвигается|ad|промо)\\s*$");
     // Комментарии
@@ -94,7 +149,8 @@ public class WarmupService extends AccessibilityService {
     private Config cfg = new Config();
     private int done, likes, favorites, reposts, photos, comments, skipped, untilLike, untilBreak;
     private int photoLeft;
-    private boolean photoWentBack;
+    private boolean photoWentBack, rechecked, limitReached, likeButtonSeen;
+    private String stopReason = "";
     private long startedAt;
     private String state = IDLE;
     private String lastPkg = "";
@@ -140,6 +196,7 @@ public class WarmupService extends AccessibilityService {
     int photos() { return photos; }
     int comments() { return comments; }
     int skipped() { return skipped; }
+    String stopReason() { return stopReason; }
     int videos() { return cfg.videos; }
     long elapsedMs() { return running ? SystemClock.elapsedRealtime() - startedAt : 0; }
 
@@ -149,6 +206,9 @@ public class WarmupService extends AccessibilityService {
         stop();
         cfg = c;
         done = likes = favorites = reposts = photos = comments = skipped = 0;
+        stopReason = "";
+        limitReached = false;
+        rechecked = false;
         untilLike = rand(c.likeMin, c.likeMax);
         untilBreak = rand(30, 50);
         startedAt = SystemClock.elapsedRealtime();
@@ -186,7 +246,15 @@ public class WarmupService extends AccessibilityService {
             if (pauseIfHidden(w, this)) return;
             state = RUNNING;
             // прямой эфир или реклама — быстро пролистываем, без лайков и действий
-            if ((cfg.skipLive && findInPost(w, P_LIVE) != null) || (cfg.skipAds && findInPost(w, P_AD) != null)) {
+            boolean live = cfg.skipLive && isLive(w);
+            boolean ad = cfg.skipAds && findInPost(w, P_AD) != null;
+            if (live || ad) {
+                // эфир мог ещё не прогрузиться — перепроверяем через секунду, чтобы не ошибиться
+                if (!rechecked) {
+                    rechecked = true;
+                    handler.postDelayed(this, 1000);
+                    return;
+                }
                 skipped++;
                 state = SKIP;
                 updateOverlay();
@@ -250,11 +318,20 @@ public class WarmupService extends AccessibilityService {
             }
             if (roll(cfg.favChance)) acts.add(WarmupService.this::actFavorite);
             if (roll(cfg.repostChance)) acts.add(WarmupService.this::actRepost);
-            if (roll(cfg.commentChance) && cfg.emoji.length > 0) acts.add(WarmupService.this::actComment);
+            if (roll(cfg.commentChance) && (cfg.emoji.length > 0 || cfg.phrases.length > 0))
+                acts.add(WarmupService.this::actComment);
+            if (cfg.dailyLimit > 0 && Premium.addToday(WarmupService.this) >= cfg.dailyLimit) limitReached = true;
             updateOverlay();
             runChain(new ArrayDeque<>(acts), () -> {
-                if (cfg.videos > 0 && done >= cfg.videos) stop();
-                else handler.post(next);
+                if (limitReached) {
+                    stop();
+                    stopReason = "limit";
+                } else if (cfg.videos > 0 && done >= cfg.videos) {
+                    stop();
+                    stopReason = "done";
+                } else {
+                    handler.post(next);
+                }
             });
         }
     };
@@ -266,6 +343,7 @@ public class WarmupService extends AccessibilityService {
             Win w = tiktok();
             if (pauseIfHidden(w, this)) return;
             swipeUp(w.r);
+            rechecked = false;
             long delay = rand(1100, 1700);
             if (--untilBreak <= 0) {
                 delay += rand(30, 120) * 1000L;
@@ -325,15 +403,30 @@ public class WarmupService extends AccessibilityService {
                 click(rp);
                 reposts++;
                 bumpOverlay();
-                // если панель не закрылась сама — закрываем
                 handler.postDelayed(() -> {
-                    if (running && findAnyTikTokWindow(P_REPOST) != null) performGlobalAction(GLOBAL_ACTION_BACK);
-                }, 1500);
+                    if (!running) return;
+                    // TikTok иногда предлагает «Добавить мысли» к репосту — пишем связное предложение
+                    AccessibilityNodeInfo field = findInput(false);
+                    if (field != null && cfg.repostTexts.length > 0) {
+                        setText(field, pick(cfg.repostTexts));
+                        handler.postDelayed(() -> {
+                            if (!running) return;
+                            AccessibilityNodeInfo f = findInput(false);
+                            AccessibilityNodeInfo ok = f == null ? null : findNearest(P_REPOST_CONFIRM, f, Integer.MAX_VALUE);
+                            if (ok != null) click(ok);
+                            handler.postDelayed(() -> closeComments(0), rand(1200, 1800));
+                        }, rand(1200, 2200));
+                    } else if (field != null) {
+                        closeComments(0);
+                    } else if (findAnyTikTokWindow(P_REPOST) != null) {
+                        performGlobalAction(GLOBAL_ACTION_BACK);   // панель не закрылась сама
+                    }
+                }, rand(1300, 1900));
             } else {
                 performGlobalAction(GLOBAL_ACTION_BACK);
             }
         }, rand(1400, 2200));
-        return 5000;
+        return 10000;
     }
 
     /**
@@ -357,9 +450,7 @@ public class WarmupService extends AccessibilityService {
                 if (!running) return;
                 AccessibilityNodeInfo field = findInput();
                 if (field == null) { closeComments(0); return; }
-                Bundle args = new Bundle();
-                args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, randomEmoji());
-                if (!field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
+                if (!setText(field, commentText())) {
                     closeComments(0);
                     return;
                 }
@@ -377,6 +468,41 @@ public class WarmupService extends AccessibilityService {
             }, rand(900, 1400));
         }, rand(1500, 2300));
         return 11000;
+    }
+
+    /** Фраза (иногда с эмодзи в конце) или 1–3 эмодзи. */
+    private CharSequence commentText() {
+        if (cfg.phrases.length > 0 && (cfg.emoji.length == 0 || roll(cfg.phrasePercent))) {
+            String t = pick(cfg.phrases);
+            if (cfg.emoji.length > 0 && roll(35)) t += " " + pick(cfg.emoji);
+            return t;
+        }
+        return randomEmoji();
+    }
+
+    private boolean setText(AccessibilityNodeInfo field, CharSequence text) {
+        Bundle args = new Bundle();
+        args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text);
+        return field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args);
+    }
+
+    private String pick(String[] a) {
+        return a[rnd.nextInt(a.length)];
+    }
+
+    /**
+     * Прямой эфир: подпись LIVE/«эфир» на посте, или у поста нет обычных кнопок
+     * «лайк» и «поделиться» (у роликов, фото и рекламы они есть, у превью эфира — нет).
+     */
+    private boolean isLive(Win w) {
+        if (findInPost(w, P_LIVE) != null || findInPost(w, P_LIVE_SHORT) != null) return true;
+        if (find(w, P_LIKE_BTN, P_NOT_LIKE) != null) {
+            likeButtonSeen = true;
+            return false;
+        }
+        // эвристику «нет кнопок» включаем, только если эта версия TikTok вообще показывает кнопки,
+        // иначе пропускались бы все посты подряд
+        return likeButtonSeen && find(w, P_SHARE, P_NOT_SHARE) == null;
     }
 
     private CharSequence randomEmoji() {
@@ -437,9 +563,19 @@ public class WarmupService extends AccessibilityService {
 
     /** Кнопка «Отправить» рядом с полем ввода (по вертикали). */
     private AccessibilityNodeInfo findSendNear(AccessibilityNodeInfo input) {
+        return findNearest(P_SEND, input, dp(120));
+    }
+
+    /**
+     * Ближайшая по вертикали к anchor кнопка с подходящей подписью (в любом окне TikTok).
+     * Берётся только небольшая нажимаемая кнопка, не поле ввода и не вся панель.
+     */
+    private AccessibilityNodeInfo findNearest(Pattern p, AccessibilityNodeInfo anchor, int maxDy) {
         Rect in = new Rect();
-        input.getBoundsInScreen(in);
-        int near = dp(120);
+        anchor.getBoundsInScreen(in);
+        DisplayMetrics m = getResources().getDisplayMetrics();
+        AccessibilityNodeInfo best = null;
+        int bestDy = Integer.MAX_VALUE;
         try {
             for (AccessibilityWindowInfo w : getWindows()) {
                 AccessibilityNodeInfo root = w.getRoot();
@@ -451,15 +587,23 @@ public class WarmupService extends AccessibilityService {
                 while (!q.isEmpty() && seen++ < 4000) {
                     AccessibilityNodeInfo n = q.poll();
                     if (n == null) continue;
-                    if (n.isVisibleToUser() && P_SEND.matcher(label(n)).find()) {
-                        n.getBoundsInScreen(b);
-                        if (Math.abs(b.centerY() - in.centerY()) < near) return n;
+                    if (n.isVisibleToUser() && !n.isEditable() && p.matcher(label(n)).find()) {
+                        AccessibilityNodeInfo c = n;
+                        for (int up = 0; c != null && !c.isClickable() && up < 2; up++) c = c.getParent();
+                        if (c != null && c.isClickable()) {
+                            c.getBoundsInScreen(b);
+                            int dy = Math.abs(b.centerY() - in.centerY());
+                            if (b.width() < m.widthPixels * 0.6f && dy <= maxDy && dy < bestDy) {
+                                best = c;
+                                bestDy = dy;
+                            }
+                        }
                     }
                     for (int i = 0; i < n.getChildCount(); i++) q.add(n.getChild(i));
                 }
             }
         } catch (RuntimeException ignored) { }
-        return null;
+        return best;
     }
 
     /** Элемент в области самого поста (без верхних вкладок «LIVE / Подписки / Для вас»). */

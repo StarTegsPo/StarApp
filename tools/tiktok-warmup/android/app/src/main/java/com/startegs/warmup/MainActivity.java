@@ -53,7 +53,11 @@ public class MainActivity extends Activity {
     private ShimmerButton mainButton;
     private LinearLayout connectBox, connectedBox;
     private TextView parallelHow;
-    private boolean photosOn, skipLiveOn, skipAdsOn;
+    private boolean photosOn, skipLiveOn, skipAdsOn, premium;
+    private View premiumCard;
+    private TextView freeLeftText;
+    private View freeFill;
+    private Toggle tPhotos, tLive, tAds;
     private String emojiText;
     private int[] last = {-1, -1, -1, -1, -1, -1, -1};
     private String lastUiState = "";
@@ -65,6 +69,7 @@ public class MainActivity extends Activity {
         final boolean infiniteZero;
         final String unit;
         int value;
+        boolean pro;
         TextView valueView;
 
         Stepper(String key, int def, int min, int max, int step, String unit, boolean infiniteZero) {
@@ -82,6 +87,10 @@ public class MainActivity extends Activity {
         }
 
         void change(int dir) {
+            if (pro && !premium) {
+                locked(valueView);
+                return;
+            }
             int nv = Math.max(min, Math.min(max, value + dir * step));
             if (nv == value) {
                 shake(valueView);
@@ -92,9 +101,16 @@ public class MainActivity extends Activity {
             pop(valueView);
             prefs.edit().putInt(key, value).apply();
         }
+
+        void set(int v) {
+            value = Math.max(min, Math.min(max, v));
+            valueView.setText(text());
+            prefs.edit().putInt(key, value).apply();
+            pop(valueView);
+        }
     }
 
-    private Stepper sVideos, sLikeMin, sLikeMax, sWatchMin, sWatchMax, sSkip, sLong, sFav, sRepost, sComment;
+    private Stepper sVideos, sLikeMin, sLikeMax, sWatchMin, sWatchMax, sSkip, sLong, sFav, sRepost, sComment, sPhrase;
 
     // =====================================================================
 
@@ -104,6 +120,7 @@ public class MainActivity extends Activity {
         prefs = getSharedPreferences("cfg", MODE_PRIVATE);
         th = Theme.get(this);
         reduceMotion = Settings.Global.getFloat(getContentResolver(), Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f;
+        premium = Premium.isActive(this);
         photosOn = prefs.getBoolean("photos", true);
         skipLiveOn = prefs.getBoolean("skipLive", true);
         skipAdsOn = prefs.getBoolean("skipAds", true);
@@ -138,7 +155,9 @@ public class MainActivity extends Activity {
         col.addView(buildThemeSwitch());
         col.addView(buildHero());
         col.addView(buildMainButton());
+        col.addView(buildPremiumCard());
         col.addView(buildConnectCard());
+        col.addView(buildBestCard());
         col.addView(buildLikesCard());
         col.addView(buildActionsCard());
         col.addView(buildSkipCard());
@@ -187,8 +206,17 @@ public class MainActivity extends Activity {
         connectBox.setVisibility(enabled ? View.GONE : View.VISIBLE);
         connectedBox.setVisibility(enabled ? View.VISIBLE : View.GONE);
 
+        if (freeLeftText != null) {
+            int left = Premium.leftToday(this);
+            freeLeftText.setText("Бесплатно: осталось " + left + " из " + Premium.FREE_DAILY + " постов сегодня");
+            freeFill.setPivotX(0);
+            freeFill.setScaleX(left / (float) Premium.FREE_DAILY);
+        }
+
         String status;
+        if (!running && s != null && "limit".equals(s.stopReason())) st = "limit";
         switch (st) {
+            case "limit": status = "Бесплатный лимит на сегодня исчерпан"; break;
             case "off": status = "Нужно подключить доступ"; break;
             case WarmupService.RUNNING: status = "Идёт прогрев"; break;
             case WarmupService.PHOTOS: status = "Листаю фото-пост"; break;
@@ -401,6 +429,158 @@ public class MainActivity extends Activity {
         return mainButton;
     }
 
+    // ---------- Premium ----------
+
+    private View buildPremiumCard() {
+        if (premium) {
+            ShimmerButton b = new ShimmerButton(this, th.a1, 0xFFFFB648);
+            b.setText("👑  Premium активен · все функции открыты");
+            b.setTextSize(15);
+            b.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+            b.setElevation(dp(6));
+            glow(b, 0xFFFFB648);
+            b.setClickable(false);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(52));
+            lp.bottomMargin = dp(12);
+            b.setLayoutParams(lp);
+            entrance.add(b);
+            premiumCard = b;
+            return b;
+        }
+        LinearLayout c = card();
+        premiumCard = c;
+        c.addView(cardTitle("👑", "Premium"));
+        TextView feats = text("✓ Без дневного лимита постов\n"
+                + "✓ Авто-пропуск рекламы\n"
+                + "✓ Комментарии: эмодзи и фразы\n"
+                + "✓ Репосты с текстом", 14, th.text, false);
+        feats.setPadding(0, dp(4), 0, dp(10));
+        c.addView(feats);
+
+        freeLeftText = text("", 13, th.hint, false);
+        c.addView(freeLeftText);
+        FrameLayout track = new FrameLayout(this);
+        GradientDrawable tbg = new GradientDrawable();
+        tbg.setColor(th.soft);
+        tbg.setCornerRadius(dp(99));
+        track.setBackground(tbg);
+        freeFill = new View(this);
+        GradientDrawable fbg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{th.a1, th.a2});
+        fbg.setCornerRadius(dp(99));
+        freeFill.setBackground(fbg);
+        track.addView(freeFill, new FrameLayout.LayoutParams(-1, -1));
+        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(-1, dp(8));
+        tlp.topMargin = dp(6);
+        c.addView(track, tlp);
+
+        ShimmerButton buy = new ShimmerButton(this, th.a1, 0xFFFFB648);
+        buy.setText("👑  Купить Premium");
+        buy.setTextSize(16);
+        buy.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        buy.setElevation(dp(6));
+        glow(buy, th.a1);
+        pressable(buy);
+        buy.setOnClickListener(v -> {
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(Premium.BUY_URL)));
+            } catch (RuntimeException e) {
+                Toast.makeText(this, Premium.BUY_URL, Toast.LENGTH_LONG).show();
+            }
+        });
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(-1, dp(52));
+        blp.topMargin = dp(16);
+        c.addView(buy, blp);
+
+        final LinearLayout codeBox = new LinearLayout(this);
+        codeBox.setOrientation(LinearLayout.VERTICAL);
+        codeBox.setVisibility(View.GONE);
+        final EditText code = new EditText(this);
+        code.setHint("STAR-XXXX-XXXX-XXXX");
+        code.setTextColor(th.text);
+        code.setHintTextColor(th.hint);
+        code.setTextSize(16);
+        code.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        code.setPadding(dp(14), dp(10), dp(14), dp(10));
+        GradientDrawable cb = new GradientDrawable();
+        cb.setColor(th.soft);
+        cb.setCornerRadius(dp(14));
+        cb.setStroke(dp(1), th.line);
+        code.setBackground(cb);
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-1, -2);
+        clp.topMargin = dp(12);
+        codeBox.addView(code, clp);
+        TextView activate = smallButton("Активировать");
+        activate.setOnClickListener(v -> {
+            if (Premium.activate(this, code.getText().toString())) {
+                Toast.makeText(this, "👑 Premium активирован!", Toast.LENGTH_LONG).show();
+                frame.animate().alpha(0f).setDuration(250).withEndAction(() -> {
+                    recreate();
+                    overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
+                }).start();
+            } else {
+                shake(code);
+                Toast.makeText(this, "Неверный код", Toast.LENGTH_SHORT).show();
+            }
+        });
+        LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(-1, -2);
+        alp.topMargin = dp(10);
+        codeBox.addView(activate, alp);
+        c.addView(codeBox);
+
+        TextView have = smallButton("У меня есть код");
+        have.setOnClickListener(v -> {
+            boolean show = codeBox.getVisibility() != View.VISIBLE;
+            codeBox.setVisibility(show ? View.VISIBLE : View.GONE);
+            ((TextView) v).setText(show ? "Скрыть" : "У меня есть код");
+        });
+        LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(-2, -2);
+        hlp.topMargin = dp(10);
+        c.addView(have, hlp);
+        return c;
+    }
+
+    // ---------- лучшие настройки ----------
+
+    private View buildBestCard() {
+        LinearLayout c = card();
+        c.addView(cardTitle("🛡", "Лучшие настройки"));
+        c.addView(note("Минимальный риск бана: спокойный темп, мало действий, перерывы и пропуск эфиров/рекламы. "
+                + "Запускайте 2–3 раза в день по 30–40 минут."));
+        ShimmerButton best = new ShimmerButton(this, th.a3, th.a1);
+        best.setText("✨  Применить лучшие настройки");
+        best.setTextSize(15);
+        best.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        best.setElevation(dp(5));
+        glow(best, th.a1);
+        pressable(best);
+        best.setOnClickListener(v -> applyBest());
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(50));
+        lp.topMargin = dp(12);
+        c.addView(best, lp);
+        return c;
+    }
+
+    private void applyBest() {
+        sVideos.set(80);
+        sLikeMin.set(4);
+        sLikeMax.set(15);
+        sWatchMin.set(7);
+        sWatchMax.set(30);
+        sSkip.set(15);
+        sLong.set(15);
+        sFav.set(3);
+        tPhotos.set.on(true);
+        tLive.set.on(true);
+        if (premium) {
+            sRepost.set(1);
+            sComment.set(1);
+            sPhrase.set(70);
+            tAds.set.on(true);
+        }
+        Toast.makeText(this, "✨ Готово! Безопасные настройки применены", Toast.LENGTH_LONG).show();
+    }
+
     // ---------- подключение ----------
 
     private View buildConnectCard() {
@@ -505,12 +685,15 @@ public class MainActivity extends Activity {
         LinearLayout c = card();
         c.addView(cardTitle("✦", "Как живой человек"));
         sFav = stepper(c, "★ В избранное", "favChance", 4, 0, 50, 1, "%", false);
-        sRepost = stepper(c, "↻ Репост", "repostChance", 2, 0, 50, 1, "%", false);
-        c.addView(toggleRow("🖼 Листать фото-посты", "Смотрит каждое фото 1,5–4,5 с, иногда возвращается назад",
+        sRepost = stepper(c, "↻ Репост", "repostChance", 2, 0, 50, 1, "%", false, true);
+        editor(c, "Текст к репосту — если TikTok предложит «Добавить мысли» (по одному в строке)",
+                "repostTexts", WarmupService.DEFAULT_REPOST, true, 15, true);
+        tPhotos = toggleRow("🖼 Листать фото-посты", "Смотрит каждое фото 1,5–4,5 с, иногда возвращается назад",
                 photosOn, on -> {
                     photosOn = on;
                     prefs.edit().putBoolean("photos", on).apply();
-                }));
+                }, false);
+        c.addView(tPhotos.row);
         c.addView(note("Проценты — шанс действия на каждом посте. Репосты видят ваши подписчики — "
                 + "не ставьте много."));
         return c;
@@ -519,60 +702,40 @@ public class MainActivity extends Activity {
     private View buildSkipCard() {
         LinearLayout c = card();
         c.addView(cardTitle("⏭", "Пропускать"));
-        c.addView(toggleRow("📡 Прямые эфиры (LIVE)", "Эфир в ленте сразу пролистывается, внутрь не заходит",
+        tLive = toggleRow("📡 Прямые эфиры (LIVE)", "Эфир в ленте сразу пролистывается, внутрь не заходит",
                 skipLiveOn, on -> {
                     skipLiveOn = on;
                     prefs.edit().putBoolean("skipLive", on).apply();
-                }));
-        c.addView(toggleRow("📢 Рекламу", "Посты с пометкой «Реклама» / «Sponsored» — пролист за 1–2 с, без лайков",
-                skipAdsOn, on -> {
+                }, false);
+        c.addView(tLive.row);
+        tAds = toggleRow("📢 Авто-пропуск рекламы", "Посты с пометкой «Реклама» / «Sponsored» — пролист за 1–2 с, без лайков",
+                skipAdsOn && premium, on -> {
                     skipAdsOn = on;
                     prefs.edit().putBoolean("skipAds", on).apply();
-                }));
+                }, true);
+        c.addView(tAds.row);
         return c;
     }
 
     private View buildCommentsCard() {
         LinearLayout c = card();
-        c.addView(cardTitle("💬", "Эмодзи в комментариях"));
-        sComment = stepper(c, "Комментировать", "commentChance", 2, 0, 30, 1, "%", false);
-
-        TextView l = text("Набор эмодзи (через пробел)", 13, th.hint, false);
-        l.setPadding(0, dp(6), 0, dp(6));
-        c.addView(l);
-        EditText e = new EditText(this);
-        e.setText(emojiText);
-        e.setTextSize(20);
-        e.setTextColor(th.text);
-        e.setHintTextColor(th.hint);
-        e.setHint("🔥 😂 ❤️");
-        e.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        e.setPadding(dp(14), dp(10), dp(14), dp(10));
-        final GradientDrawable eb = new GradientDrawable();
-        eb.setColor(th.soft);
-        eb.setCornerRadius(dp(14));
-        eb.setStroke(dp(1), th.line);
-        e.setBackground(eb);
-        e.setOnFocusChangeListener((v, has) -> eb.setStroke(dp(has ? 2 : 1), has ? th.a1 : th.line));
-        e.addTextChangedListener(new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int a, int b, int d) { }
-            @Override public void onTextChanged(CharSequence s, int a, int b, int d) { }
-            @Override public void afterTextChanged(Editable s) {
-                emojiText = s.toString();
-                prefs.edit().putString("emoji", emojiText).apply();
-            }
-        });
-        c.addView(e, new LinearLayout.LayoutParams(-1, -2));
-
-        TextView reset = smallButton("Вернуть набор по умолчанию");
+        c.addView(cardTitle("💬", "Комментарии"));
+        sComment = stepper(c, "Комментировать", "commentChance", 2, 0, 30, 1, "%", false, true);
+        sPhrase = stepper(c, "Из них фразами", "phrasePercent", 60, 0, 100, 10, "%", false, true);
+        final EditText em = editor(c, "Эмодзи (через пробел)", "emoji", WarmupService.DEFAULT_EMOJI, false, 20, true);
+        final EditText ph = editor(c, "Фразы (по одной в строке)", "phrases", WarmupService.DEFAULT_PHRASES, true, 15, true);
+        TextView reset = smallButton("Вернуть наборы по умолчанию");
         reset.setOnClickListener(v -> {
-            e.setText(WarmupService.DEFAULT_EMOJI);
-            pop(e);
+            if (!premium) { locked(v); return; }
+            em.setText(WarmupService.DEFAULT_EMOJI);
+            ph.setText(WarmupService.DEFAULT_PHRASES);
+            pop(em);
+            pop(ph);
         });
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
         lp.topMargin = dp(10);
         c.addView(reset, lp);
-        c.addView(note("Пишет 1–3 случайных эмодзи из набора и закрывает комментарии. "
+        c.addView(note("Пишет фразу (иногда с эмодзи) или 1–3 эмодзи и закрывает комментарии. "
                 + "Комментарии видят все — держите процент маленьким."));
         return c;
     }
@@ -650,8 +813,24 @@ public class MainActivity extends Activity {
         c.skipLive = skipLiveOn;
         c.skipAds = skipAdsOn;
         c.commentChance = sComment.value;
-        String[] em = emojiText.trim().split("\\s+");
+        String[] em = prefs.getString("emoji", WarmupService.DEFAULT_EMOJI).trim().split("\\s+");
         c.emoji = em.length == 1 && em[0].isEmpty() ? new String[0] : em;
+        c.phrases = WarmupService.lines(prefs.getString("phrases", WarmupService.DEFAULT_PHRASES));
+        c.repostTexts = WarmupService.lines(prefs.getString("repostTexts", WarmupService.DEFAULT_REPOST));
+        c.phrasePercent = sPhrase.value;
+        if (!premium) {
+            int left = Premium.leftToday(this);
+            if (left <= 0) {
+                shake(premiumCard);
+                Toast.makeText(this, "Бесплатный лимит на сегодня исчерпан. В Premium — без лимита 👑",
+                        Toast.LENGTH_LONG).show();
+                return;
+            }
+            c.dailyLimit = Premium.FREE_DAILY;
+            c.skipAds = false;
+            c.commentChance = 0;
+            c.repostChance = 0;
+        }
 
         Intent launch = null;
         for (String pkg : WarmupService.TIKTOK) {
@@ -708,7 +887,14 @@ public class MainActivity extends Activity {
 
     private Stepper stepper(LinearLayout parent, String label, String key, int def, int min, int max,
                             int step, String unit, boolean infiniteZero) {
+        return stepper(parent, label, key, def, min, max, step, unit, infiniteZero, false);
+    }
+
+    private Stepper stepper(LinearLayout parent, String label, String key, int def, int min, int max,
+                            int step, String unit, boolean infiniteZero, boolean pro) {
         final Stepper s = new Stepper(key, def, min, max, step, unit, infiniteZero);
+        s.pro = pro;
+        if (pro && !premium) label = "🔒 " + label;
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(0, dp(8), 0, dp(8));
@@ -735,8 +921,14 @@ public class MainActivity extends Activity {
 
     private interface OnToggle { void on(boolean value); }
 
-    /** Строка с анимированным переключателем. */
-    private View toggleRow(String label, String hint, boolean initial, OnToggle cb) {
+    private static class Toggle {
+        View row;
+        OnToggle set;
+    }
+
+    /** Строка с анимированным переключателем. pro — только в Premium. */
+    private Toggle toggleRow(String label, String hint, boolean initial, OnToggle cb, boolean pro) {
+        if (pro && !premium) label = "🔒 " + label;
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(0, dp(10), 0, dp(8));
@@ -764,17 +956,78 @@ public class MainActivity extends Activity {
         track.addView(thumb, tlp);
         thumb.setTranslationX(initial ? dp(22) : 0);
         final boolean[] state = {initial};
-        track.setOnClickListener(v -> {
-            state[0] = !state[0];
-            thumb.animate().translationX(state[0] ? dp(22) : 0).setDuration(220)
+        final Toggle t = new Toggle();
+        t.row = row;
+        t.set = on -> {
+            if (state[0] == on) return;
+            state[0] = on;
+            thumb.animate().translationX(on ? dp(22) : 0).setDuration(220)
                     .setInterpolator(new OvershootInterpolator(2f)).start();
-            animateColors(trackBg, state[0] ? new int[]{th.a1, th.a2} : new int[]{th.soft, th.soft});
-            cb.on(state[0]);
+            animateColors(trackBg, on ? new int[]{th.a1, th.a2} : new int[]{th.soft, th.soft});
+            cb.on(on);
+        };
+        track.setOnClickListener(v -> {
+            if (pro && !premium) {
+                locked(track);
+                return;
+            }
+            t.set.on(!state[0]);
         });
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(52), dp(30));
         lp.leftMargin = dp(12);
         row.addView(track, lp);
-        return row;
+        return t;
+    }
+
+    /** Поле для текста, сохраняется в настройках по ключу. */
+    private EditText editor(LinearLayout parent, String title, final String key, String def,
+                            boolean multiline, float size, boolean pro) {
+        TextView l = text((pro && !premium ? "🔒 " : "") + title, 13, th.hint, false);
+        l.setPadding(0, dp(10), 0, dp(6));
+        parent.addView(l);
+        EditText e = new EditText(this);
+        e.setText(prefs.getString(key, def));
+        e.setTextSize(size);
+        e.setTextColor(th.text);
+        e.setHintTextColor(th.hint);
+        if (multiline) {
+            e.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                    | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+            e.setMinLines(3);
+            e.setMaxLines(7);
+            e.setGravity(Gravity.TOP | Gravity.START);
+            e.setVerticalScrollBarEnabled(true);
+        } else {
+            e.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        }
+        e.setPadding(dp(14), dp(10), dp(14), dp(10));
+        final GradientDrawable eb = new GradientDrawable();
+        eb.setColor(th.soft);
+        eb.setCornerRadius(dp(14));
+        eb.setStroke(dp(1), th.line);
+        e.setBackground(eb);
+        e.setOnFocusChangeListener((v, has) -> eb.setStroke(dp(has ? 2 : 1), has ? th.a1 : th.line));
+        e.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence x, int a, int b, int d) { }
+            @Override public void onTextChanged(CharSequence x, int a, int b, int d) { }
+            @Override public void afterTextChanged(Editable x) {
+                prefs.edit().putString(key, x.toString()).apply();
+            }
+        });
+        if (pro && !premium) {
+            e.setFocusable(false);
+            e.setAlpha(0.55f);
+            e.setOnClickListener(v -> locked(v));
+        }
+        parent.addView(e, new LinearLayout.LayoutParams(-1, -2));
+        return e;
+    }
+
+    /** Функция только в Premium: потрясти, подсказать, подсветить карточку Premium. */
+    private void locked(View v) {
+        shake(v);
+        if (premiumCard != null) pop(premiumCard);
+        Toast.makeText(this, "🔒 Доступно в Premium", Toast.LENGTH_SHORT).show();
     }
 
     private TextView roundButton(String s) {
