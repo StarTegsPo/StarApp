@@ -33,7 +33,7 @@ public class WarmupService extends AccessibilityService {
     private final Random rnd = new Random();
 
     private boolean running;
-    private int videos, likeMin, likeMax, watchMin, watchMax;
+    private int videos, likeMin, likeMax, watchMin, watchMax, skipChance, longChance;
     private int done, likes, untilLike, untilBreak;
     private String lastPkg = "";
 
@@ -72,8 +72,12 @@ public class WarmupService extends AccessibilityService {
         return instance != null && instance.running;
     }
 
-    void start(int videos, int likeMin, int likeMax, int watchMin, int watchMax) {
+    /** videos = 0 — без ограничения. skipChance/longChance — шансы в процентах. */
+    void start(int videos, int likeMin, int likeMax, int watchMin, int watchMax,
+               int skipChance, int longChance) {
         stop();
+        this.skipChance = skipChance;
+        this.longChance = longChance;
         this.videos = videos;
         this.likeMin = likeMin;
         this.likeMax = likeMax;
@@ -116,7 +120,7 @@ public class WarmupService extends AccessibilityService {
                 delay = rand(1200, 2500);
             }
             updateOverlay(null);
-            if (done >= videos) {
+            if (videos > 0 && done >= videos) {
                 handler.postDelayed(() -> {
                     stop();
                 }, delay);
@@ -196,7 +200,8 @@ public class WarmupService extends AccessibilityService {
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                        | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                                | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+                        | WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
                 PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.TOP | Gravity.START;
         lp.x = dp(12);
@@ -210,7 +215,7 @@ public class WarmupService extends AccessibilityService {
 
     private void updateOverlay(String note) {
         if (overlay == null) return;
-        String text = "■ Стоп   🎬 " + done + "/" + videos + "   ❤ " + likes;
+        String text = "■ Стоп   🎬 " + done + (videos > 0 ? "/" + videos : "") + "   ❤ " + likes;
         if (note != null) text += "\n" + note;
         overlay.setText(text);
     }
@@ -226,7 +231,15 @@ public class WarmupService extends AccessibilityService {
 
     // ---------- утилиты ----------
 
+    /**
+     * Случайное время просмотра: обычно от watchMin до watchMax,
+     * с шансом skipChance% — быстрый пролист (1–3 c),
+     * с шансом longChance% — долгий просмотр (от watchMax до 2×watchMax).
+     */
     private long watchMs() {
+        int roll = rnd.nextInt(100);
+        if (roll < skipChance) return rand(1000, 3000);
+        if (roll < skipChance + longChance) return rand(watchMax * 1000, watchMax * 2000);
         return rand(watchMin * 1000, watchMax * 1000);
     }
 

@@ -18,15 +18,20 @@ import android.widget.Toast;
 
 public class MainActivity extends Activity {
 
-    private static final String[] KEYS = {"videos", "likeMin", "likeMax", "watchMin", "watchMax"};
+    private static final String[] KEYS = {
+            "videos", "likeMin", "likeMax", "watchMin", "watchMax", "skipChance", "longChance"};
     private static final String[] LABELS = {
-            "Сколько роликов пролистать",
+            "Сколько роликов пролистать (0 = без ограничения)",
             "Лайк через: от (роликов)",
             "Лайк через: до (роликов)",
-            "Смотреть ролик: от (секунд)",
-            "Смотреть ролик: до (секунд)"
+            "Время просмотра: от (секунд)",
+            "Время просмотра: до (секунд)",
+            "Шанс быстро пролистать за 1–3 c (%)",
+            "Шанс досмотреть подольше, до 2× «до» (%)"
     };
-    private static final int[] DEFAULTS = {120, 1, 18, 5, 25};
+    private static final int[] DEFAULTS = {120, 1, 18, 5, 25, 15, 10};
+    // поля, которые могут быть 0
+    private static final boolean[] ZERO_OK = {true, false, false, false, false, true, true};
 
     private final EditText[] inputs = new EditText[KEYS.length];
     private TextView status;
@@ -95,7 +100,8 @@ public class MainActivity extends Activity {
                 + "Прогрев TikTok → ⋮ (вверху справа) → «Разрешить ограниченные настройки», затем снова кнопка 1.\n"
                 + "• Нажмите «Старт» — откроется TikTok, через 5 секунд начнётся прогрев.\n"
                 + "• Слева вверху появится плашка «■ Стоп» — нажмите её, чтобы остановить.\n"
-                + "• Если выйти из TikTok, прогрев встаёт на паузу.\n\n"
+                + "• Если выйти из TikTok, прогрев встаёт на паузу.\n"
+                + "• Пока идёт прогрев, экран не гаснет — удобно для облачного телефона.\n\n"
                 + "Важно: TikTok запрещает автоматизацию, не гоняйте прогрев часами подряд.");
         root.addView(help);
 
@@ -135,8 +141,10 @@ public class MainActivity extends Activity {
             } catch (NumberFormatException e) {
                 v[i] = DEFAULTS[i];
             }
-            if (v[i] < 1) v[i] = 1;
+            if (v[i] < 0 || (v[i] == 0 && !ZERO_OK[i])) v[i] = ZERO_OK[i] ? 0 : 1;
         }
+        if (v[5] > 100) v[5] = 100;
+        if (v[5] + v[6] > 100) v[6] = 100 - v[5];
         if (v[1] > v[2]) { int t = v[1]; v[1] = v[2]; v[2] = t; }
         if (v[3] > v[4]) { int t = v[3]; v[3] = v[4]; v[4] = t; }
         SharedPreferences.Editor ed = prefs.edit();
@@ -155,7 +163,7 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "TikTok не установлен", Toast.LENGTH_LONG).show();
             return;
         }
-        WarmupService.instance.start(v[0], v[1], v[2], v[3], v[4]);
+        WarmupService.instance.start(v[0], v[1], v[2], v[3], v[4], v[5], v[6]);
         startActivity(launch);
     }
 
