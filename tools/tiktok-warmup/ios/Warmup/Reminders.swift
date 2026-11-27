@@ -19,7 +19,7 @@ enum Reminders {
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: ids)
         let bodies = [
-            "Запусти прогрев на 30–40 минут в облачном телефоне 🔥",
+            "Пора прогреть аккаунт — открой и нажми «Начать прогрев» 🔥",
             "Вечерняя сессия прогрева — 30–40 минут, и аккаунт растёт ❤️"
         ]
         for (i, time) in times.prefix(ids.count).enumerated() {

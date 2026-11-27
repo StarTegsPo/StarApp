@@ -2,13 +2,19 @@ import SwiftUI
 import UIKit
 
 // Экран повторяет Android-приложение «Прогрев TikTok»: те же карточки и настройки.
-// Прогрев на iPhone идёт через облачный Android-телефон: «Начать прогрев» копирует
-// все настройки кодом TWSET:..., который вставляется в Android-приложение одной кнопкой.
+// На iPhone «Начать прогрев» запускает сессию: вы листаете TikTok, а приложение по настройкам
+// присылает подсказки поверх TikTok (iOS не разрешает приложениям самим нажимать в TikTok).
 
 struct ContentView: View {
     @AppStorage("theme") private var themeId = "dark"
     @AppStorage("premiumCode") private var premiumCode = ""
     @AppStorage("launches") private var launches = 0
+    @AppStorage("sessionEnd") private var sessionEnd: Double = 0
+    @AppStorage("planLikes") private var planLikes = 0
+    @AppStorage("planVideos") private var planVideos = 0
+    @AppStorage("planFav") private var planFav = 0
+    @AppStorage("planComments") private var planComments = 0
+    @AppStorage("planReposts") private var planReposts = 0
 
     // те же ключи и значения по умолчанию, что в Android-приложении
     @AppStorage("videos") private var videos = 120
@@ -37,7 +43,6 @@ struct ContentView: View {
     @State private var appeared = false
     @State private var celebrate = false
     @State private var toast: String?
-    @State private var showLaunch = false
     @State private var lockBump = 0
     @Namespace private var ns
 
@@ -55,12 +60,21 @@ struct ContentView: View {
                 VStack(spacing: 14) {
                   Group {
                     ThemePicker(themeId: $themeId, theme: theme, ns: ns).appear(0, appeared)
-                    HeroCard(theme: theme, videos: videos, likeMin: likeMin, likeMax: likeMax,
-                             watchMin: watchMin, watchMax: watchMax, fav: favChance, repost: repostChance,
-                             comment: commentChance, photos: photos, skip: skipLive, launches: launches)
-                        .appear(1, appeared)
-                    ShimmerButton(colors: [theme.a1, theme.a2], title: "▶  Начать прогрев", height: 60) { start() }
-                        .appear(2, appeared)
+                    TimelineView(.periodic(from: Date(), by: 1)) { ctx in
+                        let left = sessionEnd - ctx.date.timeIntervalSince1970
+                        VStack(spacing: 14) {
+                            HeroCard(theme: theme, videos: videos, likeMin: likeMin, likeMax: likeMax,
+                                     watchMin: watchMin, watchMax: watchMax, fav: favChance, repost: repostChance,
+                                     comment: commentChance, photos: photos, skip: skipLive, launches: launches,
+                                     secondsLeft: left > 0 ? Int(left) : nil,
+                                     plan: [planVideos, planLikes, planFav, planComments, planReposts])
+                            ShimmerButton(colors: left > 0 ? [theme.a3, theme.a1] : [theme.a1, theme.a2],
+                                          title: left > 0 ? "■  Остановить" : "▶  Начать прогрев", height: 60) {
+                                if left > 0 { stopSession() } else { start() }
+                            }
+                        }
+                    }
+                    .appear(1, appeared)
                     PremiumCard(theme: theme, code: $premiumCode, onActivated: {
                         celebrateNow()
                         showToast("👑 Premium активирован!")
@@ -68,7 +82,7 @@ struct ContentView: View {
                         .scaleEffect(lockBump % 2 == 1 ? 1.03 : 1)
                         .animation(.spring(response: 0.3, dampingFraction: 0.5), value: lockBump)
                         .appear(3, appeared)
-                    CloudCard(theme: theme, toast: showToast).appear(4, appeared)
+                    HowCard(theme: theme).appear(4, appeared)
                     bestCard.appear(5, appeared)
                   }
                   Group {
@@ -89,12 +103,6 @@ struct ContentView: View {
                 }
                 .padding(16)
                 .padding(.bottom, 24)
-            }
-            if showLaunch {
-                LaunchSheet(theme: theme, close: { withAnimation(.spring()) { showLaunch = false } },
-                            copy: { UIPasteboard.general.string = settingsCode() }, toast: showToast)
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                    .zIndex(2)
             }
             if celebrate {
                 Confetti(theme: theme).allowsHitTesting(false).zIndex(3)
@@ -222,25 +230,42 @@ struct ContentView: View {
         showToast("✨ Готово! Безопасные настройки применены")
     }
 
-    /// Все настройки одним кодом — вставляется в Android-приложение кнопкой «📥 Вставить настройки с iPhone».
-    private func settingsCode() -> String {
-        let dict: [String: Any] = [
-            "videos": videos, "likeMin": min(likeMin, likeMax), "likeMax": max(likeMin, likeMax),
-            "watchMin": min(watchMin, watchMax), "watchMax": max(watchMin, watchMax),
-            "skipChance": skipChance, "longChance": longChance, "favChance": favChance,
-            "repostChance": repostChance, "commentChance": commentChance, "phrasePercent": phrasePercent,
-            "photos": photos, "skipLive": skipLive, "skipAds": skipAds, "capLoops": capLoops,
-            "emoji": emoji, "phrases": phrases, "repostTexts": repostTexts
-        ]
-        let data = (try? JSONSerialization.data(withJSONObject: dict, options: [.sortedKeys])) ?? Data()
-        return "TWSET:" + data.base64EncodedString()
+    private func start() {
+        let s = SessionSettings(
+            videos: premium ? videos : (videos == 0 ? 100 : min(videos, 100)),
+            likeMin: likeMin, likeMax: likeMax, watchMin: watchMin, watchMax: watchMax,
+            skipChance: skipChance, longChance: min(longChance, 100 - skipChance),
+            favChance: favChance, repostChance: premium ? repostChance : 0,
+            commentChance: premium ? commentChance : 0, phrasePercent: phrasePercent,
+            skipLive: skipLive, skipAds: premium && skipAds, capLoops: capLoops,
+            emoji: emoji.split(whereSeparator: { $0 == " " || $0 == "\n" }).map(String.init),
+            phrases: lines(phrases), repostTexts: lines(repostTexts))
+        let plan = Session.plan(s)
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        Session.start(plan) { granted in
+            guard granted else {
+                showToast("Разрешите уведомления: Настройки → Прогрев TikTok → Уведомления")
+                return
+            }
+            launches += 1
+            sessionEnd = Date().timeIntervalSince1970 + plan.duration
+            planVideos = plan.videos
+            planLikes = plan.likes
+            planFav = plan.favorites
+            planComments = plan.comments
+            planReposts = plan.reposts
+        }
     }
 
-    private func start() {
-        UIPasteboard.general.string = settingsCode()
-        launches += 1
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { showLaunch = true }
+    private func stopSession() {
+        Session.stop()
+        sessionEnd = 0
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
+        showToast("■ Прогрев остановлен")
+    }
+
+    private func lines(_ text: String) -> [String] {
+        text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     }
 
     private func locked() {
@@ -436,122 +461,23 @@ struct EditorRow: View {
     }
 }
 
-// MARK: - Запуск: настройки → облачный телефон
+// MARK: - Как это работает на iPhone
 
-struct LaunchSheet: View {
+struct HowCard: View {
     let theme: Theme
-    let close: () -> Void
-    let copy: () -> Void
-    let toast: (String) -> Void
-    @Environment(\.openURL) private var openURL
-
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.55).ignoresSafeArea().onTapGesture(perform: close)
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 12) {
-                    Text("▶")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundColor(.white)
-                        .frame(width: 44, height: 44)
-                        .background(Circle().fill(LinearGradient(colors: [theme.a1, theme.a2],
-                                                                 startPoint: .topLeading, endPoint: .bottomTrailing)))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Настройки скопированы").font(.system(size: 18, weight: .bold)).foregroundColor(theme.text)
-                        Text("Прогрев запускается в облачном телефоне").font(.system(size: 13)).foregroundColor(theme.hint)
-                    }
-                }
-                step(1, "Откройте облачный телефон (Redfinger, VMOS Cloud, GeeLark…)")
-                step(2, "Там откройте «Прогрев TikTok» → «📥 Вставить настройки с iPhone»")
-                step(3, "Нажмите «▶ Начать прогрев» — дальше всё идёт на сервере, iPhone можно убрать")
-                Note(theme: theme, text: "iOS не разрешает приложениям управлять TikTok, поэтому прогрев идёт на облачном Android — "
-                     + "это работает 24/7, даже когда iPhone выключен.")
-                HStack(spacing: 8) {
-                    PillButton(theme: theme, title: "📋 Скопировать ещё раз") {
-                        copy()
-                        toast("📋 Код настроек скопирован")
-                    }
-                    PillButton(theme: theme, title: "Готово", action: close)
-                }
-            }
-            .padding(20)
-            .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(theme.light ? Color.white : theme.bg)
-                .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(theme.line)))
-            .shadow(color: theme.a1.opacity(0.35), radius: 24, y: 10)
-            .padding(20)
-        }
-    }
-
-    private func step(_ n: Int, _ text: String) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Text("\(n)")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundColor(.white)
-                .frame(width: 24, height: 24)
-                .background(Circle().fill(theme.a1))
-            Text(text).font(.system(size: 15)).foregroundColor(theme.text)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-}
-
-// MARK: - Облачный телефон (вместо «Подключить доступ»)
-
-struct CloudCard: View {
-    let theme: Theme
-    let toast: (String) -> Void
-    @Environment(\.openURL) private var openURL
-    @State private var ring = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Card(theme: theme) {
-            VStack(spacing: 8) {
-                ZStack {
-                    Circle().stroke(theme.a1, lineWidth: 2)
-                        .frame(width: 72, height: 72)
-                        .scaleEffect(ring ? 1.35 : 0.9)
-                        .opacity(ring ? 0 : 1)
-                    Text("☁️")
-                        .font(.system(size: 28))
-                        .frame(width: 64, height: 64)
-                        .background(Circle().fill(LinearGradient(colors: [theme.a1, theme.a3],
-                                                                 startPoint: .topLeading, endPoint: .bottomTrailing)))
-                }
-                .frame(width: 96, height: 96)
-                .onAppear {
-                    guard !reduceMotion else { return }
-                    withAnimation(.easeOut(duration: 1.8).repeatForever(autoreverses: false)) { ring = true }
-                }
-                Text("Облачный телефон").font(.system(size: 18, weight: .semibold)).foregroundColor(theme.text)
-                Text("Прогрев на iPhone работает через облачный Android: поставьте любой сервис, внутри него — "
-                     + "«Прогрев TikTok» и TikTok.")
-                    .font(.system(size: 13))
-                    .foregroundColor(theme.hint)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    PillButton(theme: theme, title: "Redfinger") { openURL(search("redfinger")) }
-                    PillButton(theme: theme, title: "VMOS Cloud") { openURL(search("vmos cloud")) }
-                    PillButton(theme: theme, title: "GeeLark") { openURL(search("geelark")) }
-                }
-            }
-            HStack(spacing: 8) {
-                PillButton(theme: theme, title: "📋 Ссылка на APK") {
-                    UIPasteboard.general.string = Premium.apkURL
-                    toast("📋 Ссылка скопирована — вставьте в браузер облачного телефона")
-                }
-                PillButton(theme: theme, title: "🤖 Бот") { openURL(Premium.botURL) }
-            }
+            CardTitle(theme: theme, icon: "📱", title: "Как работает на iPhone")
+            Text("Нажмите «▶ Начать прогрев» — откроется TikTok. Листайте ленту как обычно, а приложение "
+                 + "по вашим настройкам будет присылать подсказки сверху экрана: когда лайкнуть, добавить в избранное, "
+                 + "написать комментарий (с готовой фразой), сделать репост или перерыв.\n\n"
+                 + "Apple не разрешает приложениям самим нажимать в TikTok, поэтому действия делаете вы — "
+                 + "а приложение следит, чтобы всё выглядело как у живого человека.")
+                .font(.system(size: 14))
+                .foregroundColor(theme.hint)
+                .fixedSize(horizontal: false, vertical: true)
         }
-    }
-
-    private func search(_ term: String) -> URL {
-        URL(string: "itms-apps://search.itunes.apple.com/WebObjects/MZSearch.woa/wa/search?media=software&term="
-            + (term.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? term))!
     }
 }
 
@@ -748,6 +674,8 @@ struct HeroCard: View {
     let photos: Bool
     let skip: Bool
     let launches: Int
+    let secondsLeft: Int?
+    let plan: [Int]
     @State private var shift = false
     @State private var beat = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -762,23 +690,22 @@ struct HeroCard: View {
                     .scaleEffect(beat ? 1.14 : 1)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Прогрев TikTok").font(.system(size: 24, weight: .bold))
-                    Text(launches > 0 ? "Запусков: \(launches)" : "Готов к запуску").font(.system(size: 14)).opacity(0.9)
+                    Text(status).font(.system(size: 14)).opacity(0.9)
                 }
             }
             .padding(.bottom, 8)
-            HStack(spacing: 8) {
-                chip("🎬 " + (videos == 0 ? "∞" : "\(videos)"))
-                chip("❤ \(min(likeMin, likeMax))–\(max(likeMin, likeMax))")
-                chip("⏱ \(min(watchMin, watchMax))–\(max(watchMin, watchMax)) с")
-            }
-            HStack(spacing: 8) {
-                chip("★ \(fav)%")
-                chip("↻ \(repost)%")
-                chip("💬 \(comment)%")
-            }
-            HStack(spacing: 8) {
-                chip(photos ? "🖼 вкл" : "🖼 выкл")
-                chip(skip ? "⏭ эфиры" : "⏭ выкл")
+            if secondsLeft != nil {
+                HStack(spacing: 8) {
+                    chip("🎬 ~\(plan[0])")
+                    chip("❤ \(plan[1])")
+                    chip("★ \(plan[2])")
+                }
+                HStack(spacing: 8) {
+                    chip("💬 \(plan[3])")
+                    chip("↻ \(plan[4])")
+                }
+            } else {
+                settingsChips
             }
         }
         .foregroundColor(.white)
@@ -796,6 +723,28 @@ struct HeroCard: View {
             withAnimation(.easeInOut(duration: 6).repeatForever(autoreverses: true)) { shift = true }
             withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) { beat = true }
         }
+    }
+
+    private var status: String {
+        if let s = secondsLeft { return String(format: "Идёт прогрев · осталось %d:%02d", s / 60, s % 60) }
+        return launches > 0 ? "Готов к запуску · запусков: \(launches)" : "Готов к запуску"
+    }
+
+    @ViewBuilder private var settingsChips: some View {
+            HStack(spacing: 8) {
+                chip("🎬 " + (videos == 0 ? "∞" : "\(videos)"))
+                chip("❤ \(min(likeMin, likeMax))–\(max(likeMin, likeMax))")
+                chip("⏱ \(min(watchMin, watchMax))–\(max(watchMin, watchMax)) с")
+            }
+            HStack(spacing: 8) {
+                chip("★ \(fav)%")
+                chip("↻ \(repost)%")
+                chip("💬 \(comment)%")
+            }
+            HStack(spacing: 8) {
+                chip(photos ? "🖼 вкл" : "🖼 выкл")
+                chip(skip ? "⏭ эфиры" : "⏭ выкл")
+            }
     }
 
     private func chip(_ s: String) -> some View {
@@ -835,7 +784,7 @@ struct PremiumCard: View {
                 Button {
                     UIPasteboard.general.string = code
                     UINotificationFeedbackGenerator().notificationOccurred(.success)
-                    toast("📋 Код скопирован — вставьте его в облачном телефоне")
+                    toast("📋 Код скопирован")
                 } label: {
                     Text("📋").font(.system(size: 18))
                         .frame(width: 40, height: 34)
