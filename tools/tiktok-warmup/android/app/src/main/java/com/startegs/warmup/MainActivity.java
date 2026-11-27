@@ -1286,15 +1286,16 @@ public class MainActivity extends Activity {
             chips.setGravity(Gravity.CENTER);
             chips.setPadding(0, dp(14), 0, 0);
             for (String c : new String[]{"🎯 Ниша", "⏰ Расписание", "📊 Отчёты"}) {
-                TextView ch = text(c, 13, th.light ? th.a1 : Color.WHITE, true);
-                ch.setPadding(dp(12), dp(6), dp(12), dp(6));
+                TextView ch = text(c, 12, th.light ? th.a1 : Color.WHITE, true);
+                ch.setSingleLine(true);
+                ch.setPadding(dp(10), dp(5), dp(10), dp(5));
                 GradientDrawable g = new GradientDrawable();
                 g.setColor(Theme.alpha(th.a1, th.light ? 0x1F : 0x40));
                 g.setStroke(dp(1), Theme.alpha(th.a1, 0x66));
                 g.setCornerRadius(dp(99));
                 ch.setBackground(g);
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
-                lp.setMargins(dp(4), 0, dp(4), 0);
+                lp.setMargins(dp(3), 0, dp(3), 0);
                 chips.addView(ch, lp);
             }
             s.addView(chips);

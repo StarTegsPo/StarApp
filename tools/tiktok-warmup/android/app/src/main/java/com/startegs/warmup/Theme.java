@@ -7,7 +7,7 @@ final class Theme {
 
     static final String DARK = "dark", LIGHT = "light", WINE = "wine";
     static final String[] IDS = {DARK, LIGHT, WINE};
-    static final String[] TITLES = {"🖤 Тёмная", "☀️ Светлая", "🍷 Тёмно-красная"};
+    static final String[] TITLES = {"🖤 Тёмная", "☀️ Светлая", "🍷 Бордо"};
 
     final String id;
     final boolean light;

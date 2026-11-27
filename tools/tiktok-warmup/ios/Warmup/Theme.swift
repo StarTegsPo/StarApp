@@ -31,7 +31,7 @@ struct Theme: Equatable {
                              a1: Color(hex: 0xE11D48), a2: Color(hex: 0xFF6B6B), a3: Color(hex: 0xB3122E),
                              soft: Color.black.opacity(0.07), spark: Color(hex: 0xFF8FA3))
 
-    static let wine = Theme(id: "wine", title: "🍷 Тёмно-красная", light: false,
+    static let wine = Theme(id: "wine", title: "🍷 Бордо", light: false,
                             bg: Color(hex: 0x1C0509), card: Color(hex: 0x2D0B12, alpha: 0.7),
                             line: Color(hex: 0xFF9AA6, alpha: 0.17), text: Color(hex: 0xFFF0F2), hint: Color(hex: 0xCC9AA2),
                             a1: Color(hex: 0xFF3B4F), a2: Color(hex: 0xFF8A65), a3: Color(hex: 0x8A0F23),
