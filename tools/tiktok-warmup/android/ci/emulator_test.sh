@@ -16,6 +16,48 @@ check() { if eval "$2"; then echo "✅ $1"; else echo "❌ $1"; FAIL=1; fi; }
 adb install -r faketok/build/outputs/apk/debug/faketok-debug.apk
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 
+# ---------- скриншоты: онбординг, главный экран, смена темы (анимации включены) ----------
+log "Скриншоты: онбординг и анимации"
+adb shell settings put global animator_duration_scale 1
+adb shell settings put global transition_animation_scale 1
+adb shell settings put global window_animation_scale 1
+adb shell am start -W -n $APP/.MainActivity >/dev/null
+sleep 2;  adb exec-out screencap -p > "$OUT/ob_1.png"
+W=$(adb shell wm size | grep -o '[0-9]*x[0-9]*' | tail -1); SW=${W%x*}; SH=${W#*x}
+adb shell input swipe $((SW*8/10)) $((SH/2)) $((SW*2/10)) $((SH/2)) 150
+sleep 1.6; adb exec-out screencap -p > "$OUT/ob_2.png"
+adb shell input swipe $((SW*8/10)) $((SH/2)) $((SW*2/10)) $((SH/2)) 150
+sleep 1.6; adb exec-out screencap -p > "$OUT/ob_3.png"
+tapText() {  # нажать на элемент с текстом $1 (до включения спецвозможности uiautomator безопасен)
+  adb shell uiautomator dump /sdcard/u.xml >/dev/null 2>&1 && adb pull /sdcard/u.xml "$OUT/u.xml" >/dev/null 2>&1 || return 1
+  local xy; xy=$(python3 - "$OUT/u.xml" "$1" <<'PY'
+import re, sys
+xml = open(sys.argv[1], encoding="utf-8").read()
+for m in re.finditer(r'<node [^>]*>', xml):
+    n = m.group(0)
+    if sys.argv[2] in n:
+        a, b, c, d = map(int, re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', n).groups())
+        print((a + c) // 2, (b + d) // 2); break
+PY
+)
+  [ -n "$xy" ] && adb shell input tap $xy
+}
+tapText "Пропустить"
+sleep 0.5; adb exec-out screencap -p > "$OUT/main_entrance.png"
+sleep 2;   adb exec-out screencap -p > "$OUT/main.png"
+tapText "Тёмно-красная"
+sleep 0.55; adb exec-out screencap -p > "$OUT/theme_reveal.png"
+sleep 1.5;  adb exec-out screencap -p > "$OUT/theme_wine.png"
+tapText "Светлая"
+sleep 1.8;  adb exec-out screencap -p > "$OUT/theme_light.png"
+adb shell input keyevent KEYCODE_HOME
+sleep 1
+adb shell am force-stop $APP   # чтобы приложение не перезаписало настройки из памяти
+sleep 1
+adb shell settings put global animator_duration_scale 0
+adb shell settings put global transition_animation_scale 0
+adb shell settings put global window_animation_scale 0
+
 # быстрые настройки, чтобы за минуту было видно много действий
 cat > "$OUT/cfg.xml" <<'EOF'
 <?xml version='1.0' encoding='utf-8' standalone='yes' ?>
@@ -29,6 +71,9 @@ cat > "$OUT/cfg.xml" <<'EOF'
     <int name="longChance" value="0" />
     <int name="favChance" value="0" />
     <boolean name="premium" value="true" />
+    <boolean name="onboarded" value="true" />
+    <int name="seenVersion" value="99999" />
+    <string name="theme">dark</string>
     <string name="niche">авто</string>
     <int name="followChance" value="0" />
 </map>
@@ -36,6 +81,8 @@ EOF
 adb push "$OUT/cfg.xml" /data/local/tmp/cfg.xml >/dev/null
 adb shell "cat /data/local/tmp/cfg.xml | run-as $APP sh -c 'mkdir -p shared_prefs && cat > shared_prefs/cfg.xml'"
 
+# после force-stop пакет «остановлен» — открываем его, иначе Android не подключит спецвозможность
+adb shell am start -W -n $APP/.MainActivity >/dev/null; sleep 2; adb shell input keyevent KEYCODE_HOME; sleep 1
 log "Включаю спецвозможность «Прогрев TikTok»"
 adb shell settings put secure enabled_accessibility_services $APP/$APP.WarmupService
 adb shell settings put secure accessibility_enabled 1

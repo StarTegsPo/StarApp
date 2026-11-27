@@ -997,15 +997,56 @@ public class WarmupService extends AccessibilityService {
         overlay.setText(sb);
     }
 
-    /** Короткая «пульсация» плашки после действия. */
+    /** Короткая «пульсация» плашки после действия + сердечки, всплывающие над ней. */
     private void bumpOverlay() {
         if (overlay == null) return;
         updateOverlay();
+        floatHearts();
         overlay.animate().cancel();
         overlay.setScaleX(1.12f);
         overlay.setScaleY(1.12f);
         overlay.animate().scaleX(1f).scaleY(1f).setDuration(350)
                 .setInterpolator(new OvershootInterpolator(3f)).start();
+    }
+
+    /**
+     * 3 сердечка всплывают над плашкой. Отдельное окно без касаний (FLAG_NOT_TOUCHABLE),
+     * чтобы не перекрывать TikTok, и удаляется через секунду.
+     */
+    private void floatHearts() {
+        if (wm == null || overlayLp == null || overlay == null || !Anim.enabled(this)) return;
+        final android.widget.FrameLayout box = new android.widget.FrameLayout(this);
+        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(dp(90), dp(120),
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                PixelFormat.TRANSLUCENT);
+        lp.gravity = Gravity.TOP | Gravity.START;
+        lp.x = Math.max(0, overlayLp.x + overlay.getWidth() / 2 - dp(45));
+        lp.y = Math.max(0, overlayLp.y - dp(110));
+        try {
+            wm.addView(box, lp);
+        } catch (RuntimeException e) {
+            return;
+        }
+        for (int i = 0; i < 3; i++) {
+            TextView h = new TextView(this);
+            h.setText("❤");
+            h.setTextSize(14 + rand(0, 8));
+            h.setTextColor(i == 1 ? 0xFFFF2D55 : 0xFFFF6B81);
+            android.widget.FrameLayout.LayoutParams hl = new android.widget.FrameLayout.LayoutParams(-2, -2,
+                    Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+            box.addView(h, hl);
+            h.setAlpha(0f);
+            h.setScaleX(0.4f);
+            h.setScaleY(0.4f);
+            h.animate().translationY(-dp(70 + rand(0, 30))).translationX(dp(rand(-26, 26)))
+                    .alpha(1f).scaleX(1.1f).scaleY(1.1f).setStartDelay(i * 110L).setDuration(520)
+                    .withEndAction(() -> h.animate().alpha(0f).translationYBy(-dp(16)).setDuration(260).start())
+                    .start();
+        }
+        handler.postDelayed(() -> {
+            try { wm.removeView(box); } catch (RuntimeException ignored) { }
+        }, 1300);
     }
 
     private void hideOverlay() {

@@ -47,6 +47,18 @@ jobs:
           cp tools/tiktok-warmup/android/app/build/outputs/apk/release/app-release.apk TikTokWarmup.apk
           ls -lh TikTokWarmup.apk
 
+      - name: version.json для автообновления в приложении
+        run: |
+          python3 - <<'PY'
+          import json, re
+          g = open("tools/tiktok-warmup/android/app/build.gradle", encoding="utf-8").read()
+          code = int(re.search(r"versionCode\s+(\d+)", g).group(1))
+          name = re.search(r"versionName\s+['\"]([^'\"]+)", g).group(1)
+          notes = [l.strip() for l in open("tools/tiktok-warmup/android/app/src/main/assets/whatsnew.txt", encoding="utf-8") if l.strip()]
+          json.dump({"versionCode": code, "versionName": name, "notes": notes}, open("version.json", "w", encoding="utf-8"), ensure_ascii=False)
+          print(open("version.json", encoding="utf-8").read())
+          PY
+
       - uses: actions/upload-artifact@v4
         with:
           name: TikTokWarmup-apk
@@ -59,7 +71,9 @@ jobs:
           name: Прогрев TikTok (последняя сборка)
           prerelease: true
           make_latest: false
-          files: TikTokWarmup.apk
+          files: |
+            TikTokWarmup.apk
+            version.json
           body: |
             Скачайте TikTokWarmup.apk на телефон и установите (разрешите установку из неизвестных источников).
             Сборка из ветки `${{ github.ref_name }}`, коммит ${{ github.sha }}.

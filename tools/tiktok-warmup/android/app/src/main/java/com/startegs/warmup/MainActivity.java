@@ -48,7 +48,14 @@ public class MainActivity extends Activity {
     private final List<ValueAnimator> loops = new ArrayList<>();
     private boolean reduceMotion;
 
-    private FrameLayout frame;
+    private FrameLayout frame, root;
+    private Anim.Confetti confetti;
+    private Anim.Pulse pulse;
+    private View mainWrap;
+    private LinearLayout updateCard;
+    /** Снимок старой темы для «волны» при смене темы (живёт между recreate). */
+    private static android.graphics.Bitmap themeShot;
+    private static float themeX, themeY;
     private TextView heroStatus, chipVideos, chipLikes, chipFav, chipRepost, chipPhotos, chipTime, chipComments, chipSkipped;
     private ShimmerButton mainButton;
     private LinearLayout connectBox, connectedBox;
@@ -154,10 +161,16 @@ public class MainActivity extends Activity {
         col.setLayoutTransition(lt);
         scroll.addView(col);
         frame.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
-        setContentView(frame);
+        root = new FrameLayout(this);
+        root.setBackgroundColor(th.bg);
+        root.addView(frame, new FrameLayout.LayoutParams(-1, -1));
+        confetti = new Anim.Confetti(this);
+        root.addView(confetti, new FrameLayout.LayoutParams(-1, -1));
+        setContentView(root);
 
         col.addView(buildThemeSwitch());
         col.addView(buildProfiles());
+        col.addView(buildUpdateCard());
         col.addView(buildHero());
         col.addView(buildMainButton());
         col.addView(buildPremiumCard());
@@ -175,7 +188,19 @@ public class MainActivity extends Activity {
         col.addView(buildParallelCard());
         col.addView(buildFooter());
 
-        runEntrance();
+        boolean revealing = playThemeReveal();
+        boolean onboarding = !prefs.getBoolean("onboarded", false);
+        if (onboarding) {
+            showOnboarding();
+        } else if (!revealing) {
+            runEntrance();
+        }
+        if (!onboarding) maybeShowWhatsNew();
+        if (prefs.getBoolean("celebrate", false)) {
+            prefs.edit().remove("celebrate").apply();
+            root.postDelayed(() -> celebrate(mainButton), 700);
+        }
+        Updater.check(this, this::showUpdate);
         if (Build.VERSION.SDK_INT >= 33
                 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 33);
@@ -261,9 +286,13 @@ public class MainActivity extends Activity {
 
         String uiState = running ? "run" : (enabled ? "ready" : "off");
         boolean first = lastUiState.isEmpty();
-        if ("run".equals(lastUiState) && !running) updateHistory();   // сессия закончилась — обновить историю
+        if ("run".equals(lastUiState) && !running) {   // сессия закончилась — история и праздник
+            updateHistory();
+            if (s != null && s.done() > 0) celebrate(mainButton);
+        }
         if (!uiState.equals(lastUiState)) {
             lastUiState = uiState;
+            pulse.setActive(running);
             if (running) {
                 mainButton.setText("■  Остановить");
                 mainButton.setColors(th.a3, th.a1);
@@ -279,7 +308,7 @@ public class MainActivity extends Activity {
 
     private void setChip(int i, TextView chip, int v, String prefix, String suffix) {
         if (last[i] == v) return;
-        chip.setText(prefix + v + suffix);
+        Anim.countTo(chip, prefix, last[i], v, suffix);
         if (last[i] >= 0) pop(chip);
         last[i] = v;
     }
@@ -317,10 +346,24 @@ public class MainActivity extends Activity {
                 indicator.animate().translationX(row.getWidth() / 3f * idx).setDuration(260)
                         .setInterpolator(new DecelerateInterpolator(2f)).start();
                 Theme.save(this, Theme.IDS[idx]);
-                frame.animate().alpha(0f).setStartDelay(160).setDuration(220).withEndAction(() -> {
+                int[] loc = new int[2];
+                v.getLocationInWindow(loc);
+                themeX = loc[0] + v.getWidth() / 2f;
+                themeY = loc[1] + v.getHeight() / 2f;
+                ui.postDelayed(() -> {
+                    if (!reduceMotion) {
+                        try {
+                            android.graphics.Bitmap b = android.graphics.Bitmap.createBitmap(root.getWidth(),
+                                    root.getHeight(), android.graphics.Bitmap.Config.RGB_565);
+                            root.draw(new android.graphics.Canvas(b));
+                            themeShot = b;
+                        } catch (Throwable ignored) {
+                            themeShot = null;
+                        }
+                    }
                     recreate();
-                    overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
-                }).start();
+                    overridePendingTransition(0, 0);
+                }, 240);
             });
             row.addView(t, new LinearLayout.LayoutParams(0, -1, 1f));
         }
@@ -439,11 +482,19 @@ public class MainActivity extends Activity {
                 startWarmup();
             }
         });
-        entrance.add(mainButton);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(60));
-        lp.bottomMargin = dp(14);
-        mainButton.setLayoutParams(lp);
-        return mainButton;
+        FrameLayout wrap = new FrameLayout(this);
+        wrap.setClipChildren(false);
+        pulse = new Anim.Pulse(this, th.a1, dp(12));
+        wrap.addView(pulse, new FrameLayout.LayoutParams(-1, -1));
+        FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(-1, dp(60));
+        blp.setMargins(dp(12), dp(12), dp(12), dp(12));
+        wrap.addView(mainButton, blp);
+        mainWrap = wrap;
+        entrance.add(wrap);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(84));
+        lp.setMargins(-dp(12), -dp(12), -dp(12), dp(2));
+        wrap.setLayoutParams(lp);
+        return wrap;
     }
 
     // ---------- Premium ----------
@@ -552,6 +603,7 @@ public class MainActivity extends Activity {
         activate.setOnClickListener(v -> {
             int res = Premium.activateResult(this, code.getText().toString());
             if (res == Premium.LIFETIME || res == Premium.MONTH) {
+                prefs.edit().putBoolean("celebrate", true).apply();
                 Toast.makeText(this, res == Premium.LIFETIME ? "👑 Premium навсегда активирован!"
                         : "👑 Premium на 30 дней активирован!", Toast.LENGTH_LONG).show();
                 frame.animate().alpha(0f).setDuration(250).withEndAction(() -> {
@@ -873,6 +925,406 @@ public class MainActivity extends Activity {
         t.setPadding(dp(12), dp(6), dp(12), 0);
         entrance.add(t);
         return t;
+    }
+
+    // ---------- анимации: праздник, наклон карточек, смена темы ----------
+
+    /** Конфетти и сердечки из центра view. */
+    private void celebrate(View from) {
+        if (from == null || reduceMotion) return;
+        int[] loc = new int[2], rl = new int[2];
+        from.getLocationInWindow(loc);
+        root.getLocationInWindow(rl);
+        confetti.burst(loc[0] - rl[0] + from.getWidth() / 2f, loc[1] - rl[1] + from.getHeight() / 2f, 90,
+                new int[]{th.a1, th.a2, th.a3, 0xFFFFB648, 0xFFFFFFFF, th.spark});
+    }
+
+    /** Карточка слегка наклоняется к пальцу, как физический объект. */
+    private void tilt(final View v) {
+        if (reduceMotion) return;
+        v.setOnTouchListener((view, e) -> {
+            switch (e.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    float rx = (e.getY() / Math.max(1, view.getHeight()) - 0.5f) * -6f;
+                    float ry = (e.getX() / Math.max(1, view.getWidth()) - 0.5f) * 6f;
+                    view.setCameraDistance(view.getWidth() * 12f);
+                    view.animate().rotationX(rx).rotationY(ry).scaleX(0.985f).scaleY(0.985f).setDuration(140).start();
+                    return true;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    view.animate().rotationX(0).rotationY(0).scaleX(1f).scaleY(1f).setDuration(380)
+                            .setInterpolator(new OvershootInterpolator(2.2f)).start();
+                    return true;
+            }
+            return false;
+        });
+    }
+
+    /** Новая тема раскрывается «волной» из точки нажатия поверх снимка старой. */
+    private boolean playThemeReveal() {
+        final android.graphics.Bitmap shot = themeShot;
+        themeShot = null;
+        if (shot == null || reduceMotion) return false;
+        final android.widget.ImageView old = new android.widget.ImageView(this);
+        old.setImageBitmap(shot);
+        old.setScaleType(android.widget.ImageView.ScaleType.FIT_XY);
+        root.addView(old, 0, new FrameLayout.LayoutParams(-1, -1));
+        frame.setVisibility(View.INVISIBLE);
+        frame.post(() -> {
+            float r = (float) Math.hypot(Math.max(themeX, frame.getWidth() - themeX),
+                    Math.max(themeY, frame.getHeight() - themeY));
+            android.animation.Animator a = android.view.ViewAnimationUtils.createCircularReveal(
+                    frame, (int) themeX, (int) themeY, 0, r);
+            a.setDuration(650);
+            a.setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator());
+            a.addListener(new android.animation.AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(android.animation.Animator animation) {
+                    root.removeView(old);
+                    shot.recycle();
+                }
+            });
+            frame.setVisibility(View.VISIBLE);
+            a.start();
+        });
+        return true;
+    }
+
+    // ---------- обновления и «Что нового» ----------
+
+    private View buildUpdateCard() {
+        updateCard = card();
+        entrance.remove(updateCard);
+        updateCard.setVisibility(View.GONE);
+        return updateCard;
+    }
+
+    private void showUpdate(int code, String name, String notes) {
+        if (updateCard == null || updateCard.getVisibility() == View.VISIBLE) return;
+        updateCard.removeAllViews();
+        updateCard.addView(cardTitle("🆕", "Доступна версия " + name));
+        if (!notes.isEmpty()) {
+            TextView n = text(notes, 13, th.hint, false);
+            n.setMaxLines(6);
+            updateCard.addView(n);
+        }
+        ShimmerButton upd = new ShimmerButton(this, th.a1, th.a2);
+        upd.setText("⬇  Обновить");
+        upd.setTextSize(15);
+        upd.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        pressable(upd);
+        upd.setOnClickListener(v -> {
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(Updater.APK_URL)));
+            } catch (RuntimeException e) {
+                Toast.makeText(this, Updater.APK_URL, Toast.LENGTH_LONG).show();
+            }
+        });
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(48));
+        lp.topMargin = dp(10);
+        updateCard.addView(upd, lp);
+        TextView bot = smallButton("Скачать через бота");
+        bot.setOnClickListener(v -> {
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(Premium.BOT_URL)));
+            } catch (RuntimeException ignored) { }
+        });
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(-2, -2);
+        blp.topMargin = dp(8);
+        updateCard.addView(bot, blp);
+        updateCard.setVisibility(View.VISIBLE);
+        if (!reduceMotion) {
+            updateCard.setAlpha(0f);
+            updateCard.setTranslationY(-dp(20));
+            updateCard.animate().alpha(1f).translationY(0).setDuration(450)
+                    .setInterpolator(new OvershootInterpolator(1.4f)).start();
+        }
+    }
+
+    /** После обновления — карточка «Что нового» (на свежей установке не показывается). */
+    private void maybeShowWhatsNew() {
+        int cur = Updater.currentCode(this);
+        int seen = prefs.getInt("seenVersion", 0);
+        prefs.edit().putInt("seenVersion", cur).apply();
+        if (seen == 0 || cur <= seen) return;
+        String notes = Updater.bundledNotes(this);
+        if (notes.isEmpty()) return;
+        final FrameLayout dim = new FrameLayout(this);
+        dim.setBackgroundColor(0x99000000);
+        dim.setClickable(true);
+        LinearLayout c = new LinearLayout(this);
+        c.setOrientation(LinearLayout.VERTICAL);
+        c.setPadding(dp(22), dp(22), dp(22), dp(18));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(th.light ? Color.WHITE : th.bg);
+        bg.setCornerRadius(dp(26));
+        bg.setStroke(dp(1), th.line);
+        c.setBackground(bg);
+        c.setElevation(dp(16));
+        TextView title = text("✨ Что нового в " + Updater.currentName(this), 20, th.text, true);
+        c.addView(title);
+        TextView body = text(notes, 14, th.text, false);
+        body.setPadding(0, dp(12), 0, dp(16));
+        c.addView(body);
+        ShimmerButton ok = new ShimmerButton(this, th.a1, th.a2);
+        ok.setText("Круто!");
+        ok.setTextSize(16);
+        pressable(ok);
+        c.addView(ok, new LinearLayout.LayoutParams(-1, dp(50)));
+        FrameLayout.LayoutParams clp = new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER);
+        clp.setMargins(dp(20), 0, dp(20), 0);
+        dim.addView(c, clp);
+        root.addView(dim, new FrameLayout.LayoutParams(-1, -1));
+        confetti.bringToFront();
+        Runnable close = () -> dim.animate().alpha(0f).setDuration(250).withEndAction(() -> root.removeView(dim)).start();
+        ok.setOnClickListener(v -> {
+            celebrate(v);
+            close.run();
+        });
+        dim.setOnClickListener(v -> close.run());
+        if (!reduceMotion) {
+            dim.setAlpha(0f);
+            dim.animate().alpha(1f).setDuration(250).start();
+            c.setScaleX(0.85f);
+            c.setScaleY(0.85f);
+            c.animate().scaleX(1f).scaleY(1f).setDuration(450).setInterpolator(new OvershootInterpolator(1.8f)).start();
+        }
+    }
+
+    // ---------- онбординг ----------
+
+    private int obIndex;
+
+    /** Знакомство при первом запуске: 3 анимированных экрана. */
+    private void showOnboarding() {
+        final FrameLayout ob = new FrameLayout(this);
+        ob.setBackgroundColor(th.bg);
+        ob.setClickable(true);
+        ob.addView(new FxView(this, th), new FrameLayout.LayoutParams(-1, -1));
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setGravity(Gravity.CENTER_HORIZONTAL);
+        col.setPadding(dp(24), dp(48), dp(24), dp(28));
+        final FrameLayout stage = new FrameLayout(this);
+        col.addView(stage, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+        final View[] slides = {obSlide(0), obSlide(1), obSlide(2)};
+        for (View sl : slides) {
+            sl.setVisibility(View.INVISIBLE);
+            stage.addView(sl, new FrameLayout.LayoutParams(-1, -1));
+        }
+
+        final LinearLayout dots = new LinearLayout(this);
+        dots.setGravity(Gravity.CENTER);
+        dots.setPadding(0, dp(16), 0, dp(18));
+        for (int i = 0; i < 3; i++) {
+            View d = new View(this);
+            GradientDrawable g = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{th.a1, th.a2});
+            g.setCornerRadius(dp(99));
+            d.setBackground(g);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(8), dp(8));
+            lp.setMargins(dp(4), 0, dp(4), 0);
+            dots.addView(d, lp);
+        }
+        col.addView(dots);
+
+        final ShimmerButton next = new ShimmerButton(this, th.a1, th.a2);
+        next.setTextSize(17);
+        next.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        glow(next, th.a1);
+        pressable(next);
+        col.addView(next, new LinearLayout.LayoutParams(-1, dp(58)));
+        ob.addView(col, new FrameLayout.LayoutParams(-1, -1));
+
+        TextView skip = text("Пропустить", 14, th.hint, true);
+        skip.setPadding(dp(16), dp(10), dp(16), dp(10));
+        FrameLayout.LayoutParams slp = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
+        slp.setMargins(0, dp(8), dp(8), 0);
+        ob.addView(skip, slp);
+
+        root.addView(ob, new FrameLayout.LayoutParams(-1, -1));
+        confetti.bringToFront();
+
+        final Runnable finish = () -> {
+            prefs.edit().putBoolean("onboarded", true).apply();
+            prefs.edit().putInt("seenVersion", Updater.currentCode(this)).apply();
+            if (reduceMotion) {
+                root.removeView(ob);
+            } else {
+                ob.animate().alpha(0f).scaleX(1.06f).scaleY(1.06f).setDuration(380)
+                        .withEndAction(() -> root.removeView(ob)).start();
+            }
+            runEntrance();
+        };
+        final java.util.function.IntConsumer[] go = new java.util.function.IntConsumer[1];
+        go[0] = target -> {
+            int from = obIndex;
+            obIndex = target;
+            next.setText(target == 2 ? "🔌  Подключить доступ" : "Далее  →");
+            for (int i = 0; i < 3; i++) {
+                final View d = dots.getChildAt(i);
+                final int to = dp(i == target ? 26 : 8);
+                d.setAlpha(i == target ? 1f : 0.35f);
+                if (reduceMotion) {
+                    d.getLayoutParams().width = to;
+                    d.requestLayout();
+                } else {
+                    ValueAnimator va = ValueAnimator.ofInt(d.getLayoutParams().width, to);
+                    va.setDuration(300);
+                    va.addUpdateListener(a -> {
+                        d.getLayoutParams().width = (int) a.getAnimatedValue();
+                        d.requestLayout();
+                    });
+                    va.start();
+                }
+            }
+            View in = slides[target];
+            in.setVisibility(View.VISIBLE);
+            if (from == target || reduceMotion) {
+                for (int i = 0; i < 3; i++) slides[i].setVisibility(i == target ? View.VISIBLE : View.INVISIBLE);
+                in.setAlpha(1f);
+                in.setTranslationX(0);
+                if (target == 0) ui.postDelayed(() -> burstFromCenter(in), 500);
+                return;
+            }
+            float dir = target > from ? 1 : -1;
+            final View out = slides[from];
+            out.animate().translationX(-dir * stage.getWidth() * 0.6f).alpha(0f).scaleX(0.92f).scaleY(0.92f)
+                    .setDuration(360).withEndAction(() -> out.setVisibility(View.INVISIBLE)).start();
+            in.setTranslationX(dir * stage.getWidth() * 0.6f);
+            in.setAlpha(0f);
+            in.setScaleX(0.92f);
+            in.setScaleY(0.92f);
+            in.animate().translationX(0).alpha(1f).scaleX(1f).scaleY(1f).setDuration(420)
+                    .setInterpolator(new DecelerateInterpolator(2f)).start();
+            popChildren(in);
+        };
+        next.setOnClickListener(v -> {
+            if (obIndex < 2) {
+                go[0].accept(obIndex + 1);
+            } else {
+                try {
+                    startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+                    Toast.makeText(this, "Найдите «Прогрев TikTok» и включите", Toast.LENGTH_LONG).show();
+                } catch (RuntimeException ignored) { }
+                finish.run();
+            }
+        });
+        skip.setOnClickListener(v -> finish.run());
+        final android.view.GestureDetector gd = new android.view.GestureDetector(this,
+                new android.view.GestureDetector.SimpleOnGestureListener() {
+                    @Override
+                    public boolean onDown(MotionEvent e) { return true; }
+
+                    @Override
+                    public boolean onFling(MotionEvent a, MotionEvent b, float vx, float vy) {
+                        if (Math.abs(vx) < Math.abs(vy) || Math.abs(vx) < 600) return false;
+                        if (vx < 0 && obIndex < 2) go[0].accept(obIndex + 1);
+                        if (vx > 0 && obIndex > 0) go[0].accept(obIndex - 1);
+                        return true;
+                    }
+                });
+        stage.setOnTouchListener((v, e) -> gd.onTouchEvent(e));
+        obIndex = 0;
+        go[0].accept(0);
+    }
+
+    private View obSlide(int i) {
+        LinearLayout s = new LinearLayout(this);
+        s.setOrientation(LinearLayout.VERTICAL);
+        s.setGravity(Gravity.CENTER_HORIZONTAL);
+        View art;
+        String title, body;
+        if (i == 0) {
+            FrameLayout logo = new FrameLayout(this);
+            logo.setClipChildren(false);
+            Anim.Pulse ring = new Anim.Pulse(this, th.a1, dp(36));
+            ring.setActive(true);
+            logo.addView(ring, new FrameLayout.LayoutParams(dp(220), dp(220), Gravity.CENTER));
+            TextView heart = text("❤", 72, Color.WHITE, false);
+            heart.setGravity(Gravity.CENTER);
+            GradientDrawable hb = new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[]{th.a1, th.a3});
+            hb.setShape(GradientDrawable.OVAL);
+            heart.setBackground(hb);
+            heart.setElevation(dp(14));
+            glow(heart, th.a1);
+            logo.addView(heart, new FrameLayout.LayoutParams(dp(148), dp(148), Gravity.CENTER));
+            heartbeat(heart);
+            art = logo;
+            title = "Прогрев TikTok";
+            body = "Аккаунт прогревается сам — так, будто ленту листает живой человек. "
+                    + "Алгоритм быстрее понимает вас и чаще показывает ваши ролики.";
+        } else if (i == 1) {
+            art = new Anim.FeedPhone(this, th);
+            title = "Как живой человек";
+            body = "Случайное время просмотра, ❤ через 1–18 роликов, избранное, фото-посты. "
+                    + "Эфиры и реклама — мимо. Можно по нише и по расписанию.";
+        } else {
+            art = new Anim.ToggleShow(this, th);
+            title = "Один шаг — и готово";
+            body = "Включите «Прогрев TikTok» в Спецвозможностях: так приложение сможет листать ленту. "
+                    + "Оно только свайпает и лайкает в TikTok — ничего не читает и никуда не отправляет.";
+        }
+        s.addView(art, new LinearLayout.LayoutParams(-1, 0, 1f));
+        TextView t = text(title, 28, th.text, true);
+        t.setGravity(Gravity.CENTER);
+        t.setPadding(0, dp(18), 0, dp(8));
+        s.addView(t);
+        TextView b = text(body, 15, th.hint, false);
+        b.setGravity(Gravity.CENTER);
+        s.addView(b);
+        if (i == 1) {
+            LinearLayout chips = new LinearLayout(this);
+            chips.setGravity(Gravity.CENTER);
+            chips.setPadding(0, dp(14), 0, 0);
+            for (String c : new String[]{"🎯 Ниша", "⏰ Расписание", "📊 Отчёты"}) {
+                TextView ch = text(c, 13, th.light ? th.a1 : Color.WHITE, true);
+                ch.setPadding(dp(12), dp(6), dp(12), dp(6));
+                GradientDrawable g = new GradientDrawable();
+                g.setColor(Theme.alpha(th.a1, th.light ? 0x1F : 0x40));
+                g.setStroke(dp(1), Theme.alpha(th.a1, 0x66));
+                g.setCornerRadius(dp(99));
+                ch.setBackground(g);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+                lp.setMargins(dp(4), 0, dp(4), 0);
+                chips.addView(ch, lp);
+            }
+            s.addView(chips);
+        }
+        return s;
+    }
+
+    /** Заголовок, текст и чипсы слайда появляются по очереди. */
+    private void popChildren(View slide) {
+        if (reduceMotion || !(slide instanceof LinearLayout)) return;
+        LinearLayout l = (LinearLayout) slide;
+        for (int i = 1; i < l.getChildCount(); i++) {
+            View c = l.getChildAt(i);
+            c.setAlpha(0f);
+            c.setTranslationY(dp(16));
+            c.animate().alpha(1f).translationY(0).setStartDelay(120L * i).setDuration(380)
+                    .setInterpolator(new DecelerateInterpolator(2f)).start();
+        }
+        if (l.getChildCount() > 3 && l.getChildAt(3) instanceof LinearLayout) {
+            LinearLayout chips = (LinearLayout) l.getChildAt(3);
+            for (int i = 0; i < chips.getChildCount(); i++) {
+                View ch = chips.getChildAt(i);
+                ch.setScaleX(0f);
+                ch.setScaleY(0f);
+                ch.animate().scaleX(1f).scaleY(1f).setStartDelay(450 + 110L * i).setDuration(420)
+                        .setInterpolator(new OvershootInterpolator(2.5f)).start();
+            }
+        }
+    }
+
+    private void burstFromCenter(View v) {
+        if (reduceMotion || v.getWidth() == 0) return;
+        int[] loc = new int[2], rl = new int[2];
+        v.getLocationInWindow(loc);
+        root.getLocationInWindow(rl);
+        confetti.burst(loc[0] - rl[0] + v.getWidth() / 2f, loc[1] - rl[1] + v.getHeight() * 0.35f, 70,
+                new int[]{th.a1, th.a2, 0xFFFFB648, 0xFFFFFFFF});
     }
 
     // ---------- запуск ----------
@@ -1311,6 +1763,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.bottomMargin = dp(12);
         c.setLayoutParams(lp);
+        tilt(c);
         entrance.add(c);
         return c;
     }
