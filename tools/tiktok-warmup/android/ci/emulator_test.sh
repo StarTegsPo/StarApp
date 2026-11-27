@@ -105,24 +105,16 @@ check "после возврата в TikTok прогрев продолжает
 adb exec-out screencap -p > "$OUT/4_resumed.png"
 
 log "Фаза 4: останавливаю кнопкой в приложении — сессия должна попасть в историю"
+# uiautomator во время сессии не запускаем: на Android 11 он временно отключает все спецвозможности.
+# Главная кнопка та же («Начать» → «Остановить»), её координаты известны из первого снимка экрана.
 adb shell am start -W -n $APP/.MainActivity >/dev/null
 sleep 4
-adb shell uiautomator dump /sdcard/ui2.xml >/dev/null && adb pull /sdcard/ui2.xml "$OUT/ui2.xml" >/dev/null
-XY2=$(python3 - "$OUT/ui2.xml" <<'PY'
-import re, sys
-xml = open(sys.argv[1], encoding="utf-8").read()
-for m in re.finditer(r'<node [^>]*>', xml):
-    n = m.group(0)
-    if "Остановить" in n:
-        a, b, c, d = map(int, re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', n).groups())
-        print((a + c) // 2, (b + d) // 2)
-        break
-PY
-)
-check "кнопка «Остановить» на экране" '[ -n "$XY2" ]'
-[ -n "$XY2" ] && adb shell input tap $XY2
+adb exec-out screencap -p > "$OUT/5_before_stop.png"
+RUNNING_BEFORE=$(adb shell "run-as $APP cat shared_prefs/cfg.xml" | grep -c '&quot;p&quot;' || true)
+check "до нажатия «Остановить» сессия ещё идёт (в истории пусто)" '[ "$RUNNING_BEFORE" -eq 0 ]'
+adb shell input tap $XY
 sleep 3
-adb exec-out screencap -p > "$OUT/5_stopped.png"
+adb exec-out screencap -p > "$OUT/6_stopped.png"
 HIST=$(adb shell "run-as $APP cat shared_prefs/cfg.xml" | grep -o '&quot;p&quot;:[0-9]*' | head -1)
 echo "история: $HIST"
 check "сессия сохранена в истории" '[ -n "$HIST" ]'
