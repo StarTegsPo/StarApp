@@ -29,6 +29,8 @@ cat > "$OUT/cfg.xml" <<'EOF'
     <int name="longChance" value="0" />
     <int name="favChance" value="0" />
     <boolean name="premium" value="true" />
+    <string name="niche">авто</string>
+    <int name="followChance" value="0" />
 </map>
 EOF
 adb push "$OUT/cfg.xml" /data/local/tmp/cfg.xml >/dev/null
@@ -78,6 +80,10 @@ check "каждый выполненный свайп дошёл до TikTok" '[
 check "на каждый просмотренный пост был свайп (не засиживается)" '[ $((S1 + 1)) -ge "$POSTS" ]' 
 check "свайпы идут, пока приложение свёрнуто (>=5)" '[ "$S1" -ge 5 ]'
 check "лайки идут, пока приложение свёрнуто (>=2)" '[ "$L1" -ge 2 ]'
+NICHE_BAD=$(adb logcat -d -s WARMUP_TEST:I | grep " LIKE " | awk '{print $NF}' | awk '$1 % 2 == 1' | wc -l)
+NICHE_OK=$(adb logcat -d -s WARMUP_TEST:I | grep " LIKE " | awk '{print $NF}' | awk '$1 % 2 == 0' | wc -l)
+echo "ниша «авто»: лайков нишевым $NICHE_OK, остальным $NICHE_BAD"
+check "лайки только роликам из ниши" '[ "$NICHE_BAD" -eq 0 ] && [ "$NICHE_OK" -ge 1 ]'
 
 log "Фаза 2: сворачиваю сам TikTok (Домой) — 25 с"
 adb shell input keyevent KEYCODE_HOME
@@ -97,6 +103,30 @@ S3=$(count SWIPE)
 echo "свайпов: $S3"
 check "после возврата в TikTok прогрев продолжается" '[ "$S3" -ge 2 ]'
 adb exec-out screencap -p > "$OUT/4_resumed.png"
+
+log "Фаза 4: останавливаю кнопкой в приложении — сессия должна попасть в историю"
+adb shell am start -W -n $APP/.MainActivity >/dev/null
+sleep 4
+adb shell uiautomator dump /sdcard/ui2.xml >/dev/null && adb pull /sdcard/ui2.xml "$OUT/ui2.xml" >/dev/null
+XY2=$(python3 - "$OUT/ui2.xml" <<'PY'
+import re, sys
+xml = open(sys.argv[1], encoding="utf-8").read()
+for m in re.finditer(r'<node [^>]*>', xml):
+    n = m.group(0)
+    if "Остановить" in n:
+        a, b, c, d = map(int, re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', n).groups())
+        print((a + c) // 2, (b + d) // 2)
+        break
+PY
+)
+check "кнопка «Остановить» на экране" '[ -n "$XY2" ]'
+[ -n "$XY2" ] && adb shell input tap $XY2
+sleep 3
+adb exec-out screencap -p > "$OUT/5_stopped.png"
+HIST=$(adb shell "run-as $APP cat shared_prefs/cfg.xml" | grep -o '&quot;p&quot;:[0-9]*' | head -1)
+echo "история: $HIST"
+check "сессия сохранена в истории" '[ -n "$HIST" ]'
+
 
 adb logcat -d > "$OUT/logcat.txt"
 echo

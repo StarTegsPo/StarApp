@@ -16,7 +16,7 @@ public class FeedActivity extends Activity {
     private static final String TAG = "WARMUP_TEST";
     private int video = 0, likes = 0;
     private float downY;
-    private TextView title;
+    private TextView title, caption;
     private GestureDetector gd;
 
     @Override
@@ -38,6 +38,14 @@ public class FeedActivity extends Activity {
         rail.addView(button("★", "Add or remove this video from Favorites"));
         rail.addView(button("↗", "Share video. 5 shares"));
         root.addView(rail, new FrameLayout.LayoutParams(-2, -2, Gravity.END | Gravity.CENTER_VERTICAL));
+        // подпись ролика: чётные — из ниши «авто», нечётные — нет
+        caption = new TextView(this);
+        caption.setTextColor(Color.WHITE);
+        caption.setTextSize(16);
+        caption.setPadding(30, 0, 200, 0);
+        FrameLayout.LayoutParams clp = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM | Gravity.START);
+        clp.bottomMargin = 220;
+        root.addView(caption, clp);
         setContentView(root);
         show();
 
@@ -66,6 +74,7 @@ public class FeedActivity extends Activity {
 
     private void show() {
         title.setText("Видео #" + video + "\n❤ " + likes);
+        if (caption != null) caption.setText(video % 2 == 0 ? "#авто Лучшая тачка недели" : "#котики Смешной кот");
     }
 
     @Override

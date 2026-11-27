@@ -44,6 +44,7 @@ public class WarmupService extends AccessibilityService {
             "com.zhiliaoapp.musically", "com.ss.android.ugc.trill", "com.ss.android.ugc.aweme"
     };
 
+    static final String SEARCH = "search";
     static final String IDLE = "idle", RUNNING = "running", PAUSED = "paused", BREAK = "break", PHOTOS = "photos",
             SKIP = "skip", COMMENT = "comment";
 
@@ -104,6 +105,11 @@ public class WarmupService extends AccessibilityService {
         String[] repostTexts = lines(DEFAULT_REPOST);
         int phrasePercent = 60;   // какая доля комментариев — фразы (остальные — эмодзи)
         int dailyLimit = 0;       // 0 — без дневного лимита (Premium)
+        String[] niche = new String[0];   // ключевые слова ниши (без #, в нижнем регистре)
+        boolean nicheSearch = true;       // иногда искать ролики по хэштегу ниши
+        int followChance = 1;             // % подписаться на автора (в нише — только на нишевых)
+        int followDaily = 10;             // не больше подписок в день
+        int sessionMinutes = 0;           // 0 — без ограничения по времени
     }
 
     // Подписи кнопок TikTok (английский и русский интерфейс)
@@ -133,6 +139,11 @@ public class WarmupService extends AccessibilityService {
     private static final Pattern P_SHEET = Pattern.compile(
             "(?iu)^\\s*[\\d][\\d\\s.,]*\\s*(k|m|тыс\\.?|млн)?\\s*(comments?|комментари\\S*)\\s*$");
     private static final Pattern P_SEND = Pattern.compile("(?iu)(^|\\s)(post|send|отправ\\S*|опубликов\\S*)(\\s|$)");
+    // Поиск, лента, подписка
+    private static final Pattern P_SEARCH = Pattern.compile("(?iu)^\\s*(search|поиск|найти)\\s*$");
+    private static final Pattern P_FEED_TAB = Pattern.compile("(?iu)^\\s*(for you|для вас|рекомендации)\\s*$");
+    private static final Pattern P_FOLLOW = Pattern.compile("(?iu)^\\s*(follow|подписаться)\\b");
+    private static final Pattern P_NOT_FOLLOW = Pattern.compile("(?iu)(following|unfollow|подписки|вы подписаны|отписаться)");
     private static final Pattern P_PHOTO = Pattern.compile("^\\s*(\\d{1,2})\\s*/\\s*(\\d{1,2})\\s*$");
 
     private interface Act { long run(); }
@@ -148,7 +159,10 @@ public class WarmupService extends AccessibilityService {
 
     private boolean running;
     private Config cfg = new Config();
-    private int done, likes, favorites, reposts, photos, comments, skipped, untilLike, untilBreak;
+    private int done, likes, favorites, reposts, photos, comments, skipped, follows, untilLike, untilBreak;
+    private int untilSearch, searchLeft;
+    private boolean curInNiche;
+    private Pattern nichePattern;
     private int photoLeft;
     private boolean photoWentBack, rechecked, limitReached, likeButtonSeen;
     private String stopReason = "";
@@ -201,16 +215,70 @@ public class WarmupService extends AccessibilityService {
     int photos() { return photos; }
     int comments() { return comments; }
     int skipped() { return skipped; }
+    int follows() { return follows; }
     String stopReason() { return stopReason; }
     int videos() { return cfg.videos; }
     long elapsedMs() { return running ? SystemClock.elapsedRealtime() - startedAt : 0; }
 
     // ---------- управление ----------
 
+    /**
+     * Будильник расписания: экран уже включён. Если стоит блокировка без пароля — снимаем её свайпом вверх,
+     * затем запускаем прогрев. С паролем/отпечатком снять блокировку нельзя — тогда сессия не начнётся.
+     */
+    void wakeAndStart() {
+        if (running) return;
+        android.app.KeyguardManager km = (android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+        boolean locked = km != null && km.isKeyguardLocked();
+        boolean secure = km != null && km.isDeviceSecure();
+        if (locked && secure) {
+            android.util.Log.w("WARMUP", "scheduled start skipped: screen lock with password");
+            return;
+        }
+        if (locked) {
+            DisplayMetrics m = new DisplayMetrics();
+            wm.getDefaultDisplay().getRealMetrics(m);
+            Path p = new Path();
+            p.moveTo(m.widthPixels / 2f, m.heightPixels * 0.85f);
+            p.lineTo(m.widthPixels / 2f, m.heightPixels * 0.25f);
+            handler.postDelayed(() -> dispatch(new GestureDescription.StrokeDescription(p, 0, 350)), 800);
+        }
+        handler.postDelayed(this::startScheduled, locked ? 2500 : 1000);
+    }
+
+    /** Запуск по расписанию: настройки из приложения, сессия ограничена по времени. */
+    boolean startScheduled() {
+        if (running) return false;
+        Config c = Cfg.build(this, true);
+        if (c == null) return false;
+        android.content.Intent launch = null;
+        for (String pkg : TIKTOK) {
+            launch = getPackageManager().getLaunchIntentForPackage(pkg);
+            if (launch != null) break;
+        }
+        if (launch == null) return false;
+        start(c);
+        launch.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            startActivity(launch);
+        } catch (RuntimeException e) {
+            stop();
+            return false;
+        }
+        return true;
+    }
+
     void start(Config c) {
         stop();
         cfg = c;
-        done = likes = favorites = reposts = photos = comments = skipped = 0;
+        done = likes = favorites = reposts = photos = comments = skipped = follows = 0;
+        untilSearch = rand(25, 40);
+        nichePattern = null;
+        if (c.niche.length > 0) {
+            StringBuilder sb = new StringBuilder();
+            for (String k : c.niche) sb.append(sb.length() > 0 ? "|" : "").append(Pattern.quote(k));
+            nichePattern = Pattern.compile("(?iu)(" + sb + ")");
+        }
         stopReason = "";
         limitReached = false;
         rechecked = false;
@@ -227,6 +295,12 @@ public class WarmupService extends AccessibilityService {
     }
 
     void stop() {
+        if (running && done > 0) {
+            History.add(this, done, likes, favorites, comments, reposts, follows,
+                    (SystemClock.elapsedRealtime() - startedAt) / 1000, stopReason);
+            History.notifyDone(this, done, likes, favorites, comments, reposts, follows,
+                    (SystemClock.elapsedRealtime() - startedAt) / 1000);
+        }
         running = false;
         state = IDLE;
         handler.removeCallbacksAndMessages(null);
@@ -235,6 +309,12 @@ public class WarmupService extends AccessibilityService {
 
     private boolean pauseIfHidden(Win w, Runnable retry) {
         if (w != null) return false;
+        // сессия по расписанию не должна висеть на паузе бесконечно
+        if (cfg.sessionMinutes > 0 && elapsedMs() >= cfg.sessionMinutes * 60_000L) {
+            stopReason = "time";
+            stop();
+            return true;
+        }
         state = PAUSED;
         updateOverlay();
         handler.postDelayed(retry, 2000);
@@ -267,6 +347,7 @@ public class WarmupService extends AccessibilityService {
                 handler.postDelayed(next, rand(900, 2500));
                 return;
             }
+            curInNiche = nichePattern != null && findInPost(w, nichePattern) != null;
             int[] ph = cfg.photos ? photoCounter(w) : null;
             if (ph != null && ph[1] > 1 && ph[0] < ph[1]) {
                 photos++;
@@ -319,11 +400,18 @@ public class WarmupService extends AccessibilityService {
             done++;
             android.util.Log.i("WARMUP", "post " + done);
             List<Act> acts = new ArrayList<>();
-            if (--untilLike <= 0) {
-                acts.add(WarmupService.this::actLike);
-                untilLike = rand(cfg.likeMin, cfg.likeMax);
+            boolean hasNiche = nichePattern != null;
+            // с нишей: лайки и подписки — только на ролики ниши (и чаще), остальные просто смотрим
+            if (!hasNiche || curInNiche) {
+                if (--untilLike <= 0 || (curInNiche && roll(40))) {
+                    acts.add(WarmupService.this::actLike);
+                    untilLike = rand(cfg.likeMin, cfg.likeMax);
+                }
             }
-            if (roll(cfg.favChance)) acts.add(WarmupService.this::actFavorite);
+            if (roll(curInNiche ? Math.min(100, cfg.favChance * 2) : cfg.favChance))
+                acts.add(WarmupService.this::actFavorite);
+            if ((!hasNiche || curInNiche) && roll(cfg.followChance) && followsLeftToday() > 0)
+                acts.add(WarmupService.this::actFollow);
             if (roll(cfg.repostChance)) acts.add(WarmupService.this::actRepost);
             if (roll(cfg.commentChance) && (cfg.emoji.length > 0 || cfg.phrases.length > 0))
                 acts.add(WarmupService.this::actComment);
@@ -331,11 +419,17 @@ public class WarmupService extends AccessibilityService {
             updateOverlay();
             runChain(new ArrayDeque<>(acts), () -> {
                 if (limitReached) {
-                    stop();
                     stopReason = "limit";
-                } else if (cfg.videos > 0 && done >= cfg.videos) {
                     stop();
+                } else if (cfg.videos > 0 && done >= cfg.videos) {
                     stopReason = "done";
+                    stop();
+                } else if (cfg.sessionMinutes > 0 && elapsedMs() >= cfg.sessionMinutes * 60_000L) {
+                    stopReason = "time";
+                    stop();
+                } else if (nichePattern != null && cfg.nicheSearch && --untilSearch <= 0) {
+                    untilSearch = rand(25, 40);
+                    runSearch(() -> handler.post(next));
                 } else {
                     handler.post(next);
                 }
@@ -888,6 +982,7 @@ public class WarmupService extends AccessibilityService {
             case PHOTOS: icon = "🖼 листаю фото"; break;
             case SKIP:   icon = "⏭ пропускаю эфир/рекламу"; break;
             case COMMENT: icon = "💬 комментирую"; break;
+            case SEARCH:  icon = "🔎 ищу по нише"; break;
             default:     icon = "● прогрев";
         }
         StringBuilder sb = new StringBuilder(icon)
@@ -896,6 +991,7 @@ public class WarmupService extends AccessibilityService {
         if (favorites > 0) sb.append("   ★ ").append(favorites);
         if (reposts > 0) sb.append("   ↻ ").append(reposts);
         if (comments > 0) sb.append("   💬 ").append(comments);
+        if (follows > 0) sb.append("   ➕ ").append(follows);
         if (skipped > 0) sb.append("   ⏭ ").append(skipped);
         sb.append("   ■");
         overlay.setText(sb);
@@ -923,6 +1019,131 @@ public class WarmupService extends AccessibilityService {
 
     // ---------- утилиты ----------
 
+    // ---------- ниша: поиск по хэштегу и подписки ----------
+
+    /** С нишей: ролики ниши смотрим дольше, остальные — быстрее. Без ниши — обычное случайное время. */
+    private long nicheWatchMs() {
+        if (nichePattern == null) return watchMs();
+        if (curInNiche) return rand(cfg.watchMax * 800, cfg.watchMax * 1300);
+        return rand(Math.min(cfg.watchMin, 3) * 1000, Math.max(cfg.watchMin, (cfg.watchMin + cfg.watchMax) / 2) * 1000);
+    }
+
+    private long actFollow() {
+        Win w = tiktok();
+        if (w == null) return 0;
+        AccessibilityNodeInfo n = find(w, P_FOLLOW, P_NOT_FOLLOW);
+        if (n == null) return 0;
+        click(n);
+        follows++;
+        android.content.SharedPreferences p = Cfg.prefs(this);
+        String day = new java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.ROOT).format(new java.util.Date());
+        int cnt = day.equals(p.getString("followDay", "")) ? p.getInt("followCount", 0) : 0;
+        p.edit().putString("followDay", day).putInt("followCount", cnt + 1).apply();
+        bumpOverlay();
+        return rand(1200, 2500);
+    }
+
+    private int followsLeftToday() {
+        android.content.SharedPreferences p = Cfg.prefs(this);
+        String day = new java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.ROOT).format(new java.util.Date());
+        int cnt = day.equals(p.getString("followDay", "")) ? p.getInt("followCount", 0) : 0;
+        return cfg.followDaily - cnt;
+    }
+
+    /**
+     * Как человек: иногда открывает поиск, вводит слово из ниши, смотрит 2–4 ролика из результатов
+     * и возвращается в ленту. Если что-то не нашлось — аккуратно возвращается назад.
+     */
+    private void runSearch(final Runnable then) {
+        Win w = tiktok();
+        AccessibilityNodeInfo btn = w == null ? null : find(w, P_SEARCH, null);
+        if (btn == null) { then.run(); return; }
+        final String kw = cfg.niche[rnd.nextInt(cfg.niche.length)];
+        state = SEARCH;
+        updateOverlay();
+        click(btn);
+        handler.postDelayed(() -> {
+            if (!running) return;
+            AccessibilityNodeInfo f = findInput(false);
+            if (f == null || !setText(f, kw)) { backToFeed(0, then); return; }
+            handler.postDelayed(() -> {
+                if (!running) return;
+                AccessibilityNodeInfo f2 = findInput(false);
+                if (f2 == null || !submitSearch(f2)) { backToFeed(0, then); return; }
+                handler.postDelayed(() -> {
+                    if (!running) return;
+                    Win w2 = tiktok();
+                    if (w2 == null) { backToFeed(0, then); return; }
+                    // первый ролик в результатах (левая верхняя карточка)
+                    tapAt(w2.r, rand(20, 30), rand(40, 50));
+                    searchLeft = rand(2, 4);
+                    handler.postDelayed(() -> searchWatch(then), rand(2500, 4000));
+                }, rand(2500, 3500));
+            }, rand(800, 1400));
+        }, rand(1500, 2300));
+    }
+
+    private void searchWatch(final Runnable then) {
+        if (!running) return;
+        Win w = tiktok();
+        if (w == null || searchLeft <= 0) { backToFeed(0, then); return; }
+        searchLeft--;
+        done++;
+        if (roll(40)) {
+            doubleTap(w.r);
+            likes++;
+            bumpOverlay();
+        }
+        updateOverlay();
+        handler.postDelayed(() -> {
+            if (!running) return;
+            Win w2 = tiktok();
+            if (w2 != null && searchLeft > 0) swipeUp(w2.r);
+            handler.postDelayed(() -> searchWatch(then), searchLeft > 0 ? rand(1200, 1800) : 300);
+        }, rand(cfg.watchMin * 1000, cfg.watchMax * 1000));
+    }
+
+    /** Назад до ленты «Для вас» (не больше 5 раз); если не вышло — заново открываем TikTok. */
+    private void backToFeed(final int attempt, final Runnable then) {
+        if (!running) return;
+        if (findAnyTikTokWindow(P_FEED_TAB) != null && findInput(false) == null) {
+            state = RUNNING;
+            updateOverlay();
+            handler.postDelayed(then, rand(800, 1500));
+            return;
+        }
+        if (attempt >= 5) {
+            for (String pkg : TIKTOK) {
+                android.content.Intent i = getPackageManager().getLaunchIntentForPackage(pkg);
+                if (i != null) {
+                    i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                    try { startActivity(i); } catch (RuntimeException ignored) { }
+                    break;
+                }
+            }
+            state = RUNNING;
+            handler.postDelayed(then, 3000);
+            return;
+        }
+        performGlobalAction(GLOBAL_ACTION_BACK);
+        handler.postDelayed(() -> backToFeed(attempt + 1, then), 900);
+    }
+
+    private boolean submitSearch(AccessibilityNodeInfo field) {
+        if (android.os.Build.VERSION.SDK_INT >= 30
+                && field.performAction(android.R.id.accessibilityActionImeEnter)) return true;
+        AccessibilityNodeInfo b = findNearest(P_SEARCH, field, dp(120));
+        if (b == null) return false;
+        click(b);
+        return true;
+    }
+
+    private void tapAt(Rect r, int xPercent, int yPercent) {
+        Path p = new Path();
+        p.moveTo(r.left + r.width() * xPercent / 100f, r.top + r.height() * yPercent / 100f);
+        dispatch(new GestureDescription.StrokeDescription(p, 0, rand(50, 90)));
+    }
+
     // ---------- ограничение «не дольше 1,5 длины ролика» ----------
 
     // «0:12 / 0:45» — вторая часть это длина ролика
@@ -934,7 +1155,7 @@ public class WarmupService extends AccessibilityService {
      * Если TikTok не показывает ни то, ни другое — работает обычное случайное время.
      */
     private void watchWithCap(Win w) {
-        final long planned = watchMs();
+        final long planned = nicheWatchMs();
         if (!cfg.capLoops) {
             handler.postDelayed(step, planned);
             return;

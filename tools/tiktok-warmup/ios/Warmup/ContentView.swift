@@ -8,6 +8,8 @@ import UIKit
 struct ContentView: View {
     @AppStorage("theme") private var themeId = "dark"
     @AppStorage("premiumCode") private var premiumCode = ""
+    @AppStorage("premiumUntil") private var premiumUntil: Double = 0
+    @AppStorage("firstRun") private var firstRun: Double = 0
     @AppStorage("launches") private var launches = 0
     @AppStorage("sessionEnd") private var sessionEnd: Double = 0
     @AppStorage("planLikes") private var planLikes = 0
@@ -47,7 +49,13 @@ struct ContentView: View {
     @Namespace private var ns
 
     private var theme: Theme { Theme.byId(themeId) }
-    private var premium: Bool { !premiumCode.isEmpty }
+    /// Premium: навсегда, на месяц (до premiumUntil) или пробные 24 часа с первого запуска.
+    private var premium: Bool {
+        let now = Date().timeIntervalSince1970
+        if !premiumCode.isEmpty && premiumUntil == 0 { return true }
+        if premiumUntil > now { return true }
+        return firstRun > 0 && now - firstRun < 86_400
+    }
 
     init() {
         UITextView.appearance().backgroundColor = .clear
@@ -75,7 +83,7 @@ struct ContentView: View {
                         }
                     }
                     .appear(1, appeared)
-                    PremiumCard(theme: theme, code: $premiumCode, onActivated: {
+                    PremiumCard(theme: theme, code: $premiumCode, until: $premiumUntil, firstRun: firstRun, onActivated: {
                         celebrateNow()
                         showToast("👑 Premium активирован!")
                     }, toast: showToast)
@@ -128,7 +136,10 @@ struct ContentView: View {
         }
         .preferredColorScheme(theme.light ? .light : .dark)
         .animation(.easeInOut(duration: 0.35), value: themeId)
-        .onAppear { appeared = true }
+        .onAppear {
+            appeared = true
+            if firstRun == 0 { firstRun = Date().timeIntervalSince1970 }
+        }
     }
 
     // MARK: карточки настроек (как в Android)
@@ -763,6 +774,9 @@ struct HeroCard: View {
 struct PremiumCard: View {
     let theme: Theme
     @Binding var code: String
+    @Binding var until: Double
+    let firstRun: Double
+    @AppStorage("usedMonthCodes") private var usedRaw = ""
     let onActivated: () -> Void
     let toast: (String) -> Void
     @State private var input = ""
@@ -770,8 +784,19 @@ struct PremiumCard: View {
     @State private var attempts: CGFloat = 0
     @Environment(\.openURL) private var openURL
 
+    private var lifetime: Bool { !code.isEmpty && until == 0 }
+
+    private var statusLine: String? {
+        let now = Date().timeIntervalSince1970
+        if until > now { return "👑 Premium на месяц — осталось \(max(1, Int((until - now) / 86_400))) дн." }
+        if firstRun > 0 && now - firstRun < 86_400 {
+            return "🎁 Пробный Premium — осталось \(max(1, Int((86_400 - (now - firstRun)) / 3600))) ч"
+        }
+        return nil
+    }
+
     var body: some View {
-        if code.isEmpty { buyCard } else { activeCard }
+        if lifetime { activeCard } else { buyCard }
     }
 
     private var activeCard: some View {
@@ -807,6 +832,19 @@ struct PremiumCard: View {
     private var buyCard: some View {
         Card(theme: theme) {
             CardTitle(theme: theme, icon: "👑", title: "Premium")
+            if let st = statusLine {
+                Text(st)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 14)
+                        .fill(LinearGradient(colors: [theme.a1, Theme.gold], startPoint: .leading, endPoint: .trailing)))
+            }
+            Text("Навсегда — 50 ⭐  ·  Месяц — 30 ⭐")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(theme.text)
             Text("✓ Без дневного лимита постов\n✓ Авто-пропуск рекламы\n✓ Комментарии: эмодзи и фразы\n✓ Репосты с текстом")
                 .font(.system(size: 14))
                 .foregroundColor(theme.text)
@@ -837,14 +875,32 @@ struct PremiumCard: View {
     }
 
     private func activate() {
-        if let ok = Premium.validate(input) {
-            withAnimation(.spring()) { code = ok }
+        var used = Set(usedRaw.split(separator: ",").map(String.init))
+        switch Premium.check(input, used: used) {
+        case .lifetime(let pretty):
+            withAnimation(.spring()) { code = pretty; until = 0 }
             onActivated()
-        } else {
-            UINotificationFeedbackGenerator().notificationOccurred(.error)
-            withAnimation(.linear(duration: 0.4)) { attempts += 1 }
-            toast("Неверный код")
+        case .month(let hash):
+            used.insert(hash)
+            usedRaw = used.joined(separator: ",")
+            withAnimation(.spring()) {
+                until = max(Date().timeIntervalSince1970, until) + 30 * 86_400
+                code = input.uppercased()
+            }
+            onActivated()
+        case .used:
+            fail("Этот код уже активирован на этом телефоне")
+        case .expired:
+            fail("Срок активации кода истёк — купите новый в боте")
+        case .invalid:
+            fail("Неверный код")
         }
+    }
+
+    private func fail(_ text: String) {
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
+        withAnimation(.linear(duration: 0.4)) { attempts += 1 }
+        toast(text)
     }
 }
 

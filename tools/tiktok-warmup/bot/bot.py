@@ -21,6 +21,7 @@ import sys
 import time
 import traceback
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 
@@ -46,7 +47,9 @@ load_env()
 TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 SEED = os.environ.get("CODE_SEED", "").strip()
 ADMINS = {int(x) for x in os.environ.get("ADMIN_IDS", "").replace(" ", "").split(",") if x.strip().lstrip("-").isdigit()}
-PRICE = int(os.environ.get("PRICE", "50") or 50)
+PRICE = int(os.environ.get("PRICE", "50") or 50)              # Premium навсегда
+PRICE_MONTH = int(os.environ.get("PRICE_MONTH", "30") or 30)  # Premium на 30 дней
+BOT_USERNAME = "Vibe2Scool_bot"   # уточняется через getMe при запуске
 
 if not TOKEN or not SEED:
     sys.exit("Заполните BOT_TOKEN и CODE_SEED в файле .env рядом с bot.py")
@@ -77,6 +80,7 @@ def load_state():
     s.setdefault("apk", {})
     s.setdefault("ipa", {})
     s.setdefault("offset", 0)
+    s.setdefault("month_next", {})   # yyyymm → сколько месячных кодов выдано
     return s
 
 
@@ -110,6 +114,30 @@ def issue_code(uid, kind, stars=0, charge=""):
     left = CODES_TOTAL - state["next_code"]
     if left in (500, 100, 20):
         notify_admins(f"⚠️ Осталось кодов Premium: {left}")
+    return code
+
+
+MONTH_CODES = 500   # столько месячных кодов на каждый месяц знает приложение
+
+
+def month_code_for(ym, i):
+    """Месячный код №i для месяца ym (yyyymm). Активируется в этом месяце или следующем, действует 30 дней."""
+    d = hmac.new(SEED.encode(), f"tw-month:{ym}:{i}".encode(), hashlib.sha256).digest()
+    s = "".join(CODE_CHARS[b % 32] for b in d[:12])
+    return f"STRM-{s[:4]}-{s[4:8]}-{s[8:12]}"
+
+
+def issue_month_code(uid, kind, stars=0, charge=""):
+    ym = time.strftime("%Y%m")
+    i = state["month_next"].get(ym, 0)
+    if i >= MONTH_CODES:
+        notify_admins(f"⚠️ Месячные коды на {ym} закончились!")
+        return None
+    state["month_next"][ym] = i + 1
+    code = month_code_for(ym, i)
+    state["codes"].append({"uid": uid, "code": code, "kind": kind, "stars": stars,
+                           "charge": charge, "date": int(time.time())})
+    save_state()
     return code
 
 
@@ -222,9 +250,10 @@ def main_text(name):
 
 def main_kb():
     return kb([("📲 Скачать для Android", "apk")],
-              [("🍏 Для iPhone", "ios"), (f"👑 Premium · {PRICE} ⭐", "premium")],
+              [("🍏 Для iPhone", "ios"), (f"👑 Premium · от {PRICE_MONTH} ⭐", "premium")],
               [("📖 Как установить", "install"), ("❓ Вопросы", "faq")],
-              [("🎟 Мои коды", "codes"), ("💬 Поддержка", "support")])
+              [("🎟 Мои коды", "codes"), ("📊 Отчёты", "reports")],
+              [("🎁 Пригласить друга", "invite"), ("💬 Поддержка", "support")])
 
 
 PREMIUM_TEXT = (
@@ -233,14 +262,16 @@ PREMIUM_TEXT = (
     "▫️ 100 постов в день\n"
     "▫️ лайки, избранное, фото-посты\n"
     "▫️ пропуск эфиров, темы оформления\n\n"
-    "<b>Premium — навсегда</b>\n"
+    "<b>Premium</b>\n"
     "✅ без дневного лимита\n"
     "✅ авто-пропуск рекламы\n"
     "✅ комментарии: эмодзи и живые фразы\n"
     "✅ репосты с текстом\n"
-    "✅ все будущие обновления\n\n"
-    "💫 Цена: <b>{price} ⭐</b> — один раз.\n"
-    "Код активации придёт сюда сразу после оплаты."
+    "✅ поиск по нише, подписки, расписание — всё без ограничений\n\n"
+    "💫 <b>Навсегда — {price} ⭐</b> (один раз, все будущие обновления)\n"
+    "📅 <b>Месяц — {price_month} ⭐</b> (30 дней)\n\n"
+    "Код активации придёт сюда сразу после оплаты.\n"
+    "🎁 Новым пользователям приложение даёт 24 часа Premium бесплатно."
 )
 
 INSTALL_TEXT = (
@@ -279,8 +310,8 @@ def screen(chat, msg_id, uid, name, action):
     if action == "home":
         show(chat, msg_id, main_text(name), main_kb())
     elif action == "premium":
-        show(chat, msg_id, PREMIUM_TEXT.format(price=PRICE),
-             back_kb([(f"💳 Купить за {PRICE} ⭐", "buy")]))
+        show(chat, msg_id, PREMIUM_TEXT.format(price=PRICE, price_month=PRICE_MONTH),
+             back_kb([(f"💫 Навсегда — {PRICE} ⭐", "buy_life")], [(f"📅 Месяц — {PRICE_MONTH} ⭐", "buy_month")]))
     elif action == "install":
         show(chat, msg_id, INSTALL_TEXT, back_kb([("📲 Скачать приложение", "apk")]))
     elif action == "faq":
@@ -288,22 +319,53 @@ def screen(chat, msg_id, uid, name, action):
     elif action == "codes":
         mine = user_codes(uid)
         if mine:
-            lines = "\n".join(f"{'👑' if c['kind'] == 'paid' else '🎁'} <code>{c['code']}</code>" for c in mine)
+            icons = {"paid": "👑", "month": "📅", "gift": "🎁", "month_gift": "🎁", "ref": "🎁"}
+            lines = "\n".join(f"{icons.get(c['kind'], '🎁')} <code>{c['code']}</code>"
+                              + (" — на 30 дней" if c["code"].startswith("STRM") else " — навсегда") for c in mine)
             text = ("🎟 <b>Твои коды Premium</b>\n\n" + lines +
                     "\n\nНажми на код — он скопируется.\n"
                     "Приложение → «Premium» → «У меня есть код».")
             show(chat, msg_id, text, back_kb([("📲 Скачать приложение", "apk")]))
         else:
             show(chat, msg_id, "🎟 <b>Мои коды</b>\n\nПока пусто. Купи Premium — код появится здесь.",
-                 back_kb([(f"👑 Premium · {PRICE} ⭐", "premium")]))
+                 back_kb([(f"👑 Premium · от {PRICE_MONTH} ⭐", "premium")]))
     elif action == "support":
         state["users"].setdefault(str(uid), {})["support"] = True
         save_state()
         show(chat, msg_id, "💬 <b>Поддержка</b>\n\nНапиши свой вопрос одним сообщением — "
                            "его получит администратор, ответ придёт сюда.",
              back_kb())
-    elif action == "buy":
-        send_invoice(chat)
+    elif action in ("buy", "buy_life"):
+        send_invoice(chat, "life")
+    elif action == "buy_month":
+        send_invoice(chat, "month")
+    elif action == "invite":
+        invited = [k for k, v in state["users"].items() if v.get("ref") == uid]
+        bought = [k for k in invited if state["users"][k].get("ref_paid")]
+        link = f"https://t.me/{BOT_USERNAME}?start=ref_{uid}"
+        show(chat, msg_id,
+             "🎁 <b>Пригласи друга</b>\n\n"
+             "Друг купил Premium по твоей ссылке — тебе <b>Premium на месяц</b> в подарок, за каждого.\n\n"
+             f"Твоя ссылка:\n<code>{link}</code>\n<i>нажми — скопируется</i>\n\n"
+             f"👥 Пришло: <b>{len(invited)}</b>   👑 Купили: <b>{len(bought)}</b>",
+             back_kb([("📤 Поделиться", "https://t.me/share/url?url=" + urllib.parse.quote(link)
+                       + "&text=" + urllib.parse.quote("🔥 Прогрев TikTok — аккаунт прогревается сам"))]))
+    elif action == "reports":
+        reps = state["users"].get(str(uid), {}).get("reports", [])
+        if not reps:
+            show(chat, msg_id, "📊 <b>Отчёты</b>\n\nПока пусто. После прогрева нажми уведомление "
+                               "«✅ Прогрев завершён» или «📤 Отчёт в Telegram» в приложении.", back_kb())
+        else:
+            week = [r for r in reps if r["t"] > time.time() - 7 * 86400]
+
+            def tot(k, rs):
+                return sum(r[k] for r in rs)
+            last = "\n".join(f"{time.strftime('%d.%m %H:%M', time.localtime(r['t']))} — 🎬 {r['p']} ❤ {r['l']} "
+                             f"★ {r['f']} 💬 {r['c']} ↻ {r['r']} ➕ {r['fo']} · {r['m']} мин" for r in reps[-7:])
+            show(chat, msg_id, "📊 <b>Твои отчёты</b>\n\n"
+                               f"<b>За 7 дней:</b> 🎬 {tot('p', week)}  ❤ {tot('l', week)}  ★ {tot('f', week)}  "
+                               f"💬 {tot('c', week)}  ➕ {tot('fo', week)}  ⏱ {tot('m', week)} мин\n\n"
+                               f"<b>Последние сессии</b>\n{last}", back_kb())
     elif action == "apk":
         send_apk(chat)
     elif action == "ios":
@@ -402,15 +464,17 @@ def send_release_file(chat, key, name, url, caption, markup, mime):
 # Оплата Stars
 # ======================================================================
 
-def send_invoice(chat):
+def send_invoice(chat, plan="life"):
+    month = plan == "month"
+    price = PRICE_MONTH if month else PRICE
     api("sendInvoice", chat_id=chat,
-        title="👑 Premium · Прогрев TikTok",
-        description="Навсегда: без лимита постов, авто-пропуск рекламы, комментарии и репосты с текстом. "
-                    "Код активации придёт сразу после оплаты.",
-        payload=f"premium:{chat}:{int(time.time())}",
+        title="📅 Premium на месяц · Прогрев TikTok" if month else "👑 Premium навсегда · Прогрев TikTok",
+        description=("30 дней" if month else "Навсегда") + ": без лимита постов, авто-пропуск рекламы, "
+                    "комментарии и репосты с текстом. Код активации придёт сразу после оплаты.",
+        payload=f"premium:{plan}:{chat}:{int(time.time())}",
         currency="XTR",
-        prices=[{"label": "Premium навсегда", "amount": PRICE}],
-        reply_markup={"inline_keyboard": [[{"text": f"💳 Оплатить {PRICE} ⭐", "pay": True}],
+        prices=[{"label": "Premium на 30 дней" if month else "Premium навсегда", "amount": price}],
+        reply_markup={"inline_keyboard": [[{"text": f"💳 Оплатить {price} ⭐", "pay": True}],
                                           [{"text": "◀️ Назад", "callback_data": "premium"}]]})
 
 
@@ -429,13 +493,15 @@ def on_paid(msg):
     for c in state["codes"]:
         if charge and c.get("charge") == charge:
             return
-    code = issue_code(uid, "paid", pay.get("total_amount", PRICE), charge)
+    month = str(pay.get("invoice_payload", "")).startswith("premium:month:")
+    stars = pay.get("total_amount", PRICE_MONTH if month else PRICE)
+    code = issue_month_code(uid, "month", stars, charge) if month else issue_code(uid, "paid", stars, charge)
     if not code:
         send(uid, "Оплата прошла, но коды временно закончились — администратор уже знает и пришлёт код. 🙏")
         return
     send(uid,
-         "🎉 <b>Оплата прошла — спасибо!</b>\n\n"
-         "Твой код Premium:\n"
+         "🎉 <b>Оплата прошла — спасибо!</b>\n\n" +
+         ("Твой код Premium на 30 дней:\n" if month else "Твой код Premium навсегда:\n") +
          f"<code>{code}</code>\n"
          "<i>нажми на код — он скопируется</i>\n\n"
          "<b>Как активировать</b>\n"
@@ -445,8 +511,30 @@ def on_paid(msg):
          "Код всегда можно найти в «🎟 Мои коды».",
          kb([("📲 Скачать приложение", "apk")], [("🏠 Меню", "home")]))
     who = f"@{u['username']}" if u.get("username") else html.escape(u.get("first_name", ""))
-    notify_admins(f"💰 <b>Продажа Premium</b>\n{who} (<code>{uid}</code>) — {pay.get('total_amount')} ⭐\n"
+    notify_admins(f"💰 <b>Продажа Premium {'на месяц' if month else 'навсегда'}</b>\n"
+                  f"{who} (<code>{uid}</code>) — {pay.get('total_amount')} ⭐\n"
                   f"Код: <code>{code}</code>\nПлатёж: <code>{charge}</code>")
+    reward_referrer(uid)
+
+
+def reward_referrer(uid):
+    """Первая покупка приглашённого — пригласившему Premium на месяц."""
+    rec = state["users"].get(str(uid), {})
+    ref = rec.get("ref")
+    if not ref or rec.get("ref_paid"):
+        return
+    rec["ref_paid"] = True
+    code = issue_month_code(ref, "ref")
+    save_state()
+    if not code:
+        return
+    try:
+        send(ref, "🎁 <b>Твой друг купил Premium!</b>\n\n"
+                  f"Держи Premium на месяц в подарок:\n<code>{code}</code>\n<i>нажми — скопируется</i>\n\n"
+                  "Приложение → «👑 Premium» → «У меня есть код».",
+             kb([("🎁 Пригласить ещё", "invite")]))
+    except Exception:
+        pass
 
 
 # ======================================================================
@@ -455,7 +543,7 @@ def on_paid(msg):
 
 ADMIN_HELP = ("🛠 <b>Админ-панель</b>\n\n"
               "/stats — статистика\n"
-              "/code — код Premium себе\n"
+              "/code — код Premium навсегда себе, /code month — на месяц\n"
               "/gift ID — подарить код пользователю (или ответом на его сообщение)\n"
               "/broadcast текст — рассылка всем\n"
               "/refund ID charge_id — вернуть звёзды\n\n"
@@ -470,18 +558,24 @@ def admin_command(msg, text):
     if cmd == "/admin":
         send(chat, ADMIN_HELP)
     elif cmd == "/stats":
-        paid = [c for c in state["codes"] if c["kind"] == "paid"]
+        paid = [c for c in state["codes"] if c["kind"] in ("paid", "month")]
         stars = sum(int(c.get("stars") or 0) for c in paid)
         day = time.time() - 86400
         send(chat, "📊 <b>Статистика</b>\n\n"
                    f"👥 Пользователей: <b>{len(state['users'])}</b>\n"
-                   f"👑 Продаж: <b>{len(paid)}</b> (за сутки: {sum(1 for c in paid if c['date'] > day)})\n"
+                   f"👑 Продаж: <b>{len(paid)}</b> (навсегда {sum(1 for c in paid if c['kind'] == 'paid')}, "
+                   f"на месяц {sum(1 for c in paid if c['kind'] == 'month')}; за сутки: {sum(1 for c in paid if c['date'] > day)})\n"
+                   f"🎁 Приглашено: <b>{sum(1 for v in state['users'].values() if v.get('ref'))}</b>\n"
                    f"⭐ Заработано: <b>{stars}</b>\n"
                    f"🎁 Подарено кодов: <b>{len(state['codes']) - len(paid)}</b>\n"
                    f"🎟 Осталось кодов: <b>{CODES_TOTAL - state['next_code']}</b>")
     elif cmd == "/code":
-        code = issue_code(chat, "gift")
-        send(chat, f"🎁 Код Premium:\n<code>{code}</code>" if code else "Коды закончились")
+        if arg == "month":
+            code = issue_month_code(chat, "month_gift")
+            send(chat, f"🎁 Код Premium на 30 дней:\n<code>{code}</code>" if code else "Месячные коды закончились")
+        else:
+            code = issue_code(chat, "gift")
+            send(chat, f"🎁 Код Premium навсегда:\n<code>{code}</code>" if code else "Коды закончились")
     elif cmd == "/gift":
         target = arg
         reply = msg.get("reply_to_message")
@@ -560,6 +654,7 @@ def on_message(msg):
     if "successful_payment" in msg:
         on_paid(msg)
         return
+    is_new = str(u["id"]) not in state["users"]
     remember(u)
     text = (msg.get("text") or "").strip()
     uid = u["id"]
@@ -582,7 +677,20 @@ def on_message(msg):
     cmd = text.split()[0].split("@")[0] if text.startswith("/") else ""
     if cmd == "/start":
         param = text.split(maxsplit=1)[1].strip() if " " in text else ""
-        if param in ("premium", "ios", "install", "codes"):
+        if param.startswith("ref_") and param[4:].isdigit():
+            ref = int(param[4:])
+            rec = state["users"].setdefault(str(uid), {})
+            if is_new and ref != uid and str(ref) in state["users"] and "ref" not in rec:
+                rec["ref"] = ref
+                try:
+                    send(ref, "🎉 По твоей ссылке пришёл новый пользователь! Купит Premium — тебе месяц в подарок.")
+                except Exception:
+                    pass
+            param = ""
+        if param.startswith("r_"):
+            on_report(chat, uid, param)
+            return
+        if param in ("premium", "ios", "install", "codes", "invite", "reports"):
             screen(chat, None, uid, u.get("first_name", ""), param)
         else:
             send(chat, main_text(u.get("first_name", "")), main_kb())
@@ -613,6 +721,27 @@ def on_message(msg):
     save_state()
 
 
+def on_report(chat, uid, param):
+    """Отчёт о сессии из приложения: /start r_роликов_лайков_избранное_комменты_репосты_подписки_минут"""
+    parts = param.split("_")[1:]
+    if len(parts) != 7 or not all(p.isdigit() for p in parts):
+        send(chat, main_text(""), main_kb())
+        return
+    p, l, f, c, r, fo, m = (min(int(x), 100000) for x in parts)
+    rec = state["users"].setdefault(str(uid), {})
+    reps = rec.setdefault("reports", [])
+    reps.append({"t": int(time.time()), "p": p, "l": l, "f": f, "c": c, "r": r, "fo": fo, "m": m})
+    del reps[:-60]
+    week = [x for x in reps if x["t"] > time.time() - 7 * 86400]
+    save_state()
+    send(chat, "✅ <b>Прогрев завершён</b>\n\n"
+               f"🎬 Роликов: <b>{p}</b>\n❤ Лайков: <b>{l}</b>\n★ В избранное: <b>{f}</b>\n"
+               f"💬 Комментариев: <b>{c}</b>\n↻ Репостов: <b>{r}</b>\n➕ Подписок: <b>{fo}</b>\n⏱ Время: <b>{m} мин</b>\n\n"
+               f"За 7 дней: 🎬 {sum(x['p'] for x in week)}  ❤ {sum(x['l'] for x in week)}  "
+               f"⏱ {sum(x['m'] for x in week)} мин",
+         kb([("📊 Все отчёты", "reports")], [("🏠 Меню", "home")]))
+
+
 def on_callback(q):
     u = q["from"]
     remember(u)
@@ -635,7 +764,7 @@ def setup_bot():
         api("setMyCommands", commands=[
             {"command": "start", "description": "🏠 Главное меню"},
             {"command": "app", "description": "📲 Скачать приложение"},
-            {"command": "premium", "description": f"👑 Premium за {PRICE} ⭐"},
+            {"command": "premium", "description": f"👑 Premium от {PRICE_MONTH} ⭐"},
             {"command": "codes", "description": "🎟 Мои коды"},
             {"command": "help", "description": "📖 Как установить"},
         ])
@@ -650,7 +779,9 @@ def setup_bot():
 
 
 def main():
+    global BOT_USERNAME
     me = api("getMe")
+    BOT_USERNAME = me.get("username") or BOT_USERNAME
     print(f"Бот @{me['username']} запущен. Админы: {sorted(ADMINS) or 'не заданы'}", flush=True)
     setup_bot()
     delay = 1

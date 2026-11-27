@@ -58,6 +58,9 @@ public class MainActivity extends Activity {
     private TextView freeLeftText;
     private View freeFill;
     private Toggle tPhotos, tLive, tAds;
+    private TextView batteryStatus, exactStatus, historyText;
+    private BarChart historyChart;
+    private View exactButton;
     private String emojiText;
     private int[] last = {-1, -1, -1, -1, -1, -1, -1};
     private String lastUiState = "";
@@ -154,20 +157,30 @@ public class MainActivity extends Activity {
         setContentView(frame);
 
         col.addView(buildThemeSwitch());
+        col.addView(buildProfiles());
         col.addView(buildHero());
         col.addView(buildMainButton());
         col.addView(buildPremiumCard());
         col.addView(buildConnectCard());
+        col.addView(buildBatteryCard());
         col.addView(buildBestCard());
+        col.addView(buildScheduleCard());
+        col.addView(buildNicheCard());
         col.addView(buildLikesCard());
         col.addView(buildActionsCard());
         col.addView(buildSkipCard());
         col.addView(buildCommentsCard());
         col.addView(buildWatchCard());
+        col.addView(buildHistoryCard());
         col.addView(buildParallelCard());
         col.addView(buildFooter());
 
         runEntrance();
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 33);
+        }
+        Schedule.apply(this);
     }
 
     @Override
@@ -214,6 +227,8 @@ public class MainActivity extends Activity {
             freeFill.setScaleX(left / (float) Premium.FREE_DAILY);
         }
 
+        updateSystemStatus();
+
         String status;
         if (!running && s != null && "limit".equals(s.stopReason())) st = "limit";
         switch (st) {
@@ -246,6 +261,7 @@ public class MainActivity extends Activity {
 
         String uiState = running ? "run" : (enabled ? "ready" : "off");
         boolean first = lastUiState.isEmpty();
+        if ("run".equals(lastUiState) && !running) updateHistory();   // сессия закончилась — обновить историю
         if (!uiState.equals(lastUiState)) {
             lastUiState = uiState;
             if (running) {
@@ -433,7 +449,7 @@ public class MainActivity extends Activity {
     // ---------- Premium ----------
 
     private View buildPremiumCard() {
-        if (premium) {
+        if (Premium.lifetime(this)) {
             ShimmerButton b = new ShimmerButton(this, th.a1, 0xFFFFB648);
             b.setText("👑  Premium активен · все функции открыты");
             b.setTextSize(15);
@@ -451,6 +467,22 @@ public class MainActivity extends Activity {
         LinearLayout c = card();
         premiumCard = c;
         c.addView(cardTitle("👑", "Premium"));
+        String kind = Premium.kind(this);
+        if (!"free".equals(kind)) {
+            long left = "trial".equals(kind) ? Premium.trialLeftMs(this) : Premium.monthLeftMs(this);
+            String status = "trial".equals(kind)
+                    ? "🎁 Пробный Premium — осталось " + Math.max(1, left / 3_600_000L) + " ч"
+                    : "👑 Premium на месяц — осталось " + Math.max(1, left / Premium.DAY) + " дн.";
+            TextView st = text(status, 15, Color.WHITE, true);
+            st.setPadding(dp(14), dp(10), dp(14), dp(10));
+            GradientDrawable sb = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                    new int[]{th.a1, 0xFFFFB648});
+            sb.setCornerRadius(dp(14));
+            st.setBackground(sb);
+            LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-1, -2);
+            slp.bottomMargin = dp(8);
+            c.addView(st, slp);
+        }
         TextView feats = text("✓ Без дневного лимита постов\n"
                 + "✓ Авто-пропуск рекламы\n"
                 + "✓ Комментарии: эмодзи и фразы\n"
@@ -458,8 +490,13 @@ public class MainActivity extends Activity {
         feats.setPadding(0, dp(4), 0, dp(10));
         c.addView(feats);
 
-        freeLeftText = text("", 13, th.hint, false);
-        c.addView(freeLeftText);
+        TextView prices = text("Навсегда — 50 ⭐  ·  Месяц — 30 ⭐", 14, th.text, true);
+        prices.setPadding(0, 0, 0, dp(8));
+        c.addView(prices);
+        if (!premium) {
+            freeLeftText = text("", 13, th.hint, false);
+            c.addView(freeLeftText);
+        }
         FrameLayout track = new FrameLayout(this);
         GradientDrawable tbg = new GradientDrawable();
         tbg.setColor(th.soft);
@@ -472,7 +509,7 @@ public class MainActivity extends Activity {
         track.addView(freeFill, new FrameLayout.LayoutParams(-1, -1));
         LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(-1, dp(8));
         tlp.topMargin = dp(6);
-        c.addView(track, tlp);
+        if (!premium) c.addView(track, tlp);
 
         ShimmerButton buy = new ShimmerButton(this, th.a1, 0xFFFFB648);
         buy.setText("👑  Купить Premium");
@@ -513,15 +550,19 @@ public class MainActivity extends Activity {
         codeBox.addView(code, clp);
         TextView activate = smallButton("Активировать");
         activate.setOnClickListener(v -> {
-            if (Premium.activate(this, code.getText().toString())) {
-                Toast.makeText(this, "👑 Premium активирован!", Toast.LENGTH_LONG).show();
+            int res = Premium.activateResult(this, code.getText().toString());
+            if (res == Premium.LIFETIME || res == Premium.MONTH) {
+                Toast.makeText(this, res == Premium.LIFETIME ? "👑 Premium навсегда активирован!"
+                        : "👑 Premium на 30 дней активирован!", Toast.LENGTH_LONG).show();
                 frame.animate().alpha(0f).setDuration(250).withEndAction(() -> {
                     recreate();
                     overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
                 }).start();
             } else {
                 shake(code);
-                Toast.makeText(this, "Неверный код", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, res == Premium.USED ? "Этот код уже был активирован на этом телефоне"
+                        : res == Premium.EXPIRED ? "Срок активации этого кода истёк — купите новый в боте"
+                        : "Неверный код", Toast.LENGTH_LONG).show();
             }
         });
         LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(-1, -2);
@@ -586,18 +627,7 @@ public class MainActivity extends Activity {
             String json = new String(android.util.Base64.decode(text.substring(6), android.util.Base64.DEFAULT),
                     java.nio.charset.StandardCharsets.UTF_8);
             org.json.JSONObject o = new org.json.JSONObject(json);
-            SharedPreferences.Editor ed = prefs.edit();
-            for (String k : new String[]{"videos", "likeMin", "likeMax", "watchMin", "watchMax", "skipChance",
-                    "longChance", "favChance", "repostChance", "commentChance", "phrasePercent"}) {
-                if (o.has(k)) ed.putInt(k, Math.max(0, o.getInt(k)));
-            }
-            for (String k : new String[]{"photos", "skipLive", "skipAds", "capLoops"}) {
-                if (o.has(k)) ed.putBoolean(k, o.getBoolean(k));
-            }
-            for (String k : new String[]{"emoji", "phrases", "repostTexts"}) {
-                if (o.has(k)) ed.putString(k, o.getString(k));
-            }
-            ed.apply();
+            Cfg.restore(this, o);
             Toast.makeText(this, "📥 Настройки с iPhone применены", Toast.LENGTH_LONG).show();
             frame.animate().alpha(0f).setDuration(220).withEndAction(() -> {
                 recreate();
@@ -853,40 +883,13 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "Сначала нажмите «Подключить»", Toast.LENGTH_LONG).show();
             return;
         }
-        WarmupService.Config c = new WarmupService.Config();
-        c.videos = sVideos.value;
-        c.likeMin = Math.min(sLikeMin.value, sLikeMax.value);
-        c.likeMax = Math.max(sLikeMin.value, sLikeMax.value);
-        c.watchMin = Math.min(sWatchMin.value, sWatchMax.value);
-        c.watchMax = Math.max(sWatchMin.value, sWatchMax.value);
-        c.skipChance = sSkip.value;
-        c.longChance = Math.min(sLong.value, 100 - sSkip.value);
-        c.favChance = sFav.value;
-        c.repostChance = sRepost.value;
-        c.photos = photosOn;
-        c.capLoops = capLoopsOn;
-        c.skipLive = skipLiveOn;
-        c.skipAds = skipAdsOn;
-        c.commentChance = sComment.value;
-        String[] em = prefs.getString("emoji", WarmupService.DEFAULT_EMOJI).trim().split("\\s+");
-        c.emoji = em.length == 1 && em[0].isEmpty() ? new String[0] : em;
-        c.phrases = WarmupService.lines(prefs.getString("phrases", WarmupService.DEFAULT_PHRASES));
-        c.repostTexts = WarmupService.lines(prefs.getString("repostTexts", WarmupService.DEFAULT_REPOST));
-        c.phrasePercent = sPhrase.value;
-        if (!premium) {
-            int left = Premium.leftToday(this);
-            if (left <= 0) {
-                shake(premiumCard);
-                Toast.makeText(this, "Бесплатный лимит на сегодня исчерпан. В Premium — без лимита 👑",
-                        Toast.LENGTH_LONG).show();
-                return;
-            }
-            c.dailyLimit = Premium.FREE_DAILY;
-            c.skipAds = false;
-            c.commentChance = 0;
-            c.repostChance = 0;
+        WarmupService.Config c = Cfg.build(this, false);
+        if (c == null) {
+            shake(premiumCard);
+            Toast.makeText(this, "Бесплатный лимит на сегодня исчерпан. В Premium — без лимита 👑",
+                    Toast.LENGTH_LONG).show();
+            return;
         }
-
         Intent launch = null;
         for (String pkg : WarmupService.TIKTOK) {
             launch = getPackageManager().getLaunchIntentForPackage(pkg);
@@ -900,6 +903,388 @@ public class MainActivity extends Activity {
         WarmupService.instance.start(c);
         refresh();
         startActivity(launch);
+    }
+
+    // ---------- профили аккаунтов ----------
+
+    private View buildProfiles() {
+        android.widget.HorizontalScrollView hs = new android.widget.HorizontalScrollView(this);
+        hs.setHorizontalScrollBarEnabled(false);
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        java.util.List<String> names = Cfg.profiles(this);
+        int cur = Cfg.currentProfile(this);
+        for (int i = 0; i < names.size(); i++) {
+            final int idx = i;
+            TextView chip = text((i == cur ? "👤 " : "") + names.get(i), 14, i == cur ? Color.WHITE : th.text, true);
+            chip.setPadding(dp(16), dp(8), dp(16), dp(8));
+            GradientDrawable d = i == cur
+                    ? new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{th.a1, th.a2})
+                    : new GradientDrawable();
+            if (i != cur) {
+                d.setColor(th.card);
+                d.setStroke(dp(1), th.line);
+            }
+            d.setCornerRadius(dp(99));
+            chip.setBackground(ripple(d));
+            pressable(chip);
+            chip.setOnClickListener(v -> {
+                if (idx == Cfg.currentProfile(this)) {
+                    Toast.makeText(this, "Удерживайте, чтобы удалить профиль", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                if (WarmupService.isRunning()) WarmupService.instance.stop();
+                Cfg.switchProfile(this, idx);
+                Toast.makeText(this, "Профиль «" + names.get(idx) + "»", Toast.LENGTH_SHORT).show();
+                fadeRecreate();
+            });
+            chip.setOnLongClickListener(v -> {
+                if (names.size() <= 1) {
+                    Toast.makeText(this, "Последний профиль удалить нельзя", Toast.LENGTH_SHORT).show();
+                    return true;
+                }
+                new android.app.AlertDialog.Builder(this)
+                        .setTitle("Удалить профиль «" + names.get(idx) + "»?")
+                        .setPositiveButton("Удалить", (dlg, w) -> {
+                            Cfg.deleteProfile(this, idx);
+                            fadeRecreate();
+                        })
+                        .setNegativeButton("Отмена", null)
+                        .show();
+                return true;
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+            lp.rightMargin = dp(8);
+            row.addView(chip, lp);
+        }
+        TextView add = text("＋ Аккаунт", 14, th.light ? th.a1 : Color.WHITE, true);
+        add.setPadding(dp(16), dp(8), dp(16), dp(8));
+        GradientDrawable ad = new GradientDrawable();
+        ad.setCornerRadius(dp(99));
+        ad.setStroke(dp(1), Theme.alpha(th.a1, 0x88));
+        add.setBackground(ripple(ad));
+        pressable(add);
+        add.setOnClickListener(v -> {
+            final EditText name = new EditText(this);
+            name.setHint("Например: Магазин");
+            name.setSingleLine(true);
+            new android.app.AlertDialog.Builder(this)
+                    .setTitle("Новый профиль аккаунта")
+                    .setMessage("Свои настройки для каждого аккаунта TikTok. Новый профиль начнётся с копии текущих настроек.")
+                    .setView(name)
+                    .setPositiveButton("Создать", (dlg, w) -> {
+                        String n = name.getText().toString().trim();
+                        Cfg.addProfile(this, n.isEmpty() ? "Аккаунт " + (names.size() + 1) : n);
+                        fadeRecreate();
+                    })
+                    .setNegativeButton("Отмена", null)
+                    .show();
+        });
+        row.addView(add);
+        hs.addView(row);
+        entrance.add(hs);
+        return withMargin(hs, dp(12));
+    }
+
+    private void fadeRecreate() {
+        frame.animate().alpha(0f).setDuration(220).withEndAction(() -> {
+            recreate();
+            overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
+        }).start();
+    }
+
+    // ---------- батарея и автозапуск ----------
+
+    private View buildBatteryCard() {
+        LinearLayout c = card();
+        c.addView(cardTitle("🔋", "Чтобы Android не выключал прогрев"));
+        batteryStatus = text("", 14, th.text, false);
+        c.addView(batteryStatus);
+        c.addView(note("Xiaomi, Huawei, Samsung и другие сами останавливают фоновые приложения. "
+                + "Нажмите обе кнопки и разрешите работу без ограничений."));
+        LinearLayout row = new LinearLayout(this);
+        row.setPadding(0, dp(10), 0, 0);
+        TextView bat = smallButton("🔋 Батарея");
+        bat.setOnClickListener(v -> openBatterySettings());
+        row.addView(bat);
+        TextView auto = smallButton("🚀 Автозапуск");
+        auto.setOnClickListener(v -> openAutostartSettings());
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+        lp.leftMargin = dp(8);
+        row.addView(auto, lp);
+        c.addView(row);
+        return c;
+    }
+
+    private boolean batteryOk() {
+        android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+        return pm != null && pm.isIgnoringBatteryOptimizations(getPackageName());
+    }
+
+    private void updateSystemStatus() {
+        if (batteryStatus != null) {
+            boolean ok = batteryOk();
+            batteryStatus.setText(ok ? "✅ Батарея: без ограничений" : "⚠️ Батарея: Android может остановить прогрев");
+            batteryStatus.setTextColor(ok ? th.good : th.text);
+        }
+        if (exactStatus != null) {
+            boolean ok = Schedule.exactAllowed(this);
+            exactStatus.setText(ok ? "✅ Точное время запуска разрешено" : "⚠️ Без разрешения запуск может опоздать на 10–15 мин");
+            exactButton.setVisibility(ok ? View.GONE : View.VISIBLE);
+        }
+    }
+
+    private void openBatterySettings() {
+        try {
+            if (!batteryOk()) {
+                startActivity(new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        android.net.Uri.parse("package:" + getPackageName())));
+                return;
+            }
+        } catch (RuntimeException ignored) { }
+        try {
+            startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+        } catch (RuntimeException e) {
+            openAppDetails();
+        }
+    }
+
+    /** Экран «Автозапуск» у разных производителей; если такого нет — настройки приложения. */
+    private void openAutostartSettings() {
+        String[][] targets = {
+                {"com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity"},
+                {"com.huawei.systemmanager", "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"},
+                {"com.huawei.systemmanager", "com.huawei.systemmanager.optimize.process.ProtectActivity"},
+                {"com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity"},
+                {"com.oppo.safe", "com.oppo.safe.permission.startup.StartupAppListActivity"},
+                {"com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"},
+                {"com.iqoo.secure", "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity"},
+                {"com.samsung.android.lool", "com.samsung.android.sm.ui.battery.BatteryActivity"},
+                {"com.asus.mobilemanager", "com.asus.mobilemanager.autostart.AutoStartActivity"},
+        };
+        for (String[] t : targets) {
+            try {
+                startActivity(new Intent().setComponent(new android.content.ComponentName(t[0], t[1]))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                Toast.makeText(this, "Найдите «Прогрев TikTok» и разрешите автозапуск", Toast.LENGTH_LONG).show();
+                return;
+            } catch (RuntimeException ignored) { }
+        }
+        openAppDetails();
+        Toast.makeText(this, "Батарея → Без ограничений; и разрешите работу в фоне", Toast.LENGTH_LONG).show();
+    }
+
+    private void openAppDetails() {
+        try {
+            startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.parse("package:" + getPackageName())));
+        } catch (RuntimeException ignored) { }
+    }
+
+    // ---------- расписание ----------
+
+    private View buildScheduleCard() {
+        LinearLayout c = card();
+        c.addView(cardTitle("⏰", "Запуск по расписанию"));
+        c.addView(toggleRow("Запускать прогрев сам 2 раза в день",
+                "В нужное время экран включится, откроется TikTok и пойдёт сессия",
+                Schedule.enabled(this), on -> {
+                    prefs.edit().putBoolean("schedOn", on).apply();
+                    Schedule.apply(this);
+                    if (on && WarmupService.instance == null) {
+                        Toast.makeText(this, "Не забудьте «Подключить» доступ — без него расписание не сработает",
+                                Toast.LENGTH_LONG).show();
+                    }
+                }, false).row);
+        int[] t = Schedule.times(this);
+        c.addView(timeRow("🌅 Утром", "sched1", t[0]));
+        c.addView(timeRow("🌙 Вечером", "sched2", t[1]));
+        stepper(c, "Длительность сессии", "sessionMinutes", 40, 10, 120, 5, " мин", false);
+        exactStatus = text("", 13, th.hint, false);
+        exactStatus.setPadding(0, dp(6), 0, 0);
+        c.addView(exactStatus);
+        TextView exact = smallButton("Разрешить точное время");
+        exact.setOnClickListener(v -> {
+            if (Build.VERSION.SDK_INT >= 31) {
+                try {
+                    startActivity(new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                            android.net.Uri.parse("package:" + getPackageName())));
+                } catch (RuntimeException e) {
+                    openAppDetails();
+                }
+            }
+        });
+        LinearLayout.LayoutParams elp = new LinearLayout.LayoutParams(-2, -2);
+        elp.topMargin = dp(8);
+        c.addView(exact, elp);
+        exactButton = exact;
+        c.addView(note("Важно: телефон на зарядке, а блокировка экрана — без пароля (только свайп). "
+                + "С паролем или отпечатком Android не даст начать без вас."));
+        return c;
+    }
+
+    private View timeRow(String label, final String key, int minutes) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(6), 0, dp(6));
+        row.addView(text(label, 15, th.text, false), new LinearLayout.LayoutParams(0, -2, 1f));
+        final TextView val = smallButton(Schedule.fmt(minutes));
+        val.setOnClickListener(v -> {
+            int m = prefs.getInt(key, minutes);
+            new android.app.TimePickerDialog(this, (tp, h, mi) -> {
+                prefs.edit().putInt(key, h * 60 + mi).apply();
+                val.setText(Schedule.fmt(h * 60 + mi));
+                pop(val);
+                Schedule.apply(this);
+            }, m / 60, m % 60, true).show();
+        });
+        row.addView(val);
+        return row;
+    }
+
+    // ---------- ниша и новый аккаунт ----------
+
+    private View buildNicheCard() {
+        LinearLayout c = card();
+        c.addView(cardTitle("🎯", "Прогрев по нише"));
+        c.addView(note("Впишите темы аккаунта через запятую. Ролики с этими словами и хэштегами смотрятся дольше "
+                + "и лайкаются чаще, остальные — пролистываются быстрее. Так алгоритм быстрее поймёт аккаунт."));
+        editor(c, "Темы ниши (через запятую)", "niche", "", false, 16, false).setHint("авто, мемы, фитнес");
+        c.addView(toggleRow("🔎 Иногда искать по нише", "Раз в 25–40 роликов открывает поиск, смотрит 2–4 ролика и возвращается (β)",
+                Cfg.b(prefs, "nicheSearch"), on -> prefs.edit().putBoolean("nicheSearch", on).apply(), false).row);
+        stepper(c, "➕ Подписка на автора", "followChance", 1, 0, 20, 1, "%", false);
+        stepper(c, "Подписок в день: до", "followDaily", 10, 0, 50, 1, "", false);
+        int day = Cfg.newAccDay(this);
+        c.addView(toggleRow("🐣 Новый аккаунт",
+                day >= 0 ? (day < 7 ? "День " + (day + 1) + " из 7: активность растёт постепенно" : "Прогрев новичка завершён — обычный режим")
+                        : "Первые 3 дня — очень мягко, дни 4–7 — вполсилы, потом обычный режим",
+                day >= 0, on -> {
+                    SharedPreferences.Editor ed = prefs.edit().putBoolean("newAcc", on);
+                    if (on) ed.putLong("newAccStart", System.currentTimeMillis());
+                    ed.apply();
+                    Toast.makeText(this, on ? "🐣 День 1 из 7 — начинаем мягко" : "Обычный режим", Toast.LENGTH_SHORT).show();
+                }, false).row);
+        return c;
+    }
+
+    // ---------- история ----------
+
+    private View buildHistoryCard() {
+        LinearLayout c = card();
+        c.addView(cardTitle("📊", "История прогрева"));
+        historyChart = new BarChart(this);
+        c.addView(historyChart, new LinearLayout.LayoutParams(-1, dp(130)));
+        historyText = text("", 13, th.text, false);
+        historyText.setPadding(0, dp(8), 0, 0);
+        c.addView(historyText);
+        TextView send = smallButton("📤 Отчёт за сегодня в Telegram");
+        send.setOnClickListener(v -> {
+            int[] t = todayTotals();
+            if (t[0] == 0) {
+                Toast.makeText(this, "Сегодня ещё не было прогрева", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(
+                        History.reportLink(t[0], t[1], t[2], t[3], t[4], t[5], t[6]))));
+            } catch (RuntimeException e) {
+                Toast.makeText(this, "Telegram не установлен", Toast.LENGTH_SHORT).show();
+            }
+        });
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+        lp.topMargin = dp(10);
+        c.addView(send, lp);
+        updateHistory();
+        return c;
+    }
+
+    /** {роликов, лайков, избранное, комменты, репосты, подписки, секунд} за сегодня. */
+    private int[] todayTotals() {
+        int[] t = new int[7];
+        java.util.Calendar now = java.util.Calendar.getInstance();
+        for (History.Session s : History.all(this)) {
+            java.util.Calendar d = java.util.Calendar.getInstance();
+            d.setTimeInMillis(s.time);
+            if (History.daysBetween(d, now) != 0) continue;
+            t[0] += s.posts; t[1] += s.likes; t[2] += s.favorites; t[3] += s.comments;
+            t[4] += s.reposts; t[5] += s.follows; t[6] += (int) s.seconds;
+        }
+        return t;
+    }
+
+    private void updateHistory() {
+        if (historyChart == null) return;
+        int[][] d = History.byDay(this, 7);
+        historyChart.set(d[0], d[1]);
+        java.util.List<History.Session> all = History.all(this);
+        int[] t = todayTotals();
+        int week = 0, weekLikes = 0;
+        for (int v : d[0]) week += v;
+        for (int v : d[1]) weekLikes += v;
+        StringBuilder sb = new StringBuilder();
+        sb.append("Сегодня: 🎬 ").append(t[0]).append("  ❤ ").append(t[1]).append("  ⏱ ")
+                .append(t[6] / 60).append(" мин\n")
+                .append("За 7 дней: 🎬 ").append(week).append("  ❤ ").append(weekLikes)
+                .append("  · сессий всего: ").append(all.size());
+        java.text.SimpleDateFormat f = new java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.ROOT);
+        for (int i = all.size() - 1; i >= Math.max(0, all.size() - 4); i--) {
+            History.Session s = all.get(i);
+            sb.append("\n").append(f.format(new java.util.Date(s.time))).append(" — 🎬 ").append(s.posts)
+                    .append(" ❤ ").append(s.likes).append(" · ").append(Math.max(1, s.seconds / 60)).append(" мин");
+        }
+        historyText.setText(sb);
+    }
+
+    /** Столбики по дням: ролики (полупрозрачные) и лайки (яркие). */
+    private class BarChart extends View {
+        private int[] posts = new int[7], likes = new int[7];
+        private final android.graphics.Paint pBar = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        private final android.graphics.Paint pText = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        private final android.graphics.RectF r = new android.graphics.RectF();
+        private float grow = 1f;
+
+        BarChart(android.content.Context c) {
+            super(c);
+            pText.setColor(th.hint);
+            pText.setTextSize(dp(11));
+            pText.setTextAlign(android.graphics.Paint.Align.CENTER);
+        }
+
+        void set(int[] p, int[] l) {
+            posts = p;
+            likes = l;
+            if (reduceMotion) { grow = 1f; invalidate(); return; }
+            android.animation.ValueAnimator va = android.animation.ValueAnimator.ofFloat(0f, 1f);
+            va.setDuration(700);
+            va.setInterpolator(new DecelerateInterpolator(2f));
+            va.addUpdateListener(a -> { grow = (float) a.getAnimatedValue(); invalidate(); });
+            va.start();
+        }
+
+        @Override
+        protected void onDraw(android.graphics.Canvas c) {
+            int n = posts.length;
+            float w = getWidth(), h = getHeight() - dp(18);
+            int max = 1;
+            for (int v : posts) max = Math.max(max, v);
+            float slot = w / n, bw = slot * 0.5f;
+            String[] days = {"Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"};
+            java.util.Calendar cal = java.util.Calendar.getInstance();
+            for (int i = 0; i < n; i++) {
+                float cx = slot * i + slot / 2;
+                float hp = h * posts[i] / max * grow, hl = h * likes[i] / max * grow;
+                pBar.setColor(Theme.alpha(th.a1, 0x55));
+                r.set(cx - bw / 2, h - hp, cx + bw / 2, h);
+                c.drawRoundRect(r, dp(6), dp(6), pBar);
+                pBar.setColor(th.a2);
+                r.set(cx - bw / 2, h - hl, cx + bw / 2, h);
+                c.drawRoundRect(r, dp(6), dp(6), pBar);
+                java.util.Calendar d = (java.util.Calendar) cal.clone();
+                d.add(java.util.Calendar.DAY_OF_YEAR, i - (n - 1));
+                c.drawText(i == n - 1 ? "сег." : days[d.get(java.util.Calendar.DAY_OF_WEEK) - 1], cx,
+                        getHeight() - dp(3), pText);
+            }
+        }
     }
 
     // ---------- конструкторы UI ----------
