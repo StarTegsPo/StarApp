@@ -1,0 +1,23 @@
+{
+  "name": "HiveCorridors",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Shared": {
+        "$path": "src/shared"
+      }
+    },
+    "ServerScriptService": {
+      "HiveServer": {
+        "$path": "src/server"
+      }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "HiveClient": {
+          "$path": "src/client"
+        }
+      }
+    }
+  }
+}

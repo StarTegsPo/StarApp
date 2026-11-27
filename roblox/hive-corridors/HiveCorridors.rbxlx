@@ -1,0 +1,2780 @@
+<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4"><Item class="ReplicatedStorage" referent="RBX6"><Properties><string name="Name">ReplicatedStorage</string></Properties><Item class="Folder" referent="RBX1"><Properties><string name="Name">Shared</string></Properties><Item class="ModuleScript" referent="RBX0"><Properties><string name="Name">Config</string><ProtectedString name="Source"><![CDATA[--!strict
+-- Все настройки игры «Улей: Нижний ярус» в одном месте.
+-- Меняйте числа здесь — серверу и клиенту ничего больше править не нужно.
+
+local Config = {
+	GameName = "УЛЕЙ: НИЖНИЙ ЯРУС",
+	Chapter = "ГЛАВА 4 — ГНЕЗДО",
+
+	-- Лабиринт генерируется заново каждый раунд
+	MazeWidth = 9, -- клеток по X
+	MazeHeight = 9, -- клеток по Z
+	CellSize = 26, -- ширина клетки в стадах
+	WallHeight = 16,
+	WallThickness = 2,
+	ExtraLoops = 12, -- сколько дополнительных проходов прорубить (меньше тупиков)
+	LampChance = 0.4, -- шанс лампы в клетке
+	NestChance = 0.35, -- шанс «наростов улья» в клетке
+	MazeOrigin = Vector3.new(0, 100, 0),
+	LobbyPosition = Vector3.new(0, 100, -320),
+
+	-- Раунд
+	IntermissionTime = 20,
+	RoundTime = 480,
+	MinPlayers = 1,
+	FusesRequired = 3,
+	FusesSpawned = 4, -- на один больше, чем нужно — запас
+	LockerCount = 14,
+	BatteryCount = 10,
+
+	Player = {
+		LobbyWalkSpeed = 16,
+		WalkSpeed = 12,
+		SprintSpeed = 21,
+		StaminaMax = 100,
+		StaminaDrain = 24, -- в секунду при беге
+		StaminaRegen = 13,
+		StaminaRecoverAt = 30, -- после полного истощения бег вернётся с этого значения
+		BatteryMax = 100,
+		BatteryDrain = 1.5, -- в секунду при включённом фонаре
+		BatteryPickup = 45,
+	},
+
+	Monster = {
+		SpawnDelay = 12, -- секунд после старта раунда
+		WanderSpeed = 9,
+		InvestigateSpeed = 13,
+		ChaseSpeed = 18.5,
+		SpeedPerFuse = 1.1, -- ускорение за каждый вставленный предохранитель
+		PowerOnBonus = 2.5, -- когда лифт запитан
+		SightRange = 65,
+		FlashlightSightBonus = 30, -- включённый фонарь виден издалека
+		HearSprintRange = 48,
+		CatchDistance = 4.5,
+		LoseTargetTime = 4,
+		HuntChance = 0.3, -- шанс, что при блуждании рой пойдёт к клетке игрока
+		LockerRipChance = 0.5, -- шанс вытащить из шкафчика, если видел, как ты туда залез
+		HoverHeight = 5,
+	},
+
+	-- «Связь» (tether): держитесь вместе
+	Tether = {
+		Range = 22, -- радиус связи с напарником
+		StaminaRegenMultiplier = 1.6,
+		BatteryDrainMultiplier = 0.65,
+		CocoonTime = 40, -- сколько секунд у команды, чтобы освободить пойманного
+		RescueHoldTime = 3,
+	},
+
+	-- Звуки по желанию: вставьте ID из Creator Store (Toolbox → Audio),
+	-- например "rbxassetid://1234567". Пустая строка = звук не используется.
+	Sounds = {
+		Ambient = "",
+		Buzz = "",
+		Jumpscare = "",
+		Heartbeat = "",
+		Spotted = "",
+		Pickup = "",
+		PowerOn = "",
+	},
+}
+
+return Config
+]]></ProtectedString></Properties></Item></Item></Item><Item class="ServerScriptService" referent="RBX7"><Properties><string name="Name">ServerScriptService</string></Properties><Item class="Script" referent="RBX4"><Properties><string name="Name">HiveServer</string><ProtectedString name="Source"><![CDATA[-- Главный серверный скрипт «Улей: Нижний ярус».
+-- Цикл: лобби → раунд в новом лабиринте → итоги → лобби.
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local StarterPlayer = game:GetService("StarterPlayer")
+
+local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+local MapBuilder = require(script:WaitForChild("MapBuilder"))
+local Monster = require(script:WaitForChild("Monster"))
+
+---------------------------------------------------------------------
+-- Подготовка мира
+---------------------------------------------------------------------
+local remotes = Instance.new("Folder")
+remotes.Name = "HiveRemotes"
+local function remote(name)
+	local r = Instance.new("RemoteEvent")
+	r.Name = name
+	r.Parent = remotes
+	return r
+end
+local NotifyRemote = remote("Notify") -- S→C (text, kind)
+local JumpscareRemote = remote("Jumpscare") -- S→C
+local SpottedRemote = remote("Spotted") -- S→C
+local RoundRemote = remote("Round") -- S→C ("Start"|"End", info)
+local BatteryRemote = remote("Battery") -- S→C (amount)
+local ClientStateRemote = remote("ClientState") -- C→S (flashlightOn, sprinting)
+remotes.Parent = ReplicatedStorage
+
+ReplicatedStorage:SetAttribute("Phase", "Lobby")
+ReplicatedStorage:SetAttribute("TimeLeft", 0)
+ReplicatedStorage:SetAttribute("FusesInserted", 0)
+ReplicatedStorage:SetAttribute("FusesRequired", Config.FusesRequired)
+ReplicatedStorage:SetAttribute("ExitOpen", false)
+
+-- Тьма
+Lighting.Ambient = Color3.fromRGB(0, 0, 0)
+Lighting.OutdoorAmbient = Color3.fromRGB(6, 5, 8)
+Lighting.Brightness = 0
+Lighting.ClockTime = 0
+Lighting.GlobalShadows = true
+Lighting.FogColor = Color3.fromRGB(0, 0, 0)
+Lighting.FogStart = 0
+Lighting.FogEnd = 95
+Lighting.EnvironmentDiffuseScale = 0
+Lighting.EnvironmentSpecularScale = 0
+pcall(function()
+	Lighting.Technology = Enum.Technology.Future
+end)
+for _, child in ipairs(Lighting:GetChildren()) do
+	if child:IsA("Sky") or child:IsA("Atmosphere") or child:IsA("Clouds") then
+		child:Destroy()
+	end
+end
+local baseCC = Instance.new("ColorCorrectionEffect")
+baseCC.Name = "HiveGrade"
+baseCC.Saturation = -0.35
+baseCC.Contrast = 0.15
+baseCC.TintColor = Color3.fromRGB(255, 240, 215)
+baseCC.Parent = Lighting
+local bloom = Instance.new("BloomEffect")
+bloom.Intensity = 0.6
+bloom.Size = 30
+bloom.Threshold = 0.9
+bloom.Parent = Lighting
+
+StarterPlayer.EnableMouseLockOption = false
+StarterPlayer.CharacterWalkSpeed = Config.Player.LobbyWalkSpeed
+Players.RespawnTime = 4
+
+-- Чужие точки появления (например, из шаблона Baseplate) мешают лобби
+for _, obj in ipairs(workspace:GetDescendants()) do
+	if obj:IsA("SpawnLocation") then
+		obj:Destroy()
+	end
+end
+MapBuilder.BuildLobby(Config)
+
+local ambient
+if Config.Sounds.Ambient ~= "" then
+	ambient = Instance.new("Sound")
+	ambient.Name = "HiveAmbient"
+	ambient.SoundId = Config.Sounds.Ambient
+	ambient.Looped = true
+	ambient.Volume = 0.4
+	ambient.Parent = workspace
+	ambient:Play()
+end
+
+local function playSoundAt(parent, id, volume)
+	if id == "" then
+		return
+	end
+	local s = Instance.new("Sound")
+	s.SoundId = id
+	s.Volume = volume or 1
+	s.RollOffMaxDistance = 80
+	s.Parent = parent
+	s:Play()
+	s.Ended:Connect(function()
+		s:Destroy()
+	end)
+	task.delay(10, function()
+		if s.Parent then
+			s:Destroy()
+		end
+	end)
+end
+
+---------------------------------------------------------------------
+-- Состояние раунда
+---------------------------------------------------------------------
+local rng = Random.new()
+local map = nil
+local monster = nil
+local roundId = 0
+local fusesInserted = 0
+local exitOpen = false
+local cocoons = {} -- [player] = {Model, Prompt, EndsAt}
+local lockerOf = {} -- [player] = locker
+
+local function notify(text, kind, target)
+	if target then
+		NotifyRemote:FireClient(target, text, kind or "info")
+	else
+		NotifyRemote:FireAllClients(text, kind or "info")
+	end
+end
+
+local function getHumanoid(plr)
+	local char = plr.Character
+	return char and char:FindFirstChildOfClass("Humanoid")
+end
+
+local function getRoot(plr)
+	local char = plr.Character
+	return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function isAlive(plr)
+	local hum = getHumanoid(plr)
+	return hum ~= nil and hum.Health > 0
+end
+
+local function inRound(plr)
+	return plr:GetAttribute("InRound") == true and isAlive(plr)
+end
+
+-- игроки, которых рой может преследовать
+local function monsterTargets()
+	local list = {}
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if inRound(plr) and not plr:GetAttribute("Hidden") and not plr:GetAttribute("Cocooned") then
+			table.insert(list, plr)
+		end
+	end
+	return list
+end
+
+local function freeParticipants(except)
+	local n = 0
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= except and inRound(plr) and not plr:GetAttribute("Cocooned") then
+			n += 1
+		end
+	end
+	return n
+end
+
+local function resetPlayerAttributes(plr)
+	plr:SetAttribute("InRound", false)
+	plr:SetAttribute("Fuses", 0)
+	plr:SetAttribute("Hidden", false)
+	plr:SetAttribute("Cocooned", false)
+	plr:SetAttribute("CocoonEndsAt", 0)
+	plr:SetAttribute("Escaped", false)
+	plr:SetAttribute("FlashlightOn", false)
+	plr:SetAttribute("Sprinting", false)
+end
+
+local function setFlashlight(plr, on)
+	plr:SetAttribute("FlashlightOn", on)
+	local char = plr.Character
+	local head = char and char:FindFirstChild("Head")
+	local light = head and head:FindFirstChild("HiveFlashlight")
+	if light then
+		light.Enabled = on
+	end
+end
+
+---------------------------------------------------------------------
+-- Предметы
+---------------------------------------------------------------------
+local spawnFuse -- forward
+
+local function onFusePicked(plr, part)
+	if not inRound(plr) or plr:GetAttribute("Cocooned") or not part.Parent then
+		return
+	end
+	part:Destroy()
+	plr:SetAttribute("Fuses", (plr:GetAttribute("Fuses") or 0) + 1)
+	notify("Предохранитель у тебя. Неси его к генератору у входа.", "good", plr)
+	playSoundAt(getRoot(plr), Config.Sounds.Pickup, 0.8)
+end
+
+spawnFuse = function(position)
+	if not map then
+		return
+	end
+	local part = MapBuilder.NewPart({
+		Name = "Fuse",
+		Size = Vector3.new(0.9, 1.8, 0.9),
+		CFrame = CFrame.new(position) * CFrame.Angles(0, rng:NextNumber(0, math.pi), 0.3),
+		Color = Color3.fromRGB(255, 170, 40),
+		Material = Enum.Material.Neon,
+		CanCollide = false,
+	}, map.Interactables)
+	local light = Instance.new("PointLight")
+	light.Range = 9
+	light.Brightness = 1.2
+	light.Color = Color3.fromRGB(255, 170, 40)
+	light.Parent = part
+	local prompt = MapBuilder.NewPrompt(part, "Взять", "Предохранитель", 0.4, 8)
+	prompt.Triggered:Connect(function(plr)
+		onFusePicked(plr, part)
+	end)
+	return part
+end
+
+local function spawnBattery(position)
+	local part = MapBuilder.NewPart({
+		Name = "Battery",
+		Shape = Enum.PartType.Cylinder,
+		Size = Vector3.new(1.4, 0.6, 0.6),
+		CFrame = CFrame.new(position) * CFrame.Angles(0, rng:NextNumber(0, math.pi), 0),
+		Color = Color3.fromRGB(90, 200, 255),
+		Material = Enum.Material.Neon,
+		CanCollide = false,
+	}, map.Interactables)
+	local light = Instance.new("PointLight")
+	light.Range = 6
+	light.Brightness = 0.8
+	light.Color = Color3.fromRGB(90, 200, 255)
+	light.Parent = part
+	local prompt = MapBuilder.NewPrompt(part, "Взять", "Батарейка", 0, 8)
+	prompt.Triggered:Connect(function(plr)
+		if not inRound(plr) or plr:GetAttribute("Cocooned") or not part.Parent then
+			return
+		end
+		part:Destroy()
+		BatteryRemote:FireClient(plr, Config.Player.BatteryPickup)
+		playSoundAt(getRoot(plr), Config.Sounds.Pickup, 0.6)
+	end)
+end
+
+local function dropFuses(plr, position)
+	local count = plr:GetAttribute("Fuses") or 0
+	plr:SetAttribute("Fuses", 0)
+	if count <= 0 or not map then
+		return
+	end
+	local cx, cz = map:WorldToCell(position)
+	local center = map:CellToWorld(cx, cz, 1.5)
+	for i = 1, count do
+		spawnFuse(center + Vector3.new((i - 1) * 2 - (count - 1), 0, 0))
+	end
+	notify(plr.DisplayName .. " выронил(а) предохранитель. Он остался там, где всё случилось.", "danger")
+end
+
+---------------------------------------------------------------------
+-- Шкафчики
+---------------------------------------------------------------------
+local function leaveLocker(plr)
+	local locker = lockerOf[plr]
+	if not locker then
+		return
+	end
+	lockerOf[plr] = nil
+	locker.Occupant = nil
+	locker.Prompt.ActionText = "Спрятаться"
+	locker.Prompt.ObjectText = "Шкафчик"
+	plr:SetAttribute("Hidden", false)
+	local root = getRoot(plr)
+	if root then
+		root.Anchored = false
+		if isAlive(plr) then
+			root.CFrame = locker.ExitPoint.WorldCFrame
+		end
+	end
+end
+
+local catchPlayer -- forward
+
+local function enterLocker(plr, locker)
+	if locker.Occupant or lockerOf[plr] then
+		return
+	end
+	local root = getRoot(plr)
+	if not root then
+		return
+	end
+	locker.Occupant = plr
+	lockerOf[plr] = locker
+	locker.Prompt.ActionText = "Выйти"
+	locker.Prompt.ObjectText = "Занято"
+	root.Anchored = true
+	root.CFrame = locker.HidePoint.WorldCFrame
+	plr:SetAttribute("Sprinting", false)
+
+	-- рой видел, как ты прятался?
+	if monster and monster.Target == plr and monster.State == "Chase" then
+		local dist = (monster:GetPosition() - root.Position).Magnitude
+		if dist < 16 and rng:NextNumber() < Config.Monster.LockerRipChance then
+			local myRound = roundId
+			task.delay(1.4, function()
+				if roundId == myRound and lockerOf[plr] == locker and inRound(plr) then
+					leaveLocker(plr)
+					catchPlayer(plr)
+				end
+			end)
+			return
+		end
+	end
+	plr:SetAttribute("Hidden", true)
+end
+
+local function hookLocker(locker)
+	locker.Prompt.Triggered:Connect(function(plr)
+		if not inRound(plr) or plr:GetAttribute("Cocooned") then
+			return
+		end
+		if locker.Occupant == plr then
+			leaveLocker(plr)
+		elseif locker.Occupant == nil then
+			enterLocker(plr, locker)
+		end
+	end)
+end
+
+---------------------------------------------------------------------
+-- Кокон и спасение (механика «связи»)
+---------------------------------------------------------------------
+local function clearCocoon(plr)
+	local c = cocoons[plr]
+	if c then
+		cocoons[plr] = nil
+		if c.Model then
+			c.Model:Destroy()
+		end
+	end
+	plr:SetAttribute("Cocooned", false)
+	plr:SetAttribute("CocoonEndsAt", 0)
+end
+
+local function killPlayer(plr)
+	local hum = getHumanoid(plr)
+	if hum then
+		hum.Health = 0
+	end
+end
+
+local function rescue(plr, rescuer)
+	local c = cocoons[plr]
+	if not c then
+		return
+	end
+	clearCocoon(plr)
+	local root = getRoot(plr)
+	if root then
+		root.Anchored = false
+	end
+	notify(rescuer.DisplayName .. " вырвал(а) " .. plr.DisplayName .. " из кокона!", "good")
+end
+
+local function cocoonPlayer(plr)
+	local root = getRoot(plr)
+	if not root or not map then
+		killPlayer(plr)
+		return
+	end
+	-- рой утаскивает жертву в случайную дальнюю клетку
+	local x, z = map:RandomCell(rng)
+	local pos = map:CellToWorld(x, z, 0)
+	local model = Instance.new("Model")
+	model.Name = "Cocoon"
+	local shell = MapBuilder.NewPart({
+		Name = "Shell",
+		Shape = Enum.PartType.Ball,
+		Size = Vector3.new(5, 7.5, 5),
+		Position = pos + Vector3.new(0, 3.2, 0),
+		Color = Color3.fromRGB(110, 85, 40),
+		Material = Enum.Material.Sand,
+		Transparency = 0.35,
+		CanCollide = false,
+	}, model)
+	local glow = Instance.new("PointLight")
+	glow.Color = Color3.fromRGB(255, 120, 40)
+	glow.Range = 14
+	glow.Brightness = 1.5
+	glow.Parent = shell
+	local prompt = MapBuilder.NewPrompt(shell, "Освободить", plr.DisplayName, Config.Tether.RescueHoldTime, 10)
+	model.Parent = map.Interactables
+
+	local endsAt = workspace:GetServerTimeNow() + Config.Tether.CocoonTime
+	cocoons[plr] = { Model = model, Prompt = prompt, EndsAt = endsAt }
+	plr:SetAttribute("Cocooned", true)
+	plr:SetAttribute("CocoonEndsAt", endsAt)
+	plr:SetAttribute("Sprinting", false)
+	setFlashlight(plr, false)
+
+	root.Anchored = true
+	root.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
+
+	prompt.Triggered:Connect(function(rescuer)
+		if rescuer ~= plr and inRound(rescuer) and not rescuer:GetAttribute("Cocooned") then
+			rescue(plr, rescuer)
+		end
+	end)
+
+	notify(
+		plr.DisplayName .. " схвачен(а) роем! Найдите светящийся кокон за " .. Config.Tether.CocoonTime .. " сек.",
+		"danger"
+	)
+end
+
+catchPlayer = function(plr)
+	if not inRound(plr) or plr:GetAttribute("Cocooned") then
+		return
+	end
+	JumpscareRemote:FireClient(plr)
+	playSoundAt(getRoot(plr), Config.Sounds.Jumpscare, 1)
+	leaveLocker(plr)
+	local root = getRoot(plr)
+	if root then
+		dropFuses(plr, root.Position)
+	end
+	if freeParticipants(plr) > 0 then
+		task.delay(1.1, function()
+			if inRound(plr) then
+				cocoonPlayer(plr)
+			end
+		end)
+	else
+		task.delay(1.1, function()
+			killPlayer(plr)
+		end)
+	end
+end
+
+---------------------------------------------------------------------
+-- Генератор и лифт
+---------------------------------------------------------------------
+local function openExit()
+	exitOpen = true
+	ReplicatedStorage:SetAttribute("ExitOpen", true)
+	local lift = map.Lift
+	lift.Barrier.CanCollide = false
+	lift.Barrier.Transparency = 1
+	lift.Beacon.Color = MapBuilder.Colors.Safe
+	lift.Light.Color = MapBuilder.Colors.Safe
+	lift.Pad.Color = Color3.fromRGB(40, 90, 50)
+	lift.Label.Text = "ЛИФТ: ВЫХОД"
+	lift.Label.TextColor3 = MapBuilder.Colors.Safe
+	-- аварийный свет
+	for _, lamp in ipairs(map.Lamps) do
+		lamp.Color = MapBuilder.Colors.Danger
+		local l = lamp:FindFirstChildOfClass("PointLight")
+		if l then
+			l.Color = MapBuilder.Colors.Danger
+		end
+	end
+	if monster then
+		monster:SetPowerOn(true)
+	end
+	playSoundAt(map.Generator.Model.PrimaryPart, Config.Sounds.PowerOn, 1)
+	notify("ЛИФТ ЗАПИТАН! Улей проснулся — бегите к зелёному маяку!", "danger")
+end
+
+local function hookGenerator()
+	map.Generator.Prompt.Triggered:Connect(function(plr)
+		if not inRound(plr) or exitOpen then
+			return
+		end
+		local carried = plr:GetAttribute("Fuses") or 0
+		if carried <= 0 then
+			notify(
+				string.format("Нужно ещё %d предохр. Ищи их в тупиках улья.", Config.FusesRequired - fusesInserted),
+				"info",
+				plr
+			)
+			return
+		end
+		local use = math.min(carried, Config.FusesRequired - fusesInserted)
+		plr:SetAttribute("Fuses", carried - use)
+		for _ = 1, use do
+			fusesInserted += 1
+			local ind = map.Generator.Indicators[fusesInserted]
+			if ind then
+				ind.Color = MapBuilder.Colors.Safe
+				local l = ind:FindFirstChildOfClass("PointLight")
+				if l then
+					l.Color = MapBuilder.Colors.Safe
+				end
+			end
+		end
+		ReplicatedStorage:SetAttribute("FusesInserted", fusesInserted)
+		if monster then
+			monster:SetRage(fusesInserted)
+		end
+		if fusesInserted >= Config.FusesRequired then
+			openExit()
+		else
+			notify(
+				string.format(
+					"Генератор: %d/%d. Где-то в стенах что-то зашевелилось быстрее…",
+					fusesInserted,
+					Config.FusesRequired
+				),
+				"info"
+			)
+		end
+	end)
+end
+
+local function hookExit()
+	map.Lift.Zone.Touched:Connect(function(hit)
+		if not exitOpen then
+			return
+		end
+		local char = hit:FindFirstAncestorOfClass("Model")
+		local plr = char and Players:GetPlayerFromCharacter(char)
+		if not plr or not inRound(plr) or plr:GetAttribute("Escaped") or plr:GetAttribute("Cocooned") then
+			return
+		end
+		plr:SetAttribute("Escaped", true)
+		plr:SetAttribute("InRound", false)
+		setFlashlight(plr, false)
+		notify(plr.DisplayName .. " выбрался(-ась) из улья!", "good")
+		task.delay(1.5, function()
+			if plr.Parent then
+				plr:LoadCharacter()
+			end
+		end)
+	end)
+end
+
+---------------------------------------------------------------------
+-- Персонажи
+---------------------------------------------------------------------
+local function onCharacterAdded(plr, char)
+	local head = char:WaitForChild("Head", 10)
+	if head and not head:FindFirstChild("HiveFlashlight") then
+		local light = Instance.new("SpotLight")
+		light.Name = "HiveFlashlight"
+		light.Face = Enum.NormalId.Front
+		light.Range = 52
+		light.Angle = 48
+		light.Brightness = 3
+		light.Color = Color3.fromRGB(255, 244, 222)
+		light.Shadows = true
+		light.Enabled = false
+		light.Parent = head
+	end
+	local hum = char:WaitForChild("Humanoid", 10)
+	if hum then
+		hum.WalkSpeed = Config.Player.LobbyWalkSpeed
+		hum.Died:Connect(function()
+			local root = getRoot(plr)
+			if plr:GetAttribute("InRound") then
+				if root then
+					dropFuses(plr, root.Position)
+				end
+				leaveLocker(plr)
+				clearCocoon(plr)
+				plr:SetAttribute("InRound", false)
+				notify(plr.DisplayName .. " больше не отвечает…", "danger")
+			end
+			setFlashlight(plr, false)
+		end)
+	end
+end
+
+Players.PlayerAdded:Connect(function(plr)
+	resetPlayerAttributes(plr)
+	plr.CharacterAdded:Connect(function(char)
+		onCharacterAdded(plr, char)
+	end)
+	if plr.Character then
+		task.spawn(onCharacterAdded, plr, plr.Character)
+	end
+end)
+for _, plr in ipairs(Players:GetPlayers()) do
+	resetPlayerAttributes(plr)
+	plr.CharacterAdded:Connect(function(char)
+		onCharacterAdded(plr, char)
+	end)
+	if plr.Character then
+		task.spawn(onCharacterAdded, plr, plr.Character)
+	end
+end
+
+Players.PlayerRemoving:Connect(function(plr)
+	local root = getRoot(plr)
+	if plr:GetAttribute("InRound") and root then
+		dropFuses(plr, root.Position)
+	end
+	leaveLocker(plr)
+	clearCocoon(plr)
+end)
+
+-- клиент сообщает: фонарь вкл/выкл, бежит ли
+local lastState = {}
+ClientStateRemote.OnServerEvent:Connect(function(plr, flashlightOn, sprinting)
+	local now = os.clock()
+	if lastState[plr] and now - lastState[plr] < 0.05 then
+		return
+	end
+	lastState[plr] = now
+	local active = inRound(plr) and not plr:GetAttribute("Cocooned")
+	setFlashlight(plr, active and flashlightOn == true)
+	plr:SetAttribute("Sprinting", active and sprinting == true and not plr:GetAttribute("Hidden"))
+end)
+Players.PlayerRemoving:Connect(function(plr)
+	lastState[plr] = nil
+end)
+
+---------------------------------------------------------------------
+-- Мерцание ламп
+---------------------------------------------------------------------
+local function flickerLoop(myRound)
+	while roundId == myRound and map do
+		task.wait(rng:NextNumber(0.08, 0.6))
+		if not map or #map.Lamps == 0 then
+			break
+		end
+		local lamp = map.Lamps[rng:NextInteger(1, #map.Lamps)]
+		local light = lamp and lamp.Parent and lamp:FindFirstChildOfClass("PointLight")
+		if light then
+			local base = lamp:GetAttribute("BaseBrightness") or 1
+			task.spawn(function()
+				for _ = 1, rng:NextInteger(1, 4) do
+					light.Brightness = 0
+					lamp.Transparency = 0.8
+					task.wait(rng:NextNumber(0.03, 0.15))
+					if not lamp.Parent then
+						return
+					end
+					light.Brightness = base
+					lamp.Transparency = 0
+					task.wait(rng:NextNumber(0.03, 0.2))
+				end
+			end)
+		end
+	end
+end
+
+-- лампы рядом с роем гаснут
+local function lampsNearMonster()
+	if not monster or not map then
+		return
+	end
+	local pos = monster:GetPosition()
+	for _, lamp in ipairs(map.Lamps) do
+		local light = lamp:FindFirstChildOfClass("PointLight")
+		if light then
+			local near = (lamp.Position - pos).Magnitude < 20
+			if near then
+				light.Brightness = 0
+				lamp.Transparency = 0.85
+				lamp:SetAttribute("Dimmed", true)
+			elseif lamp:GetAttribute("Dimmed") then
+				lamp:SetAttribute("Dimmed", false)
+				light.Brightness = lamp:GetAttribute("BaseBrightness") or 1
+				lamp.Transparency = 0
+			end
+		end
+	end
+end
+
+---------------------------------------------------------------------
+-- Раунд
+---------------------------------------------------------------------
+local function cleanupRound()
+	roundId += 1
+	if monster then
+		monster:Destroy()
+		monster = nil
+	end
+	for plr in pairs(lockerOf) do
+		leaveLocker(plr)
+	end
+	for plr in pairs(cocoons) do
+		clearCocoon(plr)
+	end
+	if map then
+		map:Destroy()
+		map = nil
+	end
+	fusesInserted = 0
+	exitOpen = false
+	ReplicatedStorage:SetAttribute("FusesInserted", 0)
+	ReplicatedStorage:SetAttribute("ExitOpen", false)
+end
+
+local function countActive()
+	local free, cocooned = 0, 0
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if inRound(plr) then
+			if plr:GetAttribute("Cocooned") then
+				cocooned += 1
+			else
+				free += 1
+			end
+		end
+	end
+	return free, cocooned
+end
+
+local function runRound()
+	cleanupRound()
+	local myRound = roundId
+	map = MapBuilder.Build(Config, rng)
+	for _, spot in ipairs(map.FuseSpots) do
+		spawnFuse(spot)
+	end
+	for _, spot in ipairs(map.BatterySpots) do
+		spawnBattery(spot)
+	end
+	for _, locker in ipairs(map.Lockers) do
+		hookLocker(locker)
+	end
+	hookGenerator()
+	hookExit()
+
+	local participants = {}
+	for i, plr in ipairs(Players:GetPlayers()) do
+		local root = getRoot(plr)
+		local hum = getHumanoid(plr)
+		if root and hum and hum.Health > 0 then
+			resetPlayerAttributes(plr)
+			plr:SetAttribute("InRound", true)
+			hum.WalkSpeed = Config.Player.WalkSpeed
+			local spot = map.SpawnPoints[((i - 1) % #map.SpawnPoints) + 1]
+			plr.Character:PivotTo(CFrame.lookAt(spot, spot + Vector3.new(0, 0, 1)))
+			table.insert(participants, plr)
+		end
+	end
+	if #participants == 0 then
+		cleanupRound()
+		return
+	end
+
+	ReplicatedStorage:SetAttribute("Phase", "Round")
+	RoundRemote:FireAllClients("Start", { Seed = myRound })
+	notify("Найдите " .. Config.FusesRequired .. " предохранителя. Не бегите без нужды.", "info")
+	task.spawn(flickerLoop, myRound)
+
+	task.delay(Config.Monster.SpawnDelay, function()
+		if roundId ~= myRound or not map then
+			return
+		end
+		monster = Monster.new(map, Config, rng, {
+			GetTargets = monsterTargets,
+			OnCatch = catchPlayer,
+			OnSpotted = function(plr)
+				SpottedRemote:FireClient(plr)
+				playSoundAt(getRoot(plr), Config.Sounds.Spotted, 0.9)
+			end,
+		}, map.Folder)
+		monster:SetRage(fusesInserted)
+		monster:SetPowerOn(exitOpen)
+		notify("Что-то шевелится в стенах…", "danger")
+	end)
+
+	local hbConn = RunService.Heartbeat:Connect(function(dt)
+		if monster and roundId == myRound then
+			monster:Step(math.min(dt, 0.1))
+		end
+	end)
+
+	local timeLeft = Config.RoundTime
+	local result = "timeout"
+	while roundId == myRound do
+		ReplicatedStorage:SetAttribute("TimeLeft", timeLeft)
+		-- коконы с истёкшим таймером
+		local now = workspace:GetServerTimeNow()
+		for plr, c in pairs(cocoons) do
+			if now >= c.EndsAt then
+				clearCocoon(plr)
+				killPlayer(plr)
+			end
+		end
+		local free, cocooned = countActive()
+		if free == 0 and cocooned > 0 then
+			-- спасать некому
+			for plr in pairs(cocoons) do
+				clearCocoon(plr)
+				killPlayer(plr)
+			end
+		end
+		if free == 0 then
+			result = "done"
+			break
+		end
+		if timeLeft <= 0 then
+			result = "timeout"
+			break
+		end
+		-- лампы гаснут рядом с роем (проверяем 4 раза в секунду)
+		for _ = 1, 4 do
+			lampsNearMonster()
+			task.wait(0.25)
+		end
+		timeLeft -= 1
+	end
+	hbConn:Disconnect()
+
+	local escaped = {}
+	for _, plr in ipairs(participants) do
+		if plr.Parent and plr:GetAttribute("Escaped") then
+			table.insert(escaped, plr.DisplayName)
+		end
+	end
+	if result == "timeout" then
+		notify("Время вышло. Улей запечатан навсегда.", "danger")
+		for _, plr in ipairs(Players:GetPlayers()) do
+			if inRound(plr) then
+				killPlayer(plr)
+			end
+		end
+	end
+	if #escaped > 0 then
+		notify("Выбрались: " .. table.concat(escaped, ", "), "good")
+	else
+		notify("Никто не выбрался. Рой сыт… пока что.", "danger")
+	end
+	RoundRemote:FireAllClients("End", { Escaped = escaped })
+	ReplicatedStorage:SetAttribute("Phase", "Results")
+	task.wait(6)
+	cleanupRound()
+	for _, plr in ipairs(Players:GetPlayers()) do
+		resetPlayerAttributes(plr)
+		plr:LoadCharacter()
+	end
+end
+
+---------------------------------------------------------------------
+-- Главный цикл
+---------------------------------------------------------------------
+while true do
+	ReplicatedStorage:SetAttribute("Phase", "Lobby")
+	local t = Config.IntermissionTime
+	while t > 0 do
+		ReplicatedStorage:SetAttribute("TimeLeft", t)
+		task.wait(1)
+		if #Players:GetPlayers() >= Config.MinPlayers then
+			t -= 1
+		else
+			t = Config.IntermissionTime
+		end
+	end
+	local ok, err = pcall(runRound)
+	if not ok then
+		warn("[Hive] Ошибка раунда: " .. tostring(err))
+		cleanupRound()
+		for _, plr in ipairs(Players:GetPlayers()) do
+			resetPlayerAttributes(plr)
+			plr:LoadCharacter()
+		end
+		task.wait(3)
+	end
+end
+]]></ProtectedString></Properties><Item class="ModuleScript" referent="RBX2"><Properties><string name="Name">MapBuilder</string><ProtectedString name="Source"><![CDATA[-- Генератор лабиринта-улья и лобби. Всё строится из обычных Part,
+-- поэтому игра работает в пустом плейсе без единого ассета.
+
+local MapBuilder = {}
+
+local DIRS = {
+	N = { dx = 0, dz = -1, opposite = "S" },
+	E = { dx = 1, dz = 0, opposite = "W" },
+	S = { dx = 0, dz = 1, opposite = "N" },
+	W = { dx = -1, dz = 0, opposite = "E" },
+}
+local DIR_ORDER = { "N", "E", "S", "W" }
+
+local COLORS = {
+	Wall = Color3.fromRGB(62, 56, 46),
+	WallTrim = Color3.fromRGB(40, 36, 30),
+	Floor = Color3.fromRGB(34, 31, 27),
+	Ceiling = Color3.fromRGB(22, 20, 18),
+	Lamp = Color3.fromRGB(255, 210, 150),
+	Nest = Color3.fromRGB(96, 72, 30),
+	NestDark = Color3.fromRGB(52, 38, 16),
+	Locker = Color3.fromRGB(66, 76, 80),
+	Generator = Color3.fromRGB(46, 58, 44),
+	Danger = Color3.fromRGB(255, 40, 40),
+	Safe = Color3.fromRGB(60, 255, 120),
+}
+MapBuilder.Colors = COLORS
+
+local function newPart(props, parent)
+	local p = Instance.new("Part")
+	p.Anchored = true
+	p.TopSurface = Enum.SurfaceType.Smooth
+	p.BottomSurface = Enum.SurfaceType.Smooth
+	for k, v in pairs(props) do
+		(p :: any)[k] = v
+	end
+	p.Parent = parent
+	return p
+end
+MapBuilder.NewPart = newPart
+
+local function newPrompt(parent, actionText, objectText, holdDuration, distance)
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText = actionText
+	prompt.ObjectText = objectText or ""
+	prompt.HoldDuration = holdDuration or 0
+	prompt.MaxActivationDistance = distance or 9
+	prompt.RequiresLineOfSight = false
+	prompt.KeyboardKeyCode = Enum.KeyCode.E
+	prompt.Parent = parent
+	return prompt
+end
+MapBuilder.NewPrompt = newPrompt
+
+local function billboard(parent, text, color, studsOffset)
+	local gui = Instance.new("BillboardGui")
+	gui.Size = UDim2.fromOffset(220, 50)
+	gui.StudsOffset = studsOffset or Vector3.new(0, 4, 0)
+	gui.AlwaysOnTop = false
+	gui.MaxDistance = 60
+	gui.LightInfluence = 0
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.GothamBlack
+	label.TextScaled = true
+	label.TextColor3 = color
+	label.TextStrokeTransparency = 0.3
+	label.Text = text
+	label.Parent = gui
+	gui.Parent = parent
+	return gui, label
+end
+
+---------------------------------------------------------------------
+-- Генерация лабиринта (recursive backtracker + петли)
+---------------------------------------------------------------------
+local function generateMaze(w, h, rng, extraLoops)
+	local cells = {}
+	for x = 1, w do
+		cells[x] = {}
+		for z = 1, h do
+			cells[x][z] = { N = false, E = false, S = false, W = false, visited = false }
+		end
+	end
+
+	local stack = { { 1, 1 } }
+	cells[1][1].visited = true
+	while #stack > 0 do
+		local cur = stack[#stack]
+		local cx, cz = cur[1], cur[2]
+		local options = {}
+		for _, d in ipairs(DIR_ORDER) do
+			local nx, nz = cx + DIRS[d].dx, cz + DIRS[d].dz
+			if nx >= 1 and nx <= w and nz >= 1 and nz <= h and not cells[nx][nz].visited then
+				table.insert(options, d)
+			end
+		end
+		if #options == 0 then
+			table.remove(stack)
+		else
+			local d = options[rng:NextInteger(1, #options)]
+			local nx, nz = cx + DIRS[d].dx, cz + DIRS[d].dz
+			cells[cx][cz][d] = true
+			cells[nx][nz][DIRS[d].opposite] = true
+			cells[nx][nz].visited = true
+			table.insert(stack, { nx, nz })
+		end
+	end
+
+	local added, tries = 0, 0
+	while added < extraLoops and tries < extraLoops * 30 do
+		tries += 1
+		local x, z = rng:NextInteger(1, w), rng:NextInteger(1, h)
+		local d = DIR_ORDER[rng:NextInteger(1, 4)]
+		local nx, nz = x + DIRS[d].dx, z + DIRS[d].dz
+		if nx >= 1 and nx <= w and nz >= 1 and nz <= h and not cells[x][z][d] then
+			cells[x][z][d] = true
+			cells[nx][nz][DIRS[d].opposite] = true
+			added += 1
+		end
+	end
+
+	return cells
+end
+
+---------------------------------------------------------------------
+-- Объект карты: навигация по клеткам
+---------------------------------------------------------------------
+local Map = {}
+Map.__index = Map
+
+function Map:CellToWorld(x, z, y)
+	return self.Origin + Vector3.new((x - 1) * self.CellSize, y or 0, (z - 1) * self.CellSize)
+end
+
+function Map:WorldToCell(pos)
+	local rel = pos - self.Origin
+	local x = math.clamp(math.floor(rel.X / self.CellSize + 0.5) + 1, 1, self.Width)
+	local z = math.clamp(math.floor(rel.Z / self.CellSize + 0.5) + 1, 1, self.Height)
+	return x, z
+end
+
+function Map:Neighbors(x, z)
+	local out = {}
+	local cell = self.Cells[x][z]
+	for _, d in ipairs(DIR_ORDER) do
+		if cell[d] then
+			table.insert(out, { x + DIRS[d].dx, z + DIRS[d].dz })
+		end
+	end
+	return out
+end
+
+function Map:_index(x, z)
+	return (z - 1) * self.Width + x
+end
+
+-- BFS: расстояния (в клетках) от точки до всех клеток
+function Map:Distances(sx, sz)
+	local dist = {}
+	dist[self:_index(sx, sz)] = 0
+	local queue, head = { { sx, sz } }, 1
+	while head <= #queue do
+		local cur = queue[head]
+		head += 1
+		local base = dist[self:_index(cur[1], cur[2])]
+		for _, n in ipairs(self:Neighbors(cur[1], cur[2])) do
+			local i = self:_index(n[1], n[2])
+			if dist[i] == nil then
+				dist[i] = base + 1
+				table.insert(queue, n)
+			end
+		end
+	end
+	return dist
+end
+
+function Map:DistanceBetween(ax, az, bx, bz)
+	return self:Distances(ax, az)[self:_index(bx, bz)] or math.huge
+end
+
+-- Путь из клеток от (sx,sz) до (tx,tz), включая обе
+function Map:FindPath(sx, sz, tx, tz)
+	local prev = {}
+	local startI = self:_index(sx, sz)
+	local targetI = self:_index(tx, tz)
+	prev[startI] = false
+	local queue, head = { { sx, sz } }, 1
+	while head <= #queue do
+		local cur = queue[head]
+		head += 1
+		if self:_index(cur[1], cur[2]) == targetI then
+			break
+		end
+		for _, n in ipairs(self:Neighbors(cur[1], cur[2])) do
+			local i = self:_index(n[1], n[2])
+			if prev[i] == nil then
+				prev[i] = cur
+				table.insert(queue, n)
+			end
+		end
+	end
+	if prev[targetI] == nil then
+		return { { sx, sz } }
+	end
+	local path = {}
+	local node = { tx, tz }
+	while node do
+		table.insert(path, 1, node)
+		node = prev[self:_index(node[1], node[2])]
+	end
+	return path
+end
+
+function Map:RandomCell(rng)
+	return rng:NextInteger(1, self.Width), rng:NextInteger(1, self.Height)
+end
+
+-- Точка у стены клетки (для шкафчиков, генератора и т.п.)
+function Map:WallSpot(x, z, dir, inset, y)
+	local center = self:CellToWorld(x, z, y or 0)
+	local d = DIRS[dir]
+	local offset = self.CellSize / 2 - self.WallThickness / 2 - inset
+	local pos = center + Vector3.new(d.dx * offset, 0, d.dz * offset)
+	-- смотрим в центр клетки
+	return CFrame.lookAt(pos, Vector3.new(center.X, pos.Y, center.Z))
+end
+
+function Map:ClosedSides(x, z)
+	local out = {}
+	for _, d in ipairs(DIR_ORDER) do
+		if not self.Cells[x][z][d] then
+			table.insert(out, d)
+		end
+	end
+	return out
+end
+
+function Map:Destroy()
+	if self.Folder then
+		self.Folder:Destroy()
+		self.Folder = nil
+	end
+end
+
+---------------------------------------------------------------------
+-- Декор
+---------------------------------------------------------------------
+local function buildNest(parent, center, rng, cellSize, wallHeight)
+	local count = rng:NextInteger(2, 5)
+	for _ = 1, count do
+		local size = rng:NextNumber(1.5, 4.5)
+		local onCeiling = rng:NextNumber() < 0.4
+		local spread = cellSize * 0.35
+		local pos = center
+			+ Vector3.new(
+				rng:NextNumber(-spread, spread),
+				onCeiling and (wallHeight - size * 0.3) or (size * 0.3),
+				rng:NextNumber(-spread, spread)
+			)
+		newPart({
+			Name = "Nest",
+			Shape = Enum.PartType.Ball,
+			Size = Vector3.new(size, size, size),
+			Position = pos,
+			Color = rng:NextNumber() < 0.5 and COLORS.Nest or COLORS.NestDark,
+			Material = Enum.Material.Slate,
+			CanCollide = false,
+			CastShadow = true,
+		}, parent)
+	end
+	-- «соты» — плоские шестигранники на полу
+	if rng:NextNumber() < 0.5 then
+		local hex = newPart({
+			Name = "Comb",
+			Shape = Enum.PartType.Cylinder,
+			Size = Vector3.new(0.2, 6, 6),
+			CFrame = CFrame.new(center + Vector3.new(rng:NextNumber(-6, 6), 0.1, rng:NextNumber(-6, 6)))
+				* CFrame.Angles(0, 0, math.rad(90)),
+			Color = Color3.fromRGB(120, 90, 30),
+			Material = Enum.Material.Glass,
+			Transparency = 0.2,
+			CanCollide = false,
+		}, parent)
+		hex.Reflectance = 0.1
+	end
+end
+
+local function buildLamp(parent, pos)
+	local lamp = newPart({
+		Name = "Lamp",
+		Size = Vector3.new(2.4, 0.4, 2.4),
+		Position = pos,
+		Color = COLORS.Lamp,
+		Material = Enum.Material.Neon,
+		CanCollide = false,
+		CastShadow = false,
+	}, parent)
+	local light = Instance.new("PointLight")
+	light.Range = 22
+	light.Brightness = 1.1
+	light.Color = COLORS.Lamp
+	light.Shadows = true
+	light.Parent = lamp
+	lamp:SetAttribute("BaseBrightness", light.Brightness)
+	return lamp
+end
+
+-- Шкафчик-укрытие: полый, со щелью на уровне глаз
+local LOCKER_W, LOCKER_H, LOCKER_D, LOCKER_T = 4.6, 8, 3.6, 0.3
+local function buildLocker(parent, baseCf)
+	local model = Instance.new("Model")
+	model.Name = "Locker"
+	local cf = baseCf * CFrame.new(0, LOCKER_H / 2, 0)
+	local function panel(name, offset, size)
+		return newPart({
+			Name = name,
+			Size = size,
+			CFrame = cf * offset,
+			Color = COLORS.Locker,
+			Material = Enum.Material.DiamondPlate,
+		}, model)
+	end
+	panel("Back", CFrame.new(0, 0, LOCKER_D / 2 - LOCKER_T / 2), Vector3.new(LOCKER_W, LOCKER_H, LOCKER_T))
+	panel("Left", CFrame.new(-LOCKER_W / 2 + LOCKER_T / 2, 0, 0), Vector3.new(LOCKER_T, LOCKER_H, LOCKER_D))
+	panel("Right", CFrame.new(LOCKER_W / 2 - LOCKER_T / 2, 0, 0), Vector3.new(LOCKER_T, LOCKER_H, LOCKER_D))
+	panel("Top", CFrame.new(0, LOCKER_H / 2 - LOCKER_T / 2, 0), Vector3.new(LOCKER_W, LOCKER_T, LOCKER_D))
+	-- дверца из двух половин, между ними щель 4.2–4.8 от пола (уровень глаз)
+	local doorZ = -LOCKER_D / 2 + LOCKER_T / 2
+	local low = panel("DoorLow", CFrame.new(0, -LOCKER_H / 2 + 2.1, doorZ), Vector3.new(LOCKER_W, 4.2, LOCKER_T))
+	panel("DoorHigh", CFrame.new(0, -LOCKER_H / 2 + 4.8 + 1.6, doorZ), Vector3.new(LOCKER_W, 3.2, LOCKER_T))
+	model.PrimaryPart = low
+
+	-- точка пряток: корень персонажа на высоте 3 над полом, смотрит наружу
+	local hidePoint = Instance.new("Attachment")
+	hidePoint.Name = "HidePoint"
+	hidePoint.Parent = low
+	hidePoint.WorldCFrame = baseCf * CFrame.new(0, 3, 0.2)
+
+	local exitPoint = Instance.new("Attachment")
+	exitPoint.Name = "ExitPoint"
+	exitPoint.Parent = low
+	exitPoint.WorldCFrame = baseCf * CFrame.new(0, 3, -4)
+
+	local prompt = newPrompt(low, "Спрятаться", "Шкафчик", 0, 8)
+	model.Parent = parent
+	return { Model = model, Prompt = prompt, HidePoint = hidePoint, ExitPoint = exitPoint, Occupant = nil }
+end
+
+local function buildGenerator(parent, baseCf, required)
+	local model = Instance.new("Model")
+	model.Name = "Generator"
+	local body = newPart({
+		Name = "Body",
+		Size = Vector3.new(7, 5, 3.4),
+		CFrame = baseCf * CFrame.new(0, 2.5, 0),
+		Color = COLORS.Generator,
+		Material = Enum.Material.Metal,
+	}, model)
+	model.PrimaryPart = body
+	local indicators = {}
+	for i = 1, required do
+		local x = (i - (required + 1) / 2) * 1.8
+		local ind = newPart({
+			Name = "Indicator" .. i,
+			Size = Vector3.new(1, 1, 0.3),
+			CFrame = baseCf * CFrame.new(x, 3.6, -1.85),
+			Color = COLORS.Danger,
+			Material = Enum.Material.Neon,
+			CanCollide = false,
+		}, model)
+		local l = Instance.new("PointLight")
+		l.Range = 6
+		l.Brightness = 1.5
+		l.Color = COLORS.Danger
+		l.Parent = ind
+		table.insert(indicators, ind)
+	end
+	billboard(body, "ГЕНЕРАТОР", Color3.fromRGB(255, 200, 80), Vector3.new(0, 4.5, 0))
+	local prompt = newPrompt(body, "Вставить предохранитель", "Генератор", 1, 9)
+	model.Parent = parent
+	return { Model = model, Prompt = prompt, Indicators = indicators }
+end
+
+local function buildLift(parent, center)
+	local model = Instance.new("Model")
+	model.Name = "Lift"
+	local pad = newPart({
+		Name = "Pad",
+		Size = Vector3.new(11, 0.4, 11),
+		Position = center + Vector3.new(0, 0.2, 0),
+		Color = Color3.fromRGB(70, 70, 75),
+		Material = Enum.Material.DiamondPlate,
+	}, model)
+	local zone = newPart({
+		Name = "ExitZone",
+		Size = Vector3.new(9, 6, 9),
+		Position = center + Vector3.new(0, 3.4, 0),
+		Transparency = 1,
+		CanCollide = false,
+	}, model)
+	local barrier = newPart({
+		Name = "Barrier",
+		Size = Vector3.new(12, 14, 12),
+		Position = center + Vector3.new(0, 7, 0),
+		Color = COLORS.Danger,
+		Material = Enum.Material.ForceField,
+		Transparency = 0,
+	}, model)
+	local beacon = newPart({
+		Name = "Beacon",
+		Size = Vector3.new(1.4, 1.4, 1.4),
+		Shape = Enum.PartType.Ball,
+		Position = center + Vector3.new(0, 14.5, 0),
+		Color = COLORS.Danger,
+		Material = Enum.Material.Neon,
+		CanCollide = false,
+	}, model)
+	local light = Instance.new("PointLight")
+	light.Range = 26
+	light.Brightness = 2
+	light.Color = COLORS.Danger
+	light.Parent = beacon
+	local _, label = billboard(pad, "ЛИФТ: НЕТ ПИТАНИЯ", COLORS.Danger, Vector3.new(0, 9, 0))
+	model.Parent = parent
+	return {
+		Model = model,
+		Pad = pad,
+		Zone = zone,
+		Barrier = barrier,
+		Beacon = beacon,
+		Light = light,
+		Label = label,
+	}
+end
+
+---------------------------------------------------------------------
+-- Сборка карты
+---------------------------------------------------------------------
+function MapBuilder.Build(config, rng)
+	local w, h, C = config.MazeWidth, config.MazeHeight, config.CellSize
+	local WH, T = config.WallHeight, config.WallThickness
+	local origin = config.MazeOrigin
+
+	local self = setmetatable({
+		Width = w,
+		Height = h,
+		CellSize = C,
+		WallHeight = WH,
+		WallThickness = T,
+		Origin = origin,
+		Cells = generateMaze(w, h, rng, config.ExtraLoops),
+		Lamps = {},
+		Lockers = {},
+		FuseSpots = {},
+		BatterySpots = {},
+	}, Map)
+
+	local folder = Instance.new("Folder")
+	folder.Name = "HiveMap"
+	local geometry = Instance.new("Folder")
+	geometry.Name = "Geometry"
+	geometry.Parent = folder
+	local decor = Instance.new("Folder")
+	decor.Name = "Decor"
+	decor.Parent = folder
+	local interact = Instance.new("Folder")
+	interact.Name = "Interactables"
+	interact.Parent = folder
+	self.Folder = folder
+	self.Geometry = geometry
+	self.Interactables = interact
+
+	-- пол и потолок
+	local sizeX, sizeZ = w * C + T, h * C + T
+	local mid = origin + Vector3.new((w - 1) * C / 2, 0, (h - 1) * C / 2)
+	newPart({
+		Name = "Floor",
+		Size = Vector3.new(sizeX, 1, sizeZ),
+		Position = mid - Vector3.new(0, 0.5, 0),
+		Color = COLORS.Floor,
+		Material = Enum.Material.Concrete,
+	}, geometry)
+	newPart({
+		Name = "Ceiling",
+		Size = Vector3.new(sizeX, 1, sizeZ),
+		Position = mid + Vector3.new(0, WH + 0.5, 0),
+		Color = COLORS.Ceiling,
+		Material = Enum.Material.Concrete,
+		CastShadow = false,
+	}, geometry)
+
+	-- стены
+	local function wall(pos, size)
+		newPart({
+			Name = "Wall",
+			Size = size,
+			Position = pos,
+			Color = COLORS.Wall,
+			Material = Enum.Material.Concrete,
+		}, geometry)
+		-- тёмный плинтус для глубины
+		newPart({
+			Name = "Trim",
+			Size = Vector3.new(size.X + 0.2, 1.2, size.Z + 0.2),
+			Position = Vector3.new(pos.X, origin.Y + 0.6, pos.Z),
+			Color = COLORS.WallTrim,
+			Material = Enum.Material.Slate,
+			CanCollide = false,
+		}, geometry)
+	end
+
+	for x = 1, w do
+		for z = 1, h do
+			local c = self:CellToWorld(x, z, WH / 2)
+			local cell = self.Cells[x][z]
+			if not cell.E then
+				wall(c + Vector3.new(C / 2, 0, 0), Vector3.new(T, WH, C + T))
+			end
+			if not cell.S then
+				wall(c + Vector3.new(0, 0, C / 2), Vector3.new(C + T, WH, T))
+			end
+			if x == 1 then
+				wall(c - Vector3.new(C / 2, 0, 0), Vector3.new(T, WH, C + T))
+			end
+			if z == 1 then
+				wall(c - Vector3.new(0, 0, C / 2), Vector3.new(C + T, WH, T))
+			end
+		end
+	end
+
+	-- ключевые точки
+	self.StartCell = { 1, 1 }
+	local distFromStart = self:Distances(1, 1)
+	local exitX, exitZ, best = w, h, -1
+	local deadEnds = {}
+	for x = 1, w do
+		for z = 1, h do
+			local d = distFromStart[self:_index(x, z)] or 0
+			if d > best then
+				best, exitX, exitZ = d, x, z
+			end
+			if #self:Neighbors(x, z) == 1 and not (x == 1 and z == 1) then
+				table.insert(deadEnds, { x, z, d })
+			end
+		end
+	end
+	self.ExitCell = { exitX, exitZ }
+	self.MaxDistance = best
+
+	-- монстр появляется в середине пути, не у старта и не у выхода
+	local spawnX, spawnZ, spawnScore = exitX, exitZ, -math.huge
+	for _ = 1, 40 do
+		local x, z = self:RandomCell(rng)
+		local d = distFromStart[self:_index(x, z)] or 0
+		local score = -math.abs(d - best * 0.6)
+		if d >= 4 and not (x == exitX and z == exitZ) and score > spawnScore then
+			spawnScore, spawnX, spawnZ = score, x, z
+		end
+	end
+	self.MonsterSpawnCell = { spawnX, spawnZ }
+
+	-- предохранители: в дальних тупиках
+	table.sort(deadEnds, function(a, b)
+		return a[3] > b[3]
+	end)
+	local used = {}
+	local function markUsed(x, z)
+		used[self:_index(x, z)] = true
+	end
+	markUsed(1, 1)
+	markUsed(exitX, exitZ)
+	for _, de in ipairs(deadEnds) do
+		if #self.FuseSpots >= config.FusesSpawned then
+			break
+		end
+		if de[3] >= 3 and not used[self:_index(de[1], de[2])] then
+			markUsed(de[1], de[2])
+			table.insert(self.FuseSpots, self:CellToWorld(de[1], de[2], 1.5))
+		end
+	end
+	local guard = 0
+	while #self.FuseSpots < config.FusesSpawned and guard < 200 do
+		guard += 1
+		local x, z = self:RandomCell(rng)
+		if not used[self:_index(x, z)] and (distFromStart[self:_index(x, z)] or 0) >= 3 then
+			markUsed(x, z)
+			table.insert(self.FuseSpots, self:CellToWorld(x, z, 1.5))
+		end
+	end
+
+	-- батарейки
+	guard = 0
+	while #self.BatterySpots < config.BatteryCount and guard < 300 do
+		guard += 1
+		local x, z = self:RandomCell(rng)
+		if not used[self:_index(x, z)] then
+			markUsed(x, z)
+			local jitter = Vector3.new(rng:NextNumber(-6, 6), 0, rng:NextNumber(-6, 6))
+			table.insert(self.BatterySpots, self:CellToWorld(x, z, 1) + jitter)
+		end
+	end
+
+	-- лампы и наросты
+	for x = 1, w do
+		for z = 1, h do
+			local center = self:CellToWorld(x, z, 0)
+			if rng:NextNumber() < config.LampChance or (x == 1 and z == 1) then
+				table.insert(self.Lamps, buildLamp(decor, center + Vector3.new(0, WH - 0.3, 0)))
+			end
+			if rng:NextNumber() < config.NestChance and not (x == 1 and z == 1) then
+				buildNest(decor, center, rng, C, WH)
+			end
+		end
+	end
+
+	-- шкафчики
+	local lockerCells = {}
+	guard = 0
+	while #self.Lockers < config.LockerCount and guard < 400 do
+		guard += 1
+		local x, z = self:RandomCell(rng)
+		local key = self:_index(x, z)
+		if not lockerCells[key] and not (x == exitX and z == exitZ) and not (x == 1 and z == 1) then
+			local sides = self:ClosedSides(x, z)
+			if #sides > 0 then
+				lockerCells[key] = true
+				local side = sides[rng:NextInteger(1, #sides)]
+				local cf = self:WallSpot(x, z, side, LOCKER_D / 2 + 0.05)
+				-- сдвиг вдоль стены, чтобы шкафчики не стояли строго по центру
+				cf = cf * CFrame.new(rng:NextNumber(-C * 0.25, C * 0.25), 0, 0)
+				table.insert(self.Lockers, buildLocker(interact, cf))
+			end
+		end
+	end
+
+	-- генератор у северной стены стартовой клетки (там всегда граница)
+	self.Generator = buildGenerator(interact, self:WallSpot(1, 1, "N", 1.8), config.FusesRequired)
+	self.Lift = buildLift(interact, self:CellToWorld(exitX, exitZ, 0))
+
+	-- точки появления игроков
+	local startCenter = self:CellToWorld(1, 1, 3)
+	self.SpawnPoints = {}
+	for i = 0, 7 do
+		local a = i / 8 * math.pi * 2
+		table.insert(self.SpawnPoints, startCenter + Vector3.new(math.cos(a) * 5, 0, math.sin(a) * 5 + 3))
+	end
+
+	folder.Parent = workspace
+	return self
+end
+
+---------------------------------------------------------------------
+-- Лобби
+---------------------------------------------------------------------
+function MapBuilder.BuildLobby(config)
+	local existing = workspace:FindFirstChild("HiveLobby")
+	if existing then
+		existing:Destroy()
+	end
+	local folder = Instance.new("Folder")
+	folder.Name = "HiveLobby"
+	local p = config.LobbyPosition
+	local size, height = 64, 18
+
+	newPart({
+		Name = "Floor",
+		Size = Vector3.new(size, 1, size),
+		Position = p - Vector3.new(0, 0.5, 0),
+		Color = Color3.fromRGB(45, 40, 34),
+		Material = Enum.Material.WoodPlanks,
+	}, folder)
+	newPart({
+		Name = "Ceiling",
+		Size = Vector3.new(size, 1, size),
+		Position = p + Vector3.new(0, height + 0.5, 0),
+		Color = Color3.fromRGB(25, 22, 20),
+		Material = Enum.Material.Concrete,
+	}, folder)
+	for _, d in ipairs({ Vector3.new(1, 0, 0), Vector3.new(-1, 0, 0), Vector3.new(0, 0, 1), Vector3.new(0, 0, -1) }) do
+		local isX = d.X ~= 0
+		newPart({
+			Name = "Wall",
+			Size = isX and Vector3.new(1, height, size) or Vector3.new(size, height, 1),
+			Position = p + d * (size / 2) + Vector3.new(0, height / 2, 0),
+			Color = Color3.fromRGB(58, 52, 44),
+			Material = Enum.Material.Brick,
+		}, folder)
+	end
+	for _, off in ipairs({ Vector3.new(-16, 0, -16), Vector3.new(16, 0, -16), Vector3.new(-16, 0, 16), Vector3.new(16, 0, 16) }) do
+		local lamp = newPart({
+			Name = "Lamp",
+			Size = Vector3.new(3, 0.4, 3),
+			Position = p + off + Vector3.new(0, height - 0.3, 0),
+			Color = COLORS.Lamp,
+			Material = Enum.Material.Neon,
+			CanCollide = false,
+		}, folder)
+		local l = Instance.new("PointLight")
+		l.Range = 30
+		l.Brightness = 1.4
+		l.Color = COLORS.Lamp
+		l.Parent = lamp
+	end
+
+	local spawn = Instance.new("SpawnLocation")
+	spawn.Name = "LobbySpawn"
+	spawn.Anchored = true
+	spawn.Size = Vector3.new(10, 1, 10)
+	spawn.Position = p + Vector3.new(0, 0.5, 6)
+	spawn.Neutral = true
+	spawn.Duration = 0
+	spawn.Color = Color3.fromRGB(80, 60, 30)
+	spawn.Material = Enum.Material.Slate
+	spawn.TopSurface = Enum.SurfaceType.Smooth
+	spawn.Parent = folder
+	local decal = spawn:FindFirstChildOfClass("Decal")
+	if decal then
+		decal:Destroy()
+	end
+
+	-- табличка с названием и правилами
+	local board = newPart({
+		Name = "Board",
+		Size = Vector3.new(34, 14, 1),
+		Position = p + Vector3.new(0, 9, -size / 2 + 1),
+		Color = Color3.fromRGB(15, 12, 10),
+		Material = Enum.Material.SmoothPlastic,
+	}, folder)
+	local sg = Instance.new("SurfaceGui")
+	sg.Face = Enum.NormalId.Back
+	sg.CanvasSize = Vector2.new(1020, 420)
+	sg.LightInfluence = 0
+	sg.Parent = board
+	local title = Instance.new("TextLabel")
+	title.BackgroundTransparency = 1
+	title.Size = UDim2.new(1, 0, 0, 110)
+	title.Font = Enum.Font.GothamBlack
+	title.TextScaled = true
+	title.TextColor3 = Color3.fromRGB(255, 190, 70)
+	title.Text = config.GameName
+	title.Parent = sg
+	local chapter = Instance.new("TextLabel")
+	chapter.BackgroundTransparency = 1
+	chapter.Position = UDim2.fromOffset(0, 110)
+	chapter.Size = UDim2.new(1, 0, 0, 50)
+	chapter.Font = Enum.Font.GothamBold
+	chapter.TextScaled = true
+	chapter.TextColor3 = Color3.fromRGB(200, 60, 50)
+	chapter.Text = config.Chapter
+	chapter.Parent = sg
+	local rules = Instance.new("TextLabel")
+	rules.BackgroundTransparency = 1
+	rules.Position = UDim2.fromOffset(30, 175)
+	rules.Size = UDim2.new(1, -60, 0, 235)
+	rules.Font = Enum.Font.Gotham
+	rules.TextWrapped = true
+	rules.TextSize = 30
+	rules.TextXAlignment = Enum.TextXAlignment.Left
+	rules.TextYAlignment = Enum.TextYAlignment.Top
+	rules.TextColor3 = Color3.fromRGB(220, 210, 190)
+	rules.Text = string.format(
+		"• Найдите %d предохранителя и вставьте их в генератор у входа.\n"
+			.. "• Запитанный лифт — единственный выход из улья.\n"
+			.. "• Рой слышит бег и видит свет фонаря. Прячьтесь в шкафчиках.\n"
+			.. "• Держитесь вместе: «связь» с напарником даёт выносливость,\n   а пойманного можно вырвать из кокона.\n"
+			.. "F — фонарь · Shift — бег · E — действие",
+		config.FusesRequired
+	)
+	rules.Parent = sg
+
+	folder.Parent = workspace
+	return folder, spawn
+end
+
+return MapBuilder
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX3"><Properties><string name="Name">Monster</string><ProtectedString name="Source"><![CDATA[-- «Рой» — существо из тысяч насекомых. Блуждает по улью, слышит бег,
+-- видит свет фонарей и гонится по прямой, если заметил игрока.
+
+local Monster = {}
+Monster.__index = Monster
+
+local function buildModel(config, cf)
+	local model = Instance.new("Model")
+	model.Name = "HiveMonster"
+
+	local core = Instance.new("Part")
+	core.Name = "Core"
+	core.Shape = Enum.PartType.Ball
+	core.Size = Vector3.new(4.5, 4.5, 4.5)
+	core.Color = Color3.fromRGB(12, 10, 8)
+	core.Material = Enum.Material.Slate
+	core.Transparency = 0.25
+	core.Anchored = true
+	core.CanCollide = false
+	core.CanQuery = false
+	core.CanTouch = false
+	core.CastShadow = false
+	core.CFrame = cf
+	core.Parent = model
+	model.PrimaryPart = core
+
+	-- глаза: несколько красных точек в разных местах «облака»
+	local eyeOffsets = {
+		Vector3.new(-0.7, 0.6, -2.1),
+		Vector3.new(0.7, 0.6, -2.1),
+		Vector3.new(-1.4, -0.2, -1.7),
+		Vector3.new(1.3, 1.3, -1.6),
+		Vector3.new(0, -0.9, -2.0),
+	}
+	for i, off in ipairs(eyeOffsets) do
+		local eye = Instance.new("Part")
+		eye.Name = "Eye" .. i
+		eye.Shape = Enum.PartType.Ball
+		local s = i <= 2 and 0.55 or 0.3
+		eye.Size = Vector3.new(s, s, s)
+		eye.Color = Color3.fromRGB(255, 30, 20)
+		eye.Material = Enum.Material.Neon
+		eye.Anchored = true
+		eye.CanCollide = false
+		eye.CanQuery = false
+		eye.CanTouch = false
+		eye.CFrame = cf * CFrame.new(off)
+		eye.Parent = model
+	end
+
+	-- рой насекомых
+	local swarm = Instance.new("ParticleEmitter")
+	swarm.Name = "Swarm"
+	swarm.Rate = 160
+	swarm.Lifetime = NumberRange.new(0.6, 1.6)
+	swarm.Speed = NumberRange.new(2, 9)
+	swarm.SpreadAngle = Vector2.new(180, 180)
+	swarm.Drag = 2
+	swarm.RotSpeed = NumberRange.new(-360, 360)
+	swarm.Rotation = NumberRange.new(0, 360)
+	swarm.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.35),
+		NumberSequenceKeypoint.new(1, 0.1),
+	})
+	swarm.Color = ColorSequence.new(Color3.fromRGB(20, 16, 10), Color3.fromRGB(70, 50, 20))
+	swarm.LightEmission = 0
+	swarm.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0),
+		NumberSequenceKeypoint.new(0.8, 0.2),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	swarm.Acceleration = Vector3.new(0, 1, 0)
+	swarm.Parent = core
+
+	local trail = Instance.new("ParticleEmitter")
+	trail.Name = "Haze"
+	trail.Rate = 25
+	trail.Lifetime = NumberRange.new(1.5, 2.5)
+	trail.Speed = NumberRange.new(0.5, 1.5)
+	trail.SpreadAngle = Vector2.new(180, 180)
+	trail.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 2.5),
+		NumberSequenceKeypoint.new(1, 5),
+	})
+	trail.Color = ColorSequence.new(Color3.fromRGB(10, 8, 6))
+	trail.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.6),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	trail.Parent = core
+
+	local glow = Instance.new("PointLight")
+	glow.Name = "Glow"
+	glow.Range = 12
+	glow.Brightness = 1.4
+	glow.Color = Color3.fromRGB(255, 40, 30)
+	glow.Parent = core
+
+	if config.Sounds.Buzz ~= "" then
+		local buzz = Instance.new("Sound")
+		buzz.Name = "Buzz"
+		buzz.SoundId = config.Sounds.Buzz
+		buzz.Looped = true
+		buzz.Volume = 0.8
+		buzz.RollOffMaxDistance = 90
+		buzz.RollOffMinDistance = 8
+		buzz.Parent = core
+		buzz:Play()
+	end
+
+	return model
+end
+
+-- hooks:
+--   GetTargets() -> {Player} — живые игроки в раунде, не спрятанные и не в коконе
+--   OnCatch(player)
+--   OnSpotted(player)
+function Monster.new(map, config, rng, hooks, parent)
+	local self = setmetatable({}, Monster)
+	self.Map = map
+	self.Config = config
+	self.Cfg = config.Monster
+	self.Rng = rng
+	self.Hooks = hooks
+	self.Rage = 0
+	self.PowerOn = false
+	self.State = "Wander"
+	self.Path = {}
+	self.PathIndex = 1
+	self.Target = nil
+	self.LastSeen = 0
+	self.LastKnown = nil
+	self.Paused = 0
+	self.Time = 0
+	self.Alive = true
+
+	local sx, sz = map.MonsterSpawnCell[1], map.MonsterSpawnCell[2]
+	local spawnPos = map:CellToWorld(sx, sz, self.Cfg.HoverHeight)
+	self.Model = buildModel(config, CFrame.new(spawnPos))
+	self.Model:SetAttribute("State", self.State)
+	self.Model.Parent = parent
+
+	self.RayParams = RaycastParams.new()
+	self.RayParams.FilterType = Enum.RaycastFilterType.Include
+	self.RayParams.FilterDescendantsInstances = { map.Geometry }
+
+	return self
+end
+
+function Monster:GetPosition()
+	return self.Model:GetPivot().Position
+end
+
+function Monster:SetRage(fusesInserted)
+	self.Rage = fusesInserted
+end
+
+function Monster:SetPowerOn(on)
+	self.PowerOn = on
+end
+
+function Monster:_setState(state)
+	if self.State ~= state then
+		self.State = state
+		self.Model:SetAttribute("State", state)
+	end
+end
+
+function Monster:_speed()
+	local cfg = self.Cfg
+	local bonus = self.Rage * cfg.SpeedPerFuse + (self.PowerOn and cfg.PowerOnBonus or 0)
+	if self.State == "Chase" then
+		return cfg.ChaseSpeed + bonus
+	elseif self.State == "Investigate" then
+		return cfg.InvestigateSpeed + bonus * 0.7
+	end
+	return cfg.WanderSpeed + bonus * 0.5
+end
+
+function Monster:HasLineOfSight(from, to)
+	local dir = to - from
+	local hit = workspace:Raycast(from, dir, self.RayParams)
+	return hit == nil
+end
+
+function Monster:_setPathTo(worldPos)
+	local pos = self:GetPosition()
+	local cx, cz = self.Map:WorldToCell(pos)
+	local tx, tz = self.Map:WorldToCell(worldPos)
+	local cells = self.Map:FindPath(cx, cz, tx, tz)
+	local path = {}
+	for _, c in ipairs(cells) do
+		table.insert(path, self.Map:CellToWorld(c[1], c[2], 0))
+	end
+	-- последняя точка — точное место (внутри последней клетки, без стен)
+	table.insert(path, worldPos)
+	self.Path = path
+	self.PathIndex = 1
+	self.PathGoalCell = tx * 1000 + tz
+end
+
+-- true, когда точка достигнута
+function Monster:_moveToward(goal, dt)
+	local pos = self:GetPosition()
+	local hover = self.Map.Origin.Y + self.Cfg.HoverHeight + math.sin(self.Time * 2.7) * 0.6
+	local flatGoal = Vector3.new(goal.X, hover, goal.Z)
+	local delta = Vector3.new(flatGoal.X - pos.X, 0, flatGoal.Z - pos.Z)
+	local dist = delta.Magnitude
+	local newPos
+	if dist < 0.05 then
+		newPos = Vector3.new(pos.X, hover, pos.Z)
+	else
+		local step = math.min(dist, self:_speed() * dt)
+		newPos = Vector3.new(pos.X, hover, pos.Z) + delta.Unit * step
+		dist -= step
+	end
+	local look = delta.Magnitude > 0.05 and delta.Unit or self.Model:GetPivot().LookVector
+	local wobble = CFrame.Angles(math.sin(self.Time * 5) * 0.08, 0, math.cos(self.Time * 4) * 0.08)
+	self.Model:PivotTo(CFrame.lookAt(newPos, newPos + look) * wobble)
+	return dist < 0.8
+end
+
+function Monster:_followPath(dt)
+	local wp = self.Path[self.PathIndex]
+	if not wp then
+		return true
+	end
+	if self:_moveToward(wp, dt) then
+		self.PathIndex += 1
+	end
+	return self.PathIndex > #self.Path
+end
+
+local function rootOf(plr)
+	local char = plr.Character
+	return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+function Monster:_chooseWanderGoal(targets)
+	local rng = self.Rng
+	if #targets > 0 and rng:NextNumber() < self.Cfg.HuntChance then
+		local root = rootOf(targets[rng:NextInteger(1, #targets)])
+		if root then
+			self:_setPathTo(root.Position)
+			return
+		end
+	end
+	local x, z = self.Map:RandomCell(rng)
+	self:_setPathTo(self.Map:CellToWorld(x, z, 0))
+end
+
+function Monster:Step(dt)
+	if not self.Alive then
+		return
+	end
+	self.Time += dt
+	if self.Paused > 0 then
+		self.Paused -= dt
+		self:_moveToward(self:GetPosition(), dt) -- просто парит на месте
+		return
+	end
+
+	local cfg = self.Cfg
+	local pos = self:GetPosition()
+	local targets = self.Hooks.GetTargets()
+
+	-- 1. ловля: кто-то вплотную
+	for _, plr in ipairs(targets) do
+		local root = rootOf(plr)
+		if root then
+			local flat = Vector3.new(root.Position.X - pos.X, 0, root.Position.Z - pos.Z).Magnitude
+			if flat < cfg.CatchDistance and math.abs(root.Position.Y - pos.Y) < 8 then
+				self.Hooks.OnCatch(plr)
+				self.Paused = 3
+				self.Target = nil
+				self.Path = {}
+				self:_setState("Wander")
+				return
+			end
+		end
+	end
+
+	-- 2. зрение
+	local seen, seenRoot, seenDist = nil, nil, math.huge
+	for _, plr in ipairs(targets) do
+		local root = rootOf(plr)
+		if root then
+			local d = (root.Position - pos).Magnitude
+			local range = cfg.SightRange + (plr:GetAttribute("FlashlightOn") and cfg.FlashlightSightBonus or 0)
+			if d < range and d < seenDist and self:HasLineOfSight(pos, root.Position) then
+				seen, seenRoot, seenDist = plr, root, d
+			end
+		end
+	end
+
+	if seen then
+		if self.Target ~= seen or self.State ~= "Chase" then
+			self.Hooks.OnSpotted(seen)
+		end
+		self.Target = seen
+		self.LastSeen = self.Time
+		self.LastKnown = seenRoot.Position
+		self:_setState("Chase")
+		self.Path = {}
+		self:_moveToward(seenRoot.Position, dt)
+		return
+	end
+
+	-- 3. погоня по последнему известному месту
+	if self.State == "Chase" then
+		local stillValid = self.Target and table.find(targets, self.Target) ~= nil
+		if not stillValid or self.Time - self.LastSeen > cfg.LoseTargetTime then
+			self.Target = nil
+			self.Path = {}
+			self:_setState("Wander")
+			self.Paused = 1.2 -- «принюхивается»
+			return
+		end
+		if #self.Path == 0 then
+			self:_setPathTo(self.LastKnown)
+		end
+		if self:_followPath(dt) then
+			-- дошёл, никого: продолжим идти в сторону, куда убежал игрок
+			local root = rootOf(self.Target)
+			if root then
+				self:_setPathTo(root.Position)
+			end
+		end
+		return
+	end
+
+	-- 4. слух: бегущие игроки
+	for _, plr in ipairs(targets) do
+		local root = rootOf(plr)
+		if root and plr:GetAttribute("Sprinting") and (root.Position - pos).Magnitude < cfg.HearSprintRange then
+			local tx, tz = self.Map:WorldToCell(root.Position)
+			if self.State ~= "Investigate" or self.PathGoalCell ~= tx * 1000 + tz then
+				self:_setPathTo(root.Position)
+			end
+			self:_setState("Investigate")
+			break
+		end
+	end
+
+	-- 5. движение
+	if self.State == "Investigate" then
+		if self:_followPath(dt) then
+			self:_setState("Wander")
+			self.Path = {}
+			self.Paused = 1.5
+		end
+		return
+	end
+
+	if #self.Path == 0 or self.PathIndex > #self.Path then
+		self:_chooseWanderGoal(targets)
+	end
+	self:_followPath(dt)
+end
+
+function Monster:Destroy()
+	self.Alive = false
+	if self.Model then
+		self.Model:Destroy()
+	end
+end
+
+return Monster
+]]></ProtectedString></Properties></Item></Item></Item><Item class="StarterPlayer" referent="RBX9"><Properties><string name="Name">StarterPlayer</string></Properties><Item class="StarterPlayerScripts" referent="RBX8"><Properties><string name="Name">StarterPlayerScripts</string></Properties><Item class="LocalScript" referent="RBX5"><Properties><string name="Name">HiveClient</string><ProtectedString name="Source"><![CDATA[-- Клиент «Улей: Нижний ярус»: фонарь, бег, «связь», интерфейс, атмосфера, скримеры.
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local ContextActionService = game:GetService("ContextActionService")
+local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
+
+local player = Players.LocalPlayer
+local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+local Remotes = ReplicatedStorage:WaitForChild("HiveRemotes")
+local P = Config.Player
+
+---------------------------------------------------------------------
+-- Состояние
+---------------------------------------------------------------------
+local battery = P.BatteryMax
+local stamina = P.StaminaMax
+local exhausted = false
+local flashlightWanted = false
+local sprintHeld = false
+local sprinting = false
+local sentFlash, sentSprint = nil, nil
+local lastSend = 0
+local bobTime = 0
+local shake = 0
+local fovPunch = 0
+
+---------------------------------------------------------------------
+-- Интерфейс
+---------------------------------------------------------------------
+local gui = Instance.new("ScreenGui")
+gui.Name = "HiveUI"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.Parent = player:WaitForChild("PlayerGui")
+
+local function label(props)
+	local l = Instance.new("TextLabel")
+	l.BackgroundTransparency = 1
+	l.Font = Enum.Font.GothamBold
+	l.TextColor3 = Color3.fromRGB(235, 225, 205)
+	l.TextStrokeTransparency = 0.5
+	l.TextSize = 18
+	for k, v in pairs(props) do
+		(l :: any)[k] = v
+	end
+	l.Parent = props.Parent or gui
+	return l
+end
+
+local function frame(props)
+	local f = Instance.new("Frame")
+	f.BorderSizePixel = 0
+	for k, v in pairs(props) do
+		(f :: any)[k] = v
+	end
+	f.Parent = props.Parent or gui
+	return f
+end
+
+local function corner(parent, r)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, r or 6)
+	c.Parent = parent
+end
+
+-- виньетка из четырёх градиентных краёв
+local vignette = frame({ Name = "Vignette", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 1 })
+local vignetteEdges = {}
+for _, spec in ipairs({
+	{ UDim2.fromScale(1, 0.35), UDim2.fromScale(0, 0), 90 },
+	{ UDim2.fromScale(1, 0.35), UDim2.fromScale(0, 0.65), -90 },
+	{ UDim2.fromScale(0.3, 1), UDim2.fromScale(0, 0), 0 },
+	{ UDim2.fromScale(0.3, 1), UDim2.fromScale(0.7, 0), 180 },
+}) do
+	local edge = frame({
+		Size = spec[1],
+		Position = spec[2],
+		BackgroundColor3 = Color3.new(0, 0, 0),
+		Parent = vignette,
+	})
+	local g = Instance.new("UIGradient")
+	g.Rotation = spec[3]
+	g.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.2),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	g.Parent = edge
+	table.insert(vignetteEdges, edge)
+end
+
+local statusLabel = label({
+	Name = "Status",
+	AnchorPoint = Vector2.new(0.5, 0),
+	Position = UDim2.new(0.5, 0, 0, 44),
+	Size = UDim2.fromOffset(600, 30),
+	TextSize = 22,
+	Font = Enum.Font.GothamBlack,
+	ZIndex = 5,
+})
+
+local objective = frame({
+	Name = "Objective",
+	Position = UDim2.fromOffset(18, 60),
+	Size = UDim2.fromOffset(300, 92),
+	BackgroundColor3 = Color3.fromRGB(10, 8, 6),
+	BackgroundTransparency = 0.35,
+	ZIndex = 5,
+})
+corner(objective, 8)
+label({
+	Parent = objective,
+	Position = UDim2.fromOffset(12, 6),
+	Size = UDim2.new(1, -24, 0, 22),
+	TextXAlignment = Enum.TextXAlignment.Left,
+	TextColor3 = Color3.fromRGB(255, 180, 60),
+	Font = Enum.Font.GothamBlack,
+	Text = Config.Chapter,
+	ZIndex = 6,
+})
+local objText = label({
+	Parent = objective,
+	Position = UDim2.fromOffset(12, 30),
+	Size = UDim2.new(1, -24, 0, 58),
+	TextXAlignment = Enum.TextXAlignment.Left,
+	TextYAlignment = Enum.TextYAlignment.Top,
+	TextWrapped = true,
+	Font = Enum.Font.Gotham,
+	TextSize = 16,
+	ZIndex = 6,
+})
+
+local function bar(name, y, color)
+	local holder = frame({
+		Name = name,
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.new(0, 18, 1, y),
+		Size = UDim2.fromOffset(220, 14),
+		BackgroundColor3 = Color3.fromRGB(20, 18, 15),
+		BackgroundTransparency = 0.2,
+		ZIndex = 5,
+	})
+	corner(holder, 7)
+	local fill = frame({
+		Parent = holder,
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = color,
+		ZIndex = 6,
+	})
+	corner(fill, 7)
+	local text = label({
+		Parent = holder,
+		Position = UDim2.fromOffset(0, -20),
+		Size = UDim2.new(1, 0, 0, 18),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextSize = 14,
+		Text = name,
+		ZIndex = 6,
+	})
+	return holder, fill, text
+end
+local batteryHolder, batteryFill, batteryText = bar("ФОНАРЬ [F]", -24, Color3.fromRGB(255, 225, 140))
+local staminaHolder, staminaFill, staminaText = bar("ДЫХАНИЕ [Shift]", -66, Color3.fromRGB(140, 200, 255))
+
+local tetherLabel = label({
+	Name = "Tether",
+	AnchorPoint = Vector2.new(0, 1),
+	Position = UDim2.new(0, 18, 1, -100),
+	Size = UDim2.fromOffset(320, 22),
+	TextXAlignment = Enum.TextXAlignment.Left,
+	TextSize = 16,
+	ZIndex = 5,
+})
+
+local banner = label({
+	Name = "Banner",
+	AnchorPoint = Vector2.new(0.5, 0),
+	Position = UDim2.new(0.5, 0, 0, 90),
+	Size = UDim2.new(0.8, 0, 0, 60),
+	TextWrapped = true,
+	TextSize = 22,
+	TextTransparency = 1,
+	TextStrokeTransparency = 1,
+	ZIndex = 8,
+})
+
+local centerHint = label({
+	Name = "CenterHint",
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.72),
+	Size = UDim2.fromOffset(600, 60),
+	TextWrapped = true,
+	TextSize = 22,
+	Text = "",
+	ZIndex = 8,
+})
+
+local hiddenOverlay = frame({
+	Name = "HiddenOverlay",
+	Size = UDim2.fromScale(1, 1),
+	BackgroundColor3 = Color3.new(0, 0, 0),
+	BackgroundTransparency = 1,
+	ZIndex = 2,
+})
+-- узкая щель шкафчика: затемняем верх и низ экрана
+local slitTop = frame({
+	Parent = hiddenOverlay,
+	Size = UDim2.fromScale(1, 0.42),
+	BackgroundColor3 = Color3.fromRGB(8, 9, 10),
+	Visible = false,
+	ZIndex = 2,
+})
+local slitBottom = frame({
+	Parent = hiddenOverlay,
+	Position = UDim2.fromScale(0, 0.58),
+	Size = UDim2.fromScale(1, 0.42),
+	BackgroundColor3 = Color3.fromRGB(8, 9, 10),
+	Visible = false,
+	ZIndex = 2,
+})
+
+local spottedLabel = label({
+	Name = "Spotted",
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.4),
+	Size = UDim2.fromOffset(700, 80),
+	Font = Enum.Font.GothamBlack,
+	TextSize = 46,
+	TextColor3 = Color3.fromRGB(255, 40, 30),
+	Text = "ОНО ТЕБЯ ВИДИТ",
+	TextTransparency = 1,
+	TextStrokeTransparency = 1,
+	ZIndex = 9,
+})
+
+local titleCard = frame({
+	Name = "TitleCard",
+	Size = UDim2.fromScale(1, 1),
+	BackgroundColor3 = Color3.new(0, 0, 0),
+	BackgroundTransparency = 1,
+	ZIndex = 20,
+})
+local titleMain = label({
+	Parent = titleCard,
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.45),
+	Size = UDim2.fromOffset(900, 80),
+	Font = Enum.Font.GothamBlack,
+	TextSize = 56,
+	TextColor3 = Color3.fromRGB(255, 180, 60),
+	Text = Config.GameName,
+	TextTransparency = 1,
+	TextStrokeTransparency = 1,
+	ZIndex = 21,
+})
+local titleSub = label({
+	Parent = titleCard,
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.55),
+	Size = UDim2.fromOffset(900, 40),
+	Font = Enum.Font.GothamBold,
+	TextSize = 28,
+	TextColor3 = Color3.fromRGB(200, 50, 40),
+	Text = Config.Chapter,
+	TextTransparency = 1,
+	TextStrokeTransparency = 1,
+	ZIndex = 21,
+})
+
+-- скример: красный экран, рой из чёрных точек и глаза
+local scare = frame({
+	Name = "Jumpscare",
+	Size = UDim2.fromScale(1, 1),
+	BackgroundColor3 = Color3.fromRGB(90, 0, 0),
+	Visible = false,
+	ZIndex = 50,
+})
+local scareSwarm = {}
+for _ = 1, 140 do
+	local s = math.random(10, 60)
+	local dot = frame({
+		Parent = scare,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Size = UDim2.fromOffset(s, s),
+		Position = UDim2.fromScale(math.random(), math.random()),
+		BackgroundColor3 = Color3.fromRGB(math.random(0, 25), math.random(0, 15), 0),
+		ZIndex = 51,
+	})
+	corner(dot, 100)
+	table.insert(scareSwarm, dot)
+end
+local scareEyes = {}
+for i, pos in ipairs({ Vector2.new(0.4, 0.42), Vector2.new(0.6, 0.42), Vector2.new(0.5, 0.6) }) do
+	local size = i == 3 and 60 or 120
+	local eye = frame({
+		Parent = scare,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(pos.X, pos.Y),
+		Size = UDim2.fromOffset(size, size),
+		BackgroundColor3 = Color3.fromRGB(255, 40, 20),
+		ZIndex = 52,
+	})
+	corner(eye, 100)
+	local pupil = frame({
+		Parent = eye,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(0.25, 0.8),
+		BackgroundColor3 = Color3.new(0, 0, 0),
+		ZIndex = 53,
+	})
+	corner(pupil, 100)
+	table.insert(scareEyes, eye)
+end
+
+-- цветокоррекция страха
+local fearCC = Instance.new("ColorCorrectionEffect")
+fearCC.Name = "HiveFear"
+fearCC.Parent = Lighting
+local fearBlur = Instance.new("BlurEffect")
+fearBlur.Name = "HiveBlur"
+fearBlur.Size = 0
+fearBlur.Parent = Lighting
+
+local heartbeat
+if Config.Sounds.Heartbeat ~= "" then
+	heartbeat = Instance.new("Sound")
+	heartbeat.SoundId = Config.Sounds.Heartbeat
+	heartbeat.Looped = true
+	heartbeat.Volume = 0
+	heartbeat.Parent = gui
+	heartbeat:Play()
+end
+
+---------------------------------------------------------------------
+-- Сообщения
+---------------------------------------------------------------------
+local bannerToken = 0
+local KIND_COLORS = {
+	info = Color3.fromRGB(235, 225, 205),
+	good = Color3.fromRGB(120, 255, 150),
+	danger = Color3.fromRGB(255, 80, 60),
+}
+local function showBanner(text, kind)
+	bannerToken += 1
+	local token = bannerToken
+	banner.Text = text
+	banner.TextColor3 = KIND_COLORS[kind] or KIND_COLORS.info
+	banner.TextTransparency = 0
+	banner.TextStrokeTransparency = 0.4
+	task.delay(4.5, function()
+		if token ~= bannerToken then
+			return
+		end
+		TweenService:Create(banner, TweenInfo.new(1), { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
+	end)
+end
+
+Remotes:WaitForChild("Notify").OnClientEvent:Connect(showBanner)
+
+Remotes:WaitForChild("Battery").OnClientEvent:Connect(function(amount)
+	battery = math.min(P.BatteryMax, battery + (tonumber(amount) or 0))
+	showBanner("+ заряд фонаря", "good")
+end)
+
+Remotes:WaitForChild("Spotted").OnClientEvent:Connect(function()
+	spottedLabel.TextTransparency = 0
+	spottedLabel.TextStrokeTransparency = 0.3
+	fovPunch = math.max(fovPunch, 8)
+	shake = math.max(shake, 0.4)
+	TweenService:Create(
+		spottedLabel,
+		TweenInfo.new(1.6, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+		{ TextTransparency = 1, TextStrokeTransparency = 1 }
+	):Play()
+end)
+
+Remotes:WaitForChild("Jumpscare").OnClientEvent:Connect(function()
+	scare.Visible = true
+	scare.BackgroundTransparency = 0
+	shake = 2.5
+	fovPunch = 30
+	local t0 = os.clock()
+	local conn
+	conn = RunService.RenderStepped:Connect(function()
+		local t = os.clock() - t0
+		for _, dot in ipairs(scareSwarm) do
+			local p = dot.Position
+			dot.Position = UDim2.fromScale(
+				(p.X.Scale + (math.random() - 0.5) * 0.04) % 1,
+				(p.Y.Scale + (math.random() - 0.5) * 0.04) % 1
+			)
+		end
+		local pulse = 1 + math.sin(t * 40) * 0.15 + t * 0.6
+		for i, eye in ipairs(scareEyes) do
+			local base = i == 3 and 60 or 120
+			eye.Size = UDim2.fromOffset(base * pulse, base * pulse)
+		end
+		scare.BackgroundColor3 = (math.floor(t * 20) % 2 == 0) and Color3.fromRGB(110, 0, 0) or Color3.fromRGB(20, 0, 0)
+		if t > 1.3 then
+			conn:Disconnect()
+			TweenService:Create(scare, TweenInfo.new(0.6), { BackgroundTransparency = 1 }):Play()
+			task.delay(0.6, function()
+				scare.Visible = false
+			end)
+		end
+	end)
+end)
+
+local function playTitleCard()
+	titleCard.BackgroundTransparency = 0
+	titleMain.TextTransparency = 1
+	titleSub.TextTransparency = 1
+	local info = TweenInfo.new(1.2)
+	TweenService:Create(titleMain, info, { TextTransparency = 0, TextStrokeTransparency = 0.6 }):Play()
+	task.wait(0.8)
+	TweenService:Create(titleSub, info, { TextTransparency = 0, TextStrokeTransparency = 0.6 }):Play()
+	task.wait(2.2)
+	local out = TweenInfo.new(1.5)
+	TweenService:Create(titleMain, out, { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
+	TweenService:Create(titleSub, out, { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
+	TweenService:Create(titleCard, out, { BackgroundTransparency = 1 }):Play()
+end
+
+Remotes:WaitForChild("Round").OnClientEvent:Connect(function(kind)
+	if kind == "Start" then
+		battery = P.BatteryMax
+		stamina = P.StaminaMax
+		exhausted = false
+		flashlightWanted = false
+		task.spawn(playTitleCard)
+	end
+end)
+
+---------------------------------------------------------------------
+-- Управление (клавиатура, геймпад, телефон)
+---------------------------------------------------------------------
+local function onSprint(_, state)
+	if state == Enum.UserInputState.Begin then
+		sprintHeld = true
+	elseif state == Enum.UserInputState.End or state == Enum.UserInputState.Cancel then
+		sprintHeld = false
+	end
+	return Enum.ContextActionResult.Pass
+end
+
+local function onFlashlight(_, state)
+	if state == Enum.UserInputState.Begin and player:GetAttribute("InRound") then
+		if battery > 0 then
+			flashlightWanted = not flashlightWanted
+		else
+			showBanner("Фонарь разряжен. Ищи батарейки.", "danger")
+		end
+	end
+	return Enum.ContextActionResult.Pass
+end
+
+ContextActionService:BindAction("HiveSprint", onSprint, true, Enum.KeyCode.LeftShift, Enum.KeyCode.ButtonL3)
+ContextActionService:SetTitle("HiveSprint", "Бег")
+ContextActionService:SetPosition("HiveSprint", UDim2.new(1, -170, 1, -150))
+ContextActionService:BindAction("HiveFlashlight", onFlashlight, true, Enum.KeyCode.F, Enum.KeyCode.ButtonY)
+ContextActionService:SetTitle("HiveFlashlight", "Фонарь")
+ContextActionService:SetPosition("HiveFlashlight", UDim2.new(1, -230, 1, -90))
+
+---------------------------------------------------------------------
+-- Главный цикл кадра
+---------------------------------------------------------------------
+local function findMonster()
+	local mapFolder = workspace:FindFirstChild("HiveMap")
+	return mapFolder and mapFolder:FindFirstChild("HiveMonster")
+end
+
+local function nearestTeammate(root)
+	local best, bestDist = nil, math.huge
+	for _, other in ipairs(Players:GetPlayers()) do
+		if other ~= player and other:GetAttribute("InRound") then
+			local r = other.Character and other.Character:FindFirstChild("HumanoidRootPart")
+			if r then
+				local d = (r.Position - root.Position).Magnitude
+				if d < bestDist then
+					best, bestDist = other, d
+				end
+			end
+		end
+	end
+	return best, bestDist
+end
+
+local function formatTime(sec)
+	sec = math.max(0, math.floor(sec or 0))
+	return string.format("%d:%02d", sec // 60, sec % 60)
+end
+
+RunService.RenderStepped:Connect(function(dt)
+	local camera = workspace.CurrentCamera
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	local phase = ReplicatedStorage:GetAttribute("Phase")
+	local inRound = player:GetAttribute("InRound") == true and hum ~= nil and hum.Health > 0
+	local hidden = player:GetAttribute("Hidden") == true
+	local cocooned = player:GetAttribute("Cocooned") == true
+
+	-- камера: в улье только от первого лица
+	if inRound then
+		player.CameraMode = Enum.CameraMode.LockFirstPerson
+	else
+		player.CameraMode = Enum.CameraMode.Classic
+	end
+
+	-- «связь» с напарником
+	local linked, mate = false, nil
+	if inRound and root then
+		local other, dist = nearestTeammate(root)
+		if other then
+			linked = dist <= Config.Tether.Range
+			mate = other
+		end
+	end
+
+	-- бег и выносливость
+	local moving = hum ~= nil and hum.MoveDirection.Magnitude > 0.1
+	if stamina <= 0 then
+		exhausted = true
+	elseif exhausted and stamina >= P.StaminaRecoverAt then
+		exhausted = false
+	end
+	sprinting = inRound and sprintHeld and moving and not exhausted and not hidden and not cocooned
+	if sprinting then
+		stamina = math.max(0, stamina - P.StaminaDrain * dt)
+	else
+		local regen = P.StaminaRegen * (linked and Config.Tether.StaminaRegenMultiplier or 1)
+		stamina = math.min(P.StaminaMax, stamina + regen * dt)
+	end
+	if hum then
+		if inRound then
+			hum.WalkSpeed = sprinting and P.SprintSpeed or P.WalkSpeed
+		else
+			hum.WalkSpeed = P.LobbyWalkSpeed
+		end
+	end
+
+	-- фонарь
+	local flashOn = inRound and flashlightWanted and battery > 0 and not cocooned
+	if flashOn then
+		local drain = P.BatteryDrain * (linked and Config.Tether.BatteryDrainMultiplier or 1)
+		battery = math.max(0, battery - drain * dt)
+		if battery <= 0 then
+			flashlightWanted = false
+			flashOn = false
+			showBanner("Фонарь погас…", "danger")
+		end
+	end
+	-- при низком заряде фонарь мигает (только у себя на экране)
+	local head = char and char:FindFirstChild("Head")
+	local light = head and head:FindFirstChild("HiveFlashlight")
+	if light and flashOn then
+		local low = battery < 20 and math.random() < 0.08
+		light.Brightness = low and 0.3 or 3
+	end
+
+	-- отправка состояния на сервер (только при изменении)
+	local now = os.clock()
+	if (flashOn ~= sentFlash or sprinting ~= sentSprint) and now - lastSend > 0.1 then
+		sentFlash, sentSprint, lastSend = flashOn, sprinting, now
+		Remotes.ClientState:FireServer(flashOn, sprinting)
+	end
+
+	-- страх: близость роя
+	local fear = 0
+	local monster = findMonster()
+	if monster and inRound then
+		local d = (monster:GetPivot().Position - camera.CFrame.Position).Magnitude
+		fear = math.clamp(1 - d / 60, 0, 1)
+		if monster:GetAttribute("State") == "Chase" then
+			fear = math.max(fear, 0.35)
+		end
+	end
+	fearCC.Saturation = -fear * 0.7
+	fearCC.Contrast = fear * 0.35
+	fearCC.TintColor = Color3.new(1, 1 - fear * 0.35, 1 - fear * 0.4)
+	fearBlur.Size = fear > 0.6 and (fear - 0.6) * 10 or 0
+	if heartbeat then
+		heartbeat.Volume = fear * 1.2
+		heartbeat.PlaybackSpeed = 0.9 + fear * 0.6
+	end
+	shake = math.max(shake - dt * 2, fear * 0.12)
+	for _, edge in ipairs(vignetteEdges) do
+		edge.BackgroundTransparency = math.clamp(0.25 - fear * 0.25 - (hidden and 0.2 or 0), 0, 1)
+	end
+
+	-- покачивание камеры и тряска
+	if hum and inRound then
+		if moving and not hidden then
+			bobTime += dt * (sprinting and 14 or 8)
+		end
+		local bobAmp = sprinting and 0.28 or 0.14
+		local bob = Vector3.new(math.sin(bobTime) * bobAmp * 0.6, math.abs(math.cos(bobTime)) * bobAmp, 0)
+		local jitter = Vector3.new(math.random() - 0.5, math.random() - 0.5, math.random() - 0.5) * shake
+		hum.CameraOffset = (moving and not hidden) and (bob + jitter) or jitter
+	elseif hum then
+		hum.CameraOffset = Vector3.zero
+	end
+	fovPunch = math.max(0, fovPunch - dt * 25)
+	local baseFov = (inRound and sprinting) and 78 or 70
+	camera.FieldOfView = camera.FieldOfView + ((baseFov - fovPunch) - camera.FieldOfView) * math.min(1, dt * 8)
+
+	-- прятки
+	slitTop.Visible = hidden
+	slitBottom.Visible = hidden
+
+	-- интерфейс
+	local timeLeft = ReplicatedStorage:GetAttribute("TimeLeft") or 0
+	if phase == "Lobby" then
+		statusLabel.Text = "Спуск в улей через " .. formatTime(timeLeft)
+	elseif phase == "Round" then
+		statusLabel.Text = inRound and ("⏱ " .. formatTime(timeLeft))
+			or ("Идёт раунд · " .. formatTime(timeLeft) .. " · дождитесь следующего")
+	else
+		statusLabel.Text = "Итоги раунда"
+	end
+	statusLabel.TextColor3 = (phase == "Round" and timeLeft < 60) and Color3.fromRGB(255, 70, 60)
+		or Color3.fromRGB(235, 225, 205)
+
+	objective.Visible = inRound
+	batteryHolder.Visible = inRound
+	staminaHolder.Visible = inRound
+	tetherLabel.Visible = inRound
+	if inRound then
+		local inserted = ReplicatedStorage:GetAttribute("FusesInserted") or 0
+		local required = ReplicatedStorage:GetAttribute("FusesRequired") or Config.FusesRequired
+		local carried = player:GetAttribute("Fuses") or 0
+		if ReplicatedStorage:GetAttribute("ExitOpen") then
+			objText.Text = "Лифт запитан! Беги к зелёному маяку."
+		else
+			objText.Text = string.format(
+				"Генератор: %d/%d\nПредохранителей у тебя: %d%s",
+				inserted,
+				required,
+				carried,
+				carried > 0 and "  → неси к генератору у входа" or ""
+			)
+		end
+		batteryFill.Size = UDim2.fromScale(battery / P.BatteryMax, 1)
+		batteryFill.BackgroundColor3 = battery < 20 and Color3.fromRGB(255, 90, 60) or Color3.fromRGB(255, 225, 140)
+		batteryText.Text = string.format("ФОНАРЬ [F] %d%%%s", math.floor(battery), flashOn and " · вкл" or "")
+		staminaFill.Size = UDim2.fromScale(stamina / P.StaminaMax, 1)
+		staminaFill.BackgroundColor3 = exhausted and Color3.fromRGB(150, 150, 150) or Color3.fromRGB(140, 200, 255)
+		staminaText.Text = exhausted and "ДЫХАНИЕ — задыхаешься…" or "ДЫХАНИЕ [Shift]"
+		if mate then
+			if linked then
+				tetherLabel.Text = "🔗 Связь с " .. mate.DisplayName .. ": дыхание и фонарь дольше"
+				tetherLabel.TextColor3 = Color3.fromRGB(120, 255, 150)
+			else
+				tetherLabel.Text = "⛓ Связь потеряна — держись ближе к команде"
+				tetherLabel.TextColor3 = Color3.fromRGB(255, 120, 90)
+			end
+		else
+			tetherLabel.Text = "Ты один в улье"
+			tetherLabel.TextColor3 = Color3.fromRGB(170, 160, 150)
+		end
+	end
+
+	if cocooned then
+		local left = (player:GetAttribute("CocoonEndsAt") or 0) - workspace:GetServerTimeNow()
+		centerHint.Text = string.format("Ты в коконе. Команда может тебя вытащить: %d сек.", math.max(0, math.ceil(left)))
+		centerHint.TextColor3 = Color3.fromRGB(255, 140, 60)
+	elseif hidden then
+		centerHint.Text = "Не дыши… [E] — выйти"
+		centerHint.TextColor3 = Color3.fromRGB(200, 200, 200)
+	else
+		centerHint.Text = ""
+	end
+end)
+]]></ProtectedString></Properties></Item></Item></Item></roblox>
