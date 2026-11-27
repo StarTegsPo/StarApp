@@ -347,7 +347,11 @@ public class WarmupService extends AccessibilityService {
                 handler.postDelayed(next, rand(900, 2500));
                 return;
             }
-            curInNiche = nichePattern != null && findInPost(w, nichePattern) != null;
+            AccessibilityNodeInfo nicheNode = nichePattern == null ? null : findInPost(w, nichePattern);
+            curInNiche = nicheNode != null;
+            if (nichePattern != null) {
+                android.util.Log.i("WARMUP", "niche " + curInNiche + (nicheNode != null ? " by «" + label(nicheNode).trim() + "»" : ""));
+            }
             int[] ph = cfg.photos ? photoCounter(w) : null;
             if (ph != null && ph[1] > 1 && ph[0] < ph[1]) {
                 photos++;

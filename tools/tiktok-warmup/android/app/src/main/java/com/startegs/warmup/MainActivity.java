@@ -328,7 +328,6 @@ public class MainActivity extends Activity {
         GradientDrawable ind = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{th.a1, th.a2});
         ind.setCornerRadius(dp(99));
         indicator.setBackground(ind);
-        indicator.setElevation(dp(3));
         box.addView(indicator, new FrameLayout.LayoutParams(0, dp(36)));
 
         final LinearLayout row = new LinearLayout(this);
@@ -340,7 +339,11 @@ public class MainActivity extends Activity {
             final int idx = i;
             TextView t = text(Theme.TITLES[i], 13, i == cur ? Color.WHITE : th.text, true);
             t.setGravity(Gravity.CENTER);
-            t.setElevation(dp(4));
+            t.setSingleLine(true);
+            t.setPadding(dp(4), 0, dp(4), 0);
+            if (Build.VERSION.SDK_INT >= 26) {
+                t.setAutoSizeTextTypeUniformWithConfiguration(9, 13, 1, android.util.TypedValue.COMPLEX_UNIT_SP);
+            }
             t.setOnClickListener(v -> {
                 if (idx == cur) return;
                 indicator.animate().translationX(row.getWidth() / 3f * idx).setDuration(260)
@@ -1212,20 +1215,24 @@ public class MainActivity extends Activity {
             }
         });
         skip.setOnClickListener(v -> finish.run());
-        final android.view.GestureDetector gd = new android.view.GestureDetector(this,
-                new android.view.GestureDetector.SimpleOnGestureListener() {
-                    @Override
-                    public boolean onDown(MotionEvent e) { return true; }
-
-                    @Override
-                    public boolean onFling(MotionEvent a, MotionEvent b, float vx, float vy) {
-                        if (Math.abs(vx) < Math.abs(vy) || Math.abs(vx) < 600) return false;
-                        if (vx < 0 && obIndex < 2) go[0].accept(obIndex + 1);
-                        if (vx > 0 && obIndex > 0) go[0].accept(obIndex - 1);
-                        return true;
+        final float[] down = new float[2];
+        stage.setOnTouchListener((v, e) -> {
+            switch (e.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    down[0] = e.getX();
+                    down[1] = e.getY();
+                    return true;
+                case MotionEvent.ACTION_UP:
+                    float dx = e.getX() - down[0], dy = e.getY() - down[1];
+                    if (Math.abs(dx) > v.getWidth() * 0.15f && Math.abs(dx) > Math.abs(dy)) {
+                        if (dx < 0 && obIndex < 2) go[0].accept(obIndex + 1);
+                        if (dx > 0 && obIndex > 0) go[0].accept(obIndex - 1);
                     }
-                });
-        stage.setOnTouchListener((v, e) -> gd.onTouchEvent(e));
+                    return true;
+            }
+            return true;
+        });
+
         obIndex = 0;
         go[0].accept(0);
     }

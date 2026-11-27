@@ -42,13 +42,14 @@ PY
 )
   [ -n "$xy" ] && adb shell input tap $xy
 }
-tapText "Пропустить"
+adb shell input swipe $((SW*8/10)) $((SH/2)) $((SW*2/10)) $((SH/2)) 150   # в конце — снова свайп (на 3-м экране ничего)
+adb shell input tap $((SW*85/100)) $((SH*8/100))   # «Пропустить»
 sleep 0.5; adb exec-out screencap -p > "$OUT/main_entrance.png"
 sleep 2;   adb exec-out screencap -p > "$OUT/main.png"
-tapText "Тёмно-красная"
+adb shell input tap $((SW*80/100)) $((SH*9/100))   # тема «Тёмно-красная»
 sleep 0.55; adb exec-out screencap -p > "$OUT/theme_reveal.png"
 sleep 1.5;  adb exec-out screencap -p > "$OUT/theme_wine.png"
-tapText "Светлая"
+adb shell input tap $((SW*50/100)) $((SH*9/100))   # тема «Светлая»
 sleep 1.8;  adb exec-out screencap -p > "$OUT/theme_light.png"
 adb shell input keyevent KEYCODE_HOME
 sleep 1
@@ -130,6 +131,7 @@ check "лайки идут, пока приложение свёрнуто (>=2)
 NICHE_BAD=$(adb logcat -d -s WARMUP_TEST:I | grep " LIKE " | awk '{print $NF}' | awk '$1 % 2 == 1' | wc -l)
 NICHE_OK=$(adb logcat -d -s WARMUP_TEST:I | grep " LIKE " | awk '{print $NF}' | awk '$1 % 2 == 0' | wc -l)
 echo "ниша «авто»: лайков нишевым $NICHE_OK, остальным $NICHE_BAD"
+adb logcat -d -s WARMUP:I | grep " niche " | head -12
 check "лайки только роликам из ниши" '[ "$NICHE_BAD" -eq 0 ] && [ "$NICHE_OK" -ge 1 ]'
 
 log "Фаза 2: сворачиваю сам TikTok (Домой) — 25 с"
