@@ -77,7 +77,7 @@ public class FeedActivity extends Activity {
                     + " h=" + getWindow().getDecorView().getHeight());
         }
         if (ev.getActionMasked() == MotionEvent.ACTION_DOWN) downY = ev.getY();
-        if (ev.getActionMasked() == MotionEvent.ACTION_UP && downY - ev.getY() > 300) {
+        if (ev.getActionMasked() == MotionEvent.ACTION_UP && downY - ev.getY() > getWindow().getDecorView().getHeight() * 0.25f) {
             video++;
             Log.i(TAG, "SWIPE " + video);
             show();
