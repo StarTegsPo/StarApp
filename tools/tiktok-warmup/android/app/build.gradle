@@ -10,8 +10,8 @@ android {
         applicationId 'com.startegs.warmup'
         minSdk 24
         targetSdk 35
-        versionCode 9
-        versionName "4.3"
+        versionCode 10
+        versionName "4.4"
     }
 
     // Постоянный ключ, чтобы новые версии ставились поверх старых без удаления

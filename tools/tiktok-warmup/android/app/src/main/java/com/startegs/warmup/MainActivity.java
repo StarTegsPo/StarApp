@@ -559,7 +559,54 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(50));
         lp.topMargin = dp(12);
         c.addView(best, lp);
+        TextView imp = smallButton("📥 Вставить настройки с iPhone");
+        imp.setOnClickListener(v -> importSettings());
+        LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(-2, -2);
+        ilp.topMargin = dp(10);
+        c.addView(imp, ilp);
         return c;
+    }
+
+    /** Настройки из iPhone-приложения: код TWSET:<base64 JSON> из буфера обмена. */
+    private void importSettings() {
+        String text = "";
+        try {
+            android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            android.content.ClipData cd = cm == null ? null : cm.getPrimaryClip();
+            if (cd != null && cd.getItemCount() > 0 && cd.getItemAt(0).getText() != null) {
+                text = cd.getItemAt(0).getText().toString().trim();
+            }
+        } catch (RuntimeException ignored) { }
+        if (!text.startsWith("TWSET:")) {
+            Toast.makeText(this, "В буфере нет кода настроек. На iPhone нажмите «▶ Начать прогрев» — код скопируется",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        try {
+            String json = new String(android.util.Base64.decode(text.substring(6), android.util.Base64.DEFAULT),
+                    java.nio.charset.StandardCharsets.UTF_8);
+            org.json.JSONObject o = new org.json.JSONObject(json);
+            SharedPreferences.Editor ed = prefs.edit();
+            for (String k : new String[]{"videos", "likeMin", "likeMax", "watchMin", "watchMax", "skipChance",
+                    "longChance", "favChance", "repostChance", "commentChance", "phrasePercent"}) {
+                if (o.has(k)) ed.putInt(k, Math.max(0, o.getInt(k)));
+            }
+            for (String k : new String[]{"photos", "skipLive", "skipAds", "capLoops"}) {
+                if (o.has(k)) ed.putBoolean(k, o.getBoolean(k));
+            }
+            for (String k : new String[]{"emoji", "phrases", "repostTexts"}) {
+                if (o.has(k)) ed.putString(k, o.getString(k));
+            }
+            ed.apply();
+            Toast.makeText(this, "📥 Настройки с iPhone применены", Toast.LENGTH_LONG).show();
+            frame.animate().alpha(0f).setDuration(220).withEndAction(() -> {
+                recreate();
+                overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
+            }).start();
+        } catch (Exception e) {
+            shake(premiumCard);
+            Toast.makeText(this, "Код настроек повреждён — скопируйте его на iPhone ещё раз", Toast.LENGTH_LONG).show();
+        }
     }
 
     private void applyBest() {
