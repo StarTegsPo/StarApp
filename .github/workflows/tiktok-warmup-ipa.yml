@@ -1,0 +1,64 @@
+name: Сборка «Прогрев TikTok» для iPhone
+
+# Собирает неподписанный IPA из tools/tiktok-warmup/ios и кладёт его в релиз «warmup-latest».
+# Ставится через Sideloadly / AltStore / ESign (они подписывают своим Apple ID).
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'tools/tiktok-warmup/ios/**'
+      - '.github/workflows/tiktok-warmup-ipa.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: warmup-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: XcodeGen
+        run: brew install xcodegen
+
+      - name: Проект Xcode
+        working-directory: tools/tiktok-warmup/ios
+        run: xcodegen generate
+
+      - name: Сборка
+        working-directory: tools/tiktok-warmup/ios
+        run: |
+          set -o pipefail
+          xcodebuild -version
+          xcodebuild -project TikTokWarmup.xcodeproj -target TikTokWarmup -configuration Release \
+            -sdk iphoneos CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee build.log | grep -E "error:|warning: .*deprecated|BUILD (SUCCEEDED|FAILED)" || true
+          grep -q "BUILD SUCCEEDED" build.log || { grep -B2 -A6 "error:" build.log | head -120; exit 1; }
+
+      - name: Упаковать IPA
+        working-directory: tools/tiktok-warmup/ios
+        run: |
+          APP=build/Release-iphoneos/TikTokWarmup.app
+          test -d "$APP"
+          test -f "$APP/codes.sha" || { echo "codes.sha не попал в приложение"; ls "$APP"; exit 1; }
+          mkdir -p Payload && cp -R "$APP" Payload/
+          zip -qry TikTokWarmup.ipa Payload
+          ls -lh TikTokWarmup.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TikTokWarmup-ipa
+          path: tools/tiktok-warmup/ios/TikTokWarmup.ipa
+
+      - name: Опубликовать в релизе warmup-latest
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: warmup-latest
+          prerelease: true
+          make_latest: false
+          files: tools/tiktok-warmup/ios/TikTokWarmup.ipa

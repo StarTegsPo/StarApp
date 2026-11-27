@@ -1,0 +1,35 @@
+name: TikTokWarmup
+options:
+  bundleIdPrefix: com.startegs
+  deploymentTarget:
+    iOS: "15.0"
+targets:
+  TikTokWarmup:
+    type: application
+    platform: iOS
+    sources:
+      - path: Warmup
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.startegs.warmup
+        PRODUCT_NAME: TikTokWarmup
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.0"
+        ENABLE_BITCODE: NO
+    info:
+      path: Warmup/Info.plist
+      properties:
+        CFBundleDisplayName: Прогрев TikTok
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen:
+          UIColorName: ""
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        LSApplicationQueriesSchemes:
+          - itms-apps
+          - tg
+        ITSAppUsesNonExemptEncryption: false

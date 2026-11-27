@@ -55,6 +55,7 @@ API = f"https://api.telegram.org/bot{TOKEN}/"
 REPO = "StarTegsPo/StarApp"
 RELEASE_API = f"https://api.github.com/repos/{REPO}/releases/tags/warmup-latest"
 APK_URL = f"https://github.com/{REPO}/releases/download/warmup-latest/TikTokWarmup.apk"
+IPA_URL = f"https://github.com/{REPO}/releases/download/warmup-latest/TikTokWarmup.ipa"
 STATE_FILE = os.path.join(HERE, "data.json")
 CODES_TOTAL = 5000          # столько кодов знает приложение
 CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -74,6 +75,7 @@ def load_state():
     s.setdefault("next_code", 0)
     s.setdefault("codes", [])      # {uid, code, kind: paid|gift, stars, charge, date}
     s.setdefault("apk", {})
+    s.setdefault("ipa", {})
     s.setdefault("offset", 0)
     return s
 
@@ -142,7 +144,8 @@ def api(method, _timeout=30, **params):
     return res["result"]
 
 
-def api_upload(method, fields, file_field, filename, content, timeout=180):
+def api_upload(method, fields, file_field, filename, content, timeout=180,
+               mime="application/vnd.android.package-archive"):
     boundary = uuid.uuid4().hex
     parts = []
     for k, v in fields.items():
@@ -152,7 +155,7 @@ def api_upload(method, fields, file_field, filename, content, timeout=180):
             v = json.dumps(v)
         parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode())
     parts.append((f'--{boundary}\r\nContent-Disposition: form-data; name="{file_field}"; filename="{filename}"\r\n'
-                  f'Content-Type: application/vnd.android.package-archive\r\n\r\n').encode() + content + b"\r\n")
+                  f'Content-Type: {mime}\r\n\r\n').encode() + content + b"\r\n")
     parts.append(f"--{boundary}--\r\n".encode())
     req = urllib.request.Request(API + method, data=b"".join(parts),
                                  headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
@@ -218,8 +221,8 @@ def main_text(name):
 
 
 def main_kb():
-    return kb([("📲 Скачать приложение", "apk")],
-              [(f"👑 Premium · {PRICE} ⭐", "premium")],
+    return kb([("📲 Скачать для Android", "apk")],
+              [("🍏 Для iPhone", "ios"), (f"👑 Premium · {PRICE} ⭐", "premium")],
               [("📖 Как установить", "install"), ("❓ Вопросы", "faq")],
               [("🎟 Мои коды", "codes"), ("💬 Поддержка", "support")])
 
@@ -260,7 +263,7 @@ FAQ_TEXT = (
     "<b>Можно пользоваться телефоном?</b>\n"
     "Да: открой TikTok в разделённом экране или плавающем окне — прогрев идёт в нём.\n\n"
     "<b>Есть на iPhone?</b>\n"
-    "Нет, только Android.\n\n"
+    "Да — через облачный Android-телефон. Жми «🍏 Для iPhone»: там приложение-помощник и инструкция.\n\n"
     "<b>Потерял код Premium</b>\n"
     "Он всегда есть в «🎟 Мои коды».\n\n"
     "<b>Купил, но код не подходит</b>\n"
@@ -303,38 +306,72 @@ def screen(chat, msg_id, uid, name, action):
         send_invoice(chat)
     elif action == "apk":
         send_apk(chat)
+    elif action == "ios":
+        show(chat, msg_id, IOS_TEXT, back_kb([("🍏 Скачать приложение для iPhone", "ipa")],
+                                             [("📲 APK для облачного телефона", "apk")]))
+    elif action == "ipa":
+        send_ipa(chat)
 
 
 # ======================================================================
 # APK
 # ======================================================================
 
-def release_info():
-    """(updated_at, version) последней сборки на GitHub или (None, None)."""
+def release_info(name="TikTokWarmup.apk"):
+    """(updated_at, size) файла последней сборки на GitHub или (None, None)."""
     try:
         req = urllib.request.Request(RELEASE_API, headers={"Accept": "application/vnd.github+json",
                                                            "User-Agent": "tiktok-warmup-bot"})
         with urllib.request.urlopen(req, timeout=15) as r:
             rel = json.load(r)
         for a in rel.get("assets", []):
-            if a.get("name") == "TikTokWarmup.apk":
+            if a.get("name") == name:
                 return a.get("updated_at"), a.get("size")
     except Exception:
         pass
     return None, None
 
 
-APK_CAPTION = ("📲 <b>Прогрев TikTok</b>\n\n"
+IOS_TEXT = (
+    "🍏 <b>Прогрев TikTok на iPhone</b>\n\n"
+    "iOS не разрешает приложениям управлять TikTok, поэтому прогрев идёт на <b>облачном Android-телефоне</b> "
+    "(Redfinger, VMOS Cloud, GeeLark и т.п.) — он работает на сервере 24/7, даже когда iPhone выключен.\n\n"
+    "📱 <b>Приложение для iPhone</b> проведёт по шагам, напомнит о сессиях прогрева и хранит твой код Premium.\n\n"
+    "<b>Как поставить IPA</b>\n"
+    "1. Скачай файл ниже.\n"
+    "2. Установи через <b>Sideloadly</b> или <b>AltStore</b> (с компьютера, бесплатно, нужен Apple ID) "
+    "или через ESign / Scarlet.\n"
+    "3. Настройки → Основные → VPN и управление устройством → доверять своему Apple ID.\n\n"
+    "Прогрев запускается в облачном телефоне — туда ставится APK для Android."
+)
+
+APK_CAPTION = ("📲 <b>Прогрев TikTok</b> для Android\n\n"
                "Нажми на файл, чтобы установить. Если телефон спросит — разреши установку из этого источника.\n"
                "Обновление ставится поверх старой версии.")
 
+IPA_CAPTION = ("🍏 <b>Прогрев TikTok</b> для iPhone\n\n"
+               "Установи через Sideloadly / AltStore / ESign. Сам прогрев идёт в облачном Android-телефоне — "
+               "приложение проведёт по шагам.")
+
 
 def send_apk(chat):
-    markup = kb([("📖 Как установить", "install"), (f"👑 Premium", "premium")])
-    cache = state["apk"]
+    send_release_file(chat, "apk", "TikTokWarmup.apk", APK_URL, APK_CAPTION,
+                      kb([("📖 Как установить", "install"), ("👑 Premium", "premium")]),
+                      "application/vnd.android.package-archive")
+
+
+def send_ipa(chat):
+    send_release_file(chat, "ipa", "TikTokWarmup.ipa", IPA_URL, IPA_CAPTION,
+                      kb([("📲 APK для облачного телефона", "apk")], [("👑 Premium", "premium")]),
+                      "application/octet-stream")
+
+
+def send_release_file(chat, key, name, url, caption, markup, mime):
+    """Отправляет файл из релиза; после первой загрузки — мгновенно по file_id."""
+    cache = state[key]
     # проверяем новую сборку не чаще раза в 10 минут
     if time.time() - cache.get("checked", 0) > 600 or not cache.get("file_id"):
-        updated, _ = release_info()
+        updated, _ = release_info(name)
         cache["checked"] = time.time()
         if updated and updated != cache.get("updated"):
             cache.pop("file_id", None)
@@ -342,24 +379,23 @@ def send_apk(chat):
         save_state()
     if cache.get("file_id"):
         try:
-            api("sendDocument", chat_id=chat, document=cache["file_id"], caption=APK_CAPTION,
+            api("sendDocument", chat_id=chat, document=cache["file_id"], caption=caption,
                 parse_mode="HTML", reply_markup=markup)
             return
         except TgError:
             cache.pop("file_id", None)
     try:
         api("sendChatAction", chat_id=chat, action="upload_document")
-        req = urllib.request.Request(APK_URL, headers={"User-Agent": "tiktok-warmup-bot"})
+        req = urllib.request.Request(url, headers={"User-Agent": "tiktok-warmup-bot"})
         with urllib.request.urlopen(req, timeout=120) as r:
             content = r.read()
-        res = api_upload("sendDocument", {"chat_id": str(chat), "caption": APK_CAPTION, "parse_mode": "HTML",
-                                          "reply_markup": markup}, "document", "TikTokWarmup.apk", content)
+        res = api_upload("sendDocument", {"chat_id": str(chat), "caption": caption, "parse_mode": "HTML",
+                                          "reply_markup": markup}, "document", name, content, mime=mime)
         cache["file_id"] = res["document"]["file_id"]
         save_state()
     except Exception:
         traceback.print_exc()
-        send(chat, "📲 <b>Прогрев TikTok</b>\n\nСкачай приложение по кнопке ниже 👇",
-             kb([("⬇️ Скачать APK", APK_URL)], [("📖 Как установить", "install")]))
+        send(chat, caption + "\n\nСкачай файл по кнопке ниже 👇", kb([("⬇️ Скачать", url)]))
 
 
 # ======================================================================
@@ -545,7 +581,11 @@ def on_message(msg):
 
     cmd = text.split()[0].split("@")[0] if text.startswith("/") else ""
     if cmd == "/start":
-        send(chat, main_text(u.get("first_name", "")), main_kb())
+        param = text.split(maxsplit=1)[1].strip() if " " in text else ""
+        if param in ("premium", "ios", "install", "codes"):
+            screen(chat, None, uid, u.get("first_name", ""), param)
+        else:
+            send(chat, main_text(u.get("first_name", "")), main_kb())
     elif cmd in ("/premium", "/buy"):
         screen(chat, None, uid, u.get("first_name", ""), "premium")
     elif cmd in ("/app", "/apk"):
