@@ -244,7 +244,8 @@ struct ContentView: View {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         Session.start(plan) { granted in
             guard granted else {
-                showToast("Разрешите уведомления: Настройки → Прогрев TikTok → Уведомления")
+                showToast("Включите уведомления — открываю настройки")
+                openAppSettings()
                 return
             }
             launches += 1
@@ -896,7 +897,8 @@ struct RemindersCard: View {
         if v {
             Reminders.requestAndSchedule(times: times) { granted in
                 on = granted
-                toast(granted ? "⏰ Напоминания включены" : "Разрешите уведомления в Настройках iPhone")
+                toast(granted ? "⏰ Напоминания включены" : "Включите уведомления — открываю настройки")
+                if !granted { openAppSettings() }
             }
         } else {
             on = false
@@ -937,5 +939,14 @@ struct Confetti: View {
         }
         .ignoresSafeArea()
         .onAppear { start = Date() }
+    }
+}
+
+/// Открывает настройки приложения (там переключатель «Уведомления»).
+func openAppSettings() {
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+        if let url = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(url)
+        }
     }
 }
