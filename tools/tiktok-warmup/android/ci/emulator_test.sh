@@ -16,7 +16,6 @@ adb install -r faketok/build/outputs/apk/debug/faketok-debug.apk
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 # быстрые настройки, чтобы за минуту было видно много действий
-adb shell am start -W -n $APP/.MainActivity >/dev/null; sleep 3; adb shell am force-stop $APP
 cat > "$OUT/cfg.xml" <<'EOF'
 <?xml version='1.0' encoding='utf-8' standalone='yes' ?>
 <map>
@@ -38,6 +37,9 @@ log "Включаю спецвозможность «Прогрев TikTok»"
 adb shell settings put secure enabled_accessibility_services $APP/$APP.WarmupService
 adb shell settings put secure accessibility_enabled 1
 sleep 4
+BOUND=$(adb shell dumpsys accessibility | grep -c "$APP" || true)
+echo "служба в dumpsys accessibility: $BOUND"
+check "спецвозможность подключена" '[ "$BOUND" -ge 1 ]'
 
 log "Открываю приложение и жму «Начать прогрев»"
 adb shell am start -W -n $APP/.MainActivity >/dev/null
