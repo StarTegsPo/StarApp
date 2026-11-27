@@ -71,6 +71,11 @@ public class FeedActivity extends Activity {
     @Override
     public boolean dispatchTouchEvent(MotionEvent ev) {
         gd.onTouchEvent(ev);
+        int act = ev.getActionMasked();
+        if (act == MotionEvent.ACTION_DOWN || act == MotionEvent.ACTION_UP || act == MotionEvent.ACTION_CANCEL) {
+            Log.i(TAG, "TOUCH " + MotionEvent.actionToString(act) + " x=" + (int) ev.getX() + " y=" + (int) ev.getY()
+                    + " h=" + getWindow().getDecorView().getHeight());
+        }
         if (ev.getActionMasked() == MotionEvent.ACTION_DOWN) downY = ev.getY();
         if (ev.getActionMasked() == MotionEvent.ACTION_UP && downY - ev.getY() > 300) {
             video++;

@@ -742,7 +742,11 @@ public class WarmupService extends AccessibilityService {
         float x = r.centerX() + rand(-r.width() / 18, r.width() / 18);
         Path p = new Path();
         p.moveTo(x, r.top + r.height() * rand(70, 78) / 100f);
-        p.lineTo(x + rand(-25, 25), r.top + r.height() * rand(22, 30) / 100f);
+        float y1 = r.top + r.height() * rand(70, 78) / 100f, y2 = r.top + r.height() * rand(22, 30) / 100f;
+        p.reset();
+        p.moveTo(x, y1);
+        p.lineTo(x + rand(-25, 25), y2);
+        android.util.Log.i("WARMUP", "swipe from " + (int) x + "," + (int) y1 + " to y=" + (int) y2 + " win=" + r.toShortString());
         dispatchLogged("swipe", 2, new GestureDescription.StrokeDescription(p, 0, rand(220, 400)));
     }
 
