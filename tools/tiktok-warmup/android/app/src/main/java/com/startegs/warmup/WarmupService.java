@@ -98,6 +98,7 @@ public class WarmupService extends AccessibilityService {
         int videos = 120, likeMin = 1, likeMax = 18, watchMin = 5, watchMax = 25;
         int skipChance = 15, longChance = 10, favChance = 4, repostChance = 2, commentChance = 2;
         boolean photos = true, skipLive = true, skipAds = true;
+        boolean capLoops = true;  // не смотреть ролик дольше 1,5 его длины
         String[] emoji = DEFAULT_EMOJI.split("\\s+");
         String[] phrases = lines(DEFAULT_PHRASES);
         String[] repostTexts = lines(DEFAULT_REPOST);
@@ -152,6 +153,10 @@ public class WarmupService extends AccessibilityService {
     private boolean photoWentBack, rechecked, limitReached, likeButtonSeen;
     private String stopReason = "";
     private long startedAt;
+    private long postStartedAt;   // когда текущий ролик появился на экране
+
+    /** Максимум просмотра одного ролика — в длинах ролика. */
+    static final double MAX_LOOPS = 1.5;
     private String state = IDLE;
     private String lastPkg = "";
 
@@ -217,6 +222,7 @@ public class WarmupService extends AccessibilityService {
         showOverlay();
         updateOverlay();
         // 5 c на открытие TikTok, затем смотрим первый пост
+        postStartedAt = SystemClock.elapsedRealtime() + 5000;
         handler.postDelayed(afterSwipe, 5000);
     }
 
@@ -273,7 +279,7 @@ public class WarmupService extends AccessibilityService {
                 handler.postDelayed(photoStep, rand(1500, 4000));
             } else {
                 updateOverlay();
-                handler.postDelayed(step, watchMs());
+                watchWithCap(w);
             }
         }
     };
@@ -344,8 +350,29 @@ public class WarmupService extends AccessibilityService {
             if (pauseIfHidden(w, this)) return;
             swipeUp(w.r);
             rechecked = false;
+            postStartedAt = SystemClock.elapsedRealtime();
             long delay = rand(1100, 1700);
-            if (--untilBreak <= 0) {
+            if (--untilBreak <= 0 && cfg.capLoops) {
+                // перерыв с паузой видео — ролик не крутится по кругу, пока «человек отдыхает»
+                untilBreak = rand(30, 50);
+                state = BREAK;
+                updateOverlay();
+                final long pause = rand(30, 120) * 1000L;
+                handler.postDelayed(() -> {
+                    if (!running) return;
+                    Win pw = tiktok();
+                    if (pw != null) singleTap(pw.r);
+                    handler.postDelayed(() -> {
+                        if (!running) return;
+                        Win rw = tiktok();
+                        if (rw != null) singleTap(rw.r);
+                        postStartedAt = SystemClock.elapsedRealtime();
+                        handler.postDelayed(afterSwipe, rand(1100, 1700));
+                    }, pause);
+                }, delay);
+                return;
+            }
+            if (untilBreak <= 0) {
                 delay += rand(30, 120) * 1000L;
                 untilBreak = rand(30, 50);
                 state = BREAK;
@@ -866,6 +893,101 @@ public class WarmupService extends AccessibilityService {
     }
 
     // ---------- утилиты ----------
+
+    // ---------- ограничение «не дольше 1,5 длины ролика» ----------
+
+    // «0:12 / 0:45» — вторая часть это длина ролика
+    private static final Pattern P_TIME_TOTAL = Pattern.compile("(\\d{1,2}):(\\d{2})\\s*/\\s*(\\d{1,2}):(\\d{2})");
+
+    /**
+     * Смотрит ролик случайное время, но не дольше MAX_LOOPS его длины.
+     * Длина берётся из подписи времени или вычисляется по скорости полоски прогресса.
+     * Если TikTok не показывает ни то, ни другое — работает обычное случайное время.
+     */
+    private void watchWithCap(Win w) {
+        final long planned = watchMs();
+        if (!cfg.capLoops) {
+            handler.postDelayed(step, planned);
+            return;
+        }
+        long fromText = durationFromText(w);
+        if (fromText > 0) {
+            handler.postDelayed(step, capped(planned, fromText));
+            return;
+        }
+        final float[] p1 = progress(w);
+        if (p1 == null) {
+            handler.postDelayed(step, Math.max(300, planned - sincePostStart()));
+            return;
+        }
+        final long t1 = SystemClock.elapsedRealtime();
+        handler.postDelayed(() -> {
+            if (!running) return;
+            Win w2 = tiktok();
+            float[] p2 = w2 == null ? null : progress(w2);
+            long dt = SystemClock.elapsedRealtime() - t1;
+            long dur = -1;
+            // ролик за это время не начался заново и шкала та же — считаем длину по скорости
+            if (p2 != null && p2[2] == p1[2] && p2[1] == p1[1] && p2[0] > p1[0]) {
+                dur = (long) (dt * (p1[2] - p1[1]) / (p2[0] - p1[0]));
+            }
+            handler.postDelayed(step, dur > 0 ? capped(planned, dur) : Math.max(300, planned - sincePostStart()));
+        }, 1500);
+    }
+
+    private long sincePostStart() {
+        return Math.max(0, SystemClock.elapsedRealtime() - postStartedAt);
+    }
+
+    /** Сколько ещё ждать: запланированное время, но всего не больше MAX_LOOPS длины ролика. */
+    private long capped(long planned, long durationMs) {
+        long already = sincePostStart();
+        long remain = planned - already;
+        if (durationMs >= 1000 && durationMs <= 20 * 60 * 1000) {
+            remain = Math.min(remain, (long) (durationMs * MAX_LOOPS) - already);
+        }
+        return Math.max(300, remain);
+    }
+
+    /** Длина ролика из подписи «0:12 / 0:45», мс; -1 если подписи нет. */
+    private long durationFromText(Win w) {
+        AccessibilityNodeInfo n = findInPost(w, P_TIME_TOTAL);
+        if (n == null) return -1;
+        Matcher m = P_TIME_TOTAL.matcher(label(n));
+        if (!m.find()) return -1;
+        return (Integer.parseInt(m.group(3)) * 60L + Integer.parseInt(m.group(4))) * 1000L;
+    }
+
+    /** Полоска прогресса ролика: {текущее, минимум, максимум} или null. Берётся самая широкая. */
+    private float[] progress(Win w) {
+        if (w.root == null) return null;
+        ArrayDeque<AccessibilityNodeInfo> q = new ArrayDeque<>();
+        q.add(w.root);
+        Rect b = new Rect();
+        float[] best = null;
+        int bestW = 0, seen = 0;
+        while (!q.isEmpty() && seen++ < 4000) {
+            AccessibilityNodeInfo n = q.poll();
+            if (n == null) continue;
+            AccessibilityNodeInfo.RangeInfo ri = n.getRangeInfo();
+            if (ri != null && ri.getMax() > ri.getMin()) {
+                n.getBoundsInScreen(b);
+                if (w.r.contains(b.centerX(), b.centerY()) && b.width() > bestW && b.width() > w.r.width() / 2) {
+                    bestW = b.width();
+                    best = new float[]{ri.getCurrent(), ri.getMin(), ri.getMax()};
+                }
+            }
+            for (int i = 0; i < n.getChildCount(); i++) q.add(n.getChild(i));
+        }
+        return best;
+    }
+
+    /** Одиночное касание по центру ролика — в TikTok это пауза / продолжение. */
+    private void singleTap(Rect r) {
+        Path p = new Path();
+        p.moveTo(r.centerX() + rand(-20, 20), r.top + r.height() * rand(40, 50) / 100f);
+        dispatch(new GestureDescription.StrokeDescription(p, 0, rand(40, 80)));
+    }
 
     /**
      * Случайное время просмотра: обычно от watchMin до watchMax,

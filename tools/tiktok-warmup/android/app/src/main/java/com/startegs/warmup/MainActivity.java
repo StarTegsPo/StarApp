@@ -53,7 +53,7 @@ public class MainActivity extends Activity {
     private ShimmerButton mainButton;
     private LinearLayout connectBox, connectedBox;
     private TextView parallelHow;
-    private boolean photosOn, skipLiveOn, skipAdsOn, premium;
+    private boolean photosOn, skipLiveOn, skipAdsOn, capLoopsOn, premium;
     private View premiumCard;
     private TextView freeLeftText;
     private View freeFill;
@@ -122,6 +122,7 @@ public class MainActivity extends Activity {
         reduceMotion = Settings.Global.getFloat(getContentResolver(), Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f;
         premium = Premium.isActive(this);
         photosOn = prefs.getBoolean("photos", true);
+        capLoopsOn = prefs.getBoolean("capLoops", true);
         skipLiveOn = prefs.getBoolean("skipLive", true);
         skipAdsOn = prefs.getBoolean("skipAds", true);
         emojiText = prefs.getString("emoji", WarmupService.DEFAULT_EMOJI);
@@ -747,6 +748,12 @@ public class MainActivity extends Activity {
         sWatchMax = stepper(c, "Смотреть до", "watchMax", 25, 1, 300, 1, " с", false);
         sSkip = stepper(c, "Быстро пролистать (1–3 с)", "skipChance", 15, 0, 100, 5, "%", false);
         sLong = stepper(c, "Досмотреть подольше", "longChance", 10, 0, 100, 5, "%", false);
+        c.addView(toggleRow("🔁 Не дольше 1,5 длины ролика",
+                "Короткий ролик не крутится по кругу: 10-секундный — максимум 15 с. На перерывах видео на паузе",
+                capLoopsOn, on -> {
+                    capLoopsOn = on;
+                    prefs.edit().putBoolean("capLoops", on).apply();
+                }, false).row);
         c.addView(note("Время каждого ролика случайное. «Подольше» — до двух «до»."));
         return c;
     }
@@ -810,6 +817,7 @@ public class MainActivity extends Activity {
         c.favChance = sFav.value;
         c.repostChance = sRepost.value;
         c.photos = photosOn;
+        c.capLoops = capLoopsOn;
         c.skipLive = skipLiveOn;
         c.skipAds = skipAdsOn;
         c.commentChance = sComment.value;
