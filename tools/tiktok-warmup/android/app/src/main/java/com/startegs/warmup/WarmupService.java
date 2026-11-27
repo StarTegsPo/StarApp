@@ -317,6 +317,7 @@ public class WarmupService extends AccessibilityService {
             if (pauseIfHidden(w, this)) return;
             state = RUNNING;
             done++;
+            android.util.Log.i("WARMUP", "post " + done);
             List<Act> acts = new ArrayList<>();
             if (--untilLike <= 0) {
                 acts.add(WarmupService.this::actLike);
@@ -742,7 +743,7 @@ public class WarmupService extends AccessibilityService {
         Path p = new Path();
         p.moveTo(x, r.top + r.height() * rand(70, 78) / 100f);
         p.lineTo(x + rand(-25, 25), r.top + r.height() * rand(22, 30) / 100f);
-        dispatch(new GestureDescription.StrokeDescription(p, 0, rand(220, 400)));
+        dispatchLogged("swipe", 2, new GestureDescription.StrokeDescription(p, 0, rand(220, 400)));
     }
 
     /** Свайп по карусели фото: forward — к следующему (справа налево). */
@@ -770,9 +771,33 @@ public class WarmupService extends AccessibilityService {
     }
 
     private void dispatch(GestureDescription.StrokeDescription... strokes) {
+        dispatchLogged("gesture", 0, strokes);
+    }
+
+    /**
+     * Жест с проверкой: если Android отменил его (например, экран был занят другим касанием),
+     * повторяем до retries раз — иначе свайп «теряется» и ролик смотрится дольше нужного.
+     */
+    private void dispatchLogged(final String name, final int retries,
+                                final GestureDescription.StrokeDescription... strokes) {
         GestureDescription.Builder b = new GestureDescription.Builder();
         for (GestureDescription.StrokeDescription s : strokes) b.addStroke(s);
-        dispatchGesture(b.build(), null, null);
+        boolean sent = dispatchGesture(b.build(), new GestureResultCallback() {
+            @Override
+            public void onCompleted(GestureDescription d) {
+                android.util.Log.i("WARMUP", name + " ok");
+            }
+
+            @Override
+            public void onCancelled(GestureDescription d) {
+                android.util.Log.w("WARMUP", name + " cancelled, retries left " + retries);
+                if (retries > 0 && running) handler.postDelayed(() -> dispatchLogged(name, retries - 1, strokes), 400);
+            }
+        }, null);
+        if (!sent) {
+            android.util.Log.w("WARMUP", name + " not sent, retries left " + retries);
+            if (retries > 0 && running) handler.postDelayed(() -> dispatchLogged(name, retries - 1, strokes), 400);
+        }
     }
 
     // ---------- плавающая плашка: нажать — стоп, тащить — переместить ----------

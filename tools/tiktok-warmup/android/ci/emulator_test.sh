@@ -9,6 +9,7 @@ APP=com.startegs.warmup
 FAIL=0
 log() { echo "=== $*"; }
 count() { adb logcat -d -s WARMUP_TEST:I | grep -c " $1" || true; }
+svc() { adb logcat -d -s WARMUP:* | grep -c "$1" || true; }
 fg() { adb shell dumpsys activity activities | grep -m1 -E "mResumedActivity|topResumedActivity" | sed 's/^ *//'; }
 check() { if eval "$2"; then echo "✅ $1"; else echo "❌ $1"; FAIL=1; fi; }
 
@@ -69,7 +70,12 @@ check "«Прогрев TikTok» свёрнут, на экране TikTok" 'echo
 sleep 52
 adb exec-out screencap -p > "$OUT/2_running.png"
 S1=$(count SWIPE); L1=$(count LIKE)
-echo "свайпов: $S1, лайков: $L1"
+SOK=$(svc "swipe ok"); SC=$(svc "swipe cancelled"); SN=$(svc "swipe not sent")
+echo "свайпов: $S1, лайков: $L1 | приложение: свайпов выполнено $SOK, отменено $SC, не отправлено $SN"
+POSTS=$(svc "post ")
+echo "постов просмотрено (по приложению): $POSTS"
+check "каждый выполненный свайп дошёл до TikTok" '[ "$S1" -ge "$SOK" ]'
+check "на каждый просмотренный пост был свайп (не засиживается)" '[ $((S1 + 1)) -ge "$POSTS" ]' 
 check "свайпы идут, пока приложение свёрнуто (>=5)" '[ "$S1" -ge 5 ]'
 check "лайки идут, пока приложение свёрнуто (>=2)" '[ "$L1" -ge 2 ]'
 
