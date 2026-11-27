@@ -1,0 +1,21 @@
+// Тестовая «лента TikTok» для проверки на эмуляторе: тот же пакет, что у TikTok,
+// пишет в logcat (тег WARMUP_TEST) каждый свайп и двойной тап.
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.zhiliaoapp.musically'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'com.zhiliaoapp.musically'
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName '1.0'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

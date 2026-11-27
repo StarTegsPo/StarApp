@@ -6,3 +6,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "TikTokWarmup"
 include ':app'
+include ':faketok'   // тестовая лента для проверки на эмуляторе
