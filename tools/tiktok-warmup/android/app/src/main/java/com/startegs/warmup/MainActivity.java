@@ -1021,7 +1021,13 @@ public class MainActivity extends Activity {
         return pm != null && pm.isIgnoringBatteryOptimizations(getPackageName());
     }
 
+    private int lastSystemStatus = -1;
+
+    /** Обновляет строки «Батарея» и «Точное время» только если что-то изменилось. */
     private void updateSystemStatus() {
+        int stateBits = (batteryOk() ? 1 : 0) | (Schedule.exactAllowed(this) ? 2 : 0);
+        if (stateBits == lastSystemStatus) return;
+        lastSystemStatus = stateBits;
         if (batteryStatus != null) {
             boolean ok = batteryOk();
             batteryStatus.setText(ok ? "✅ Батарея: без ограничений" : "⚠️ Батарея: Android может остановить прогрев");
